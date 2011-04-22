@@ -812,6 +812,16 @@ class Thread
         //       having thread being treated like a daemon thread.
         synchronized( slock )
         {
+	    // when creating threads from inside a DLL, DllMain(THREAD_ATTACH)
+	    //  might be called before _beginthreadex returns, but the dll
+	    //  helper functions need to know whether the thread is created
+	    //  from the runtime itself or from another DLL or the application
+	    //  to just attach to it
+	    // as the consequence, the new Thread object is added before actual
+	    //  creation of the thread. There should be no problem with the GC
+	    //  calling thread_suspendAll, because of the slock synchronization
+            add( this );
+	    
             version( Windows )
             {
                 m_hndl = cast(HANDLE) _beginthreadex( null, m_sz, &thread_entryPoint, cast(void*) this, 0, &m_addr );
