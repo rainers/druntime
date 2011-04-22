@@ -1437,6 +1437,7 @@ struct Gcx
     void Invariant() const { }
 
 
+    debug(GCXINVARIANT)
     invariant()
     {
         if (inited)
