@@ -25,6 +25,7 @@ module gc.gcx;
 //debug = PTRCHECK;             // more pointer checking
 //debug = PTRCHECK2;            // thorough but slow pointer checking
 //debug = PROFILING;            // measure performance of various steps.
+//debug = GCXINVARIANT;         // more invariants (seem not thread safe)
 
 /*************** Configuration *********************/
 
