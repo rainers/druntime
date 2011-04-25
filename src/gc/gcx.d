@@ -3075,6 +3075,7 @@ struct Pool
     {
         this.isLargeObject = isLargeObject;
         size_t poolsize;
+        auto div = this.divisor;
 
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
@@ -3094,7 +3095,6 @@ struct Pool
         }
         //assert(baseAddr);
         topAddr = baseAddr + poolsize;
-        auto div = this.divisor;
         auto nbits = cast(size_t)poolsize / div;
 
         mark.alloc(nbits);
