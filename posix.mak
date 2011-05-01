@@ -389,8 +389,8 @@ SRC_D_MODULES_POSIX = \
 	rt/monitor_ \
 
 SRC_D_MODULES_WIN = \
-	core/sys/windows/_dll \
-	core/sys/windows/_thread \
+	core/sys/windows/dll \
+	core/sys/windows/threadaux \
 	core/sys/windows/dbghelp \
 	core/sys/windows/stacktrace \
 	core/sys/windows/windows \
