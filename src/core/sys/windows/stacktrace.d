@@ -351,11 +351,15 @@ private:
                     {
                         char[2048] demangleBuf;
                         auto       symbolName = (cast(char*) symbol.Name.ptr)[0 .. strlen(symbol.Name.ptr)];
+                        char[]     sym = symbolName;
+			version(none)
+                        if( symbolName.length > 3 && symbolName[0] == '_' && symbolName[1] == 'D' && 
+                            symbolName[2] >= '0' && symbolName[2] <= '9' )
+                            sym = demangle( symbolName, demangleBuf );
 
                         // displacement bytes from beginning of line
                         trace ~= line.FileName[0 .. strlen( line.FileName )] ~
-                                 "(" ~ format( temp[], line.LineNumber ) ~ "): " ~
-                                 demangle( symbolName, demangleBuf );
+                                 "(" ~ format( temp[], line.LineNumber ) ~ "): " ~ sym;
                     }
                 }
                 else

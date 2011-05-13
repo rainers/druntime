@@ -405,10 +405,12 @@ SRC_D_MODULES_WIN = \
 ifeq (Windows_NT,$(OS))
     SRC_D_MODULES += $(SRC_D_MODULES_WIN)
     O = obj
+    DOTEXE = .exe
     OBJS= $(OBJDIR)/errno_c.obj $(OBJDIR)/monitor.obj $(OBJDIR)/complex.obj $(OBJDIR)/critical.obj \
           src\rt\minit.obj
 else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
+    DOTEXE =
     O = o
     OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o $(OBJDIR)/complex.o $(OBJDIR)/memory_osx.o
 endif
@@ -572,7 +574,7 @@ $(OBJDIR)/threadasm.$O : src/core/threadasm.S
 $(DRUNTIME): $(OBJS) $(SRCS) posix.mak
 	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
-unittest : $(addprefix $(OBJDIR)/,$(SRC_D_MODULES)) $(DRUNTIME) $(OBJDIR)/emptymain.d
+unittest : $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES))) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo done
 
 ifeq ($(OS),freebsd)
@@ -584,7 +586,7 @@ endif
 $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 	@echo $@ - disabled
 
-$(OBJDIR)/% : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
+$(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
 ifeq (Windows_NT,$(OS))
 	@$(DMD) $(UDFLAGS) -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)

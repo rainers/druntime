@@ -1743,7 +1743,7 @@ private:
     {
         assert( t );
         assert( !t.next && !t.prev );
-        assert( t.isRunning );
+        //assert( t.isRunning );
     }
     body
     {
