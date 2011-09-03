@@ -845,15 +845,6 @@ class Thread
                 if( m_tmach == m_tmach.init )
                     throw new ThreadException( "Error creating thread" );
             }
-            // NOTE: DllMain(THREAD_ATTACH) may be called before this call
-            //       exits, and this in turn calls thread_findByAddr, which
-            //       would expect this thread to be in the global list if it
-            //       is a D-created thread.  However, since thread_findByAddr
-            //       acquires Thread.slock before searching the list, it is
-            //       safe to add this thread after _beginthreadex instead
-            //       of before.  This also saves us from having to use a
-            //       scope statement to remove the thread on error.
-            add( this );
         }
     }
 
