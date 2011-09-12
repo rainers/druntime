@@ -29,6 +29,8 @@ IMPDIR=import
 
 MODEL=32
 
+DMDDEP = $(shell which $(DMD))
+
 ifeq ($(BUILD),debug)
 	OPTFLAGS=-g
 	CFLAGS += -g
@@ -571,7 +573,7 @@ $(OBJDIR)/threadasm.$O : src/core/threadasm.S
 
 ################### Library generation #########################
 
-$(DRUNTIME): $(OBJS) $(SRCS) posix.mak
+$(DRUNTIME): $(OBJS) $(SRCS) posix.mak $(DMDDEP)
 	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
 unittest : $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES))) $(DRUNTIME) $(OBJDIR)/emptymain.d
