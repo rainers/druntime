@@ -19,6 +19,10 @@ ifeq (,$(OS))
         endif
     endif
 endif
+# make Windows_NT lowercase
+ifeq (Win,$(findstring Win,$(OS)))
+	OS:=win32
+endif
 
 DMD=dmd
 
@@ -292,13 +296,6 @@ SRC_D_MODULES = \
 	core/stdc/time \
 	core/stdc/wchar_ \
 	\
-	core/sys/posix/sys/select \
-	core/sys/posix/sys/socket \
-	core/sys/posix/sys/stat \
-	core/sys/posix/sys/wait \
-	core/sys/posix/netdb \
-	core/sys/posix/netinet/in_ \
-	\
 	core/sync/barrier \
 	core/sync/condition \
 	core/sync/config \
@@ -382,6 +379,7 @@ SRC_D_MODULES_POSIX = \
 	core/sys/posix/sys/socket \
 	core/sys/posix/sys/stat \
 	core/sys/posix/sys/wait \
+	core/sys/posix/netdb \
 	core/sys/posix/netinet/in_ \
 	\
 	rt/alloca \
@@ -404,7 +402,7 @@ SRC_D_MODULES_WIN = \
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
 
-ifeq (Windows_NT,$(OS))
+ifeq (win,$(findstring win,$(OS)))
     SRC_D_MODULES += $(SRC_D_MODULES_WIN)
     O = obj
     DOTEXE = .exe
@@ -590,7 +588,7 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
-ifeq (Windows_NT,$(OS))
+ifeq (win,$(findstring win,$(OS)))
 	@$(DMD) $(UDFLAGS) -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 	@$(RUN) $@
 else
@@ -605,7 +603,7 @@ endif
 
 $(OBJDIR)/emptymain.d :
 	@$(MKDIR) -p $(OBJDIR)
-ifeq (Windows_NT,$(OS))
+ifeq (win,$(findstring win,$(OS)))
 	@echo void main(){} >$@
 else
 	@echo 'void main(){}' >$@
