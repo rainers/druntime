@@ -57,7 +57,7 @@ OBJDIR=obj
 LIBDIR=lib
 JSONDIR=.
 DRUNTIME_BASE=druntime
-ifeq (Windows_NT,$(OS))
+ifeq (win32,$(OS))
 	DRUNTIME=$(LIBDIR)/$(DRUNTIME_BASE).lib
 else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
