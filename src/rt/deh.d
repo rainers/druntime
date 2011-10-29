@@ -613,7 +613,7 @@ void _d_throwc(Object h)
     version(Windows)
         asm 
         {
-            mov EAX, 1000;
+            mov EAX, 500;
         clear_stack:
             push 0;
             dec EAX;
@@ -629,8 +629,8 @@ void _d_throwc(Object h)
     version(Windows)
         asm
         {
-            mov ESP,EBP;
-            pop EBP;
+            leave;
+            ret;
         }
 }
 

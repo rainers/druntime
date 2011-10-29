@@ -1649,7 +1649,8 @@ string decodeDmdString( const(char)[] ln, ref int p )
                 break;
             s ~= s[$ - zpos .. $ - zpos + zlen];
         }
-        else if( Demangle.isAlpha(cast(char)ch) || Demangle.isDigit(cast(char)ch) || ch == '_' )
+        else if( Demangle.isAlpha(cast(char)ch) || Demangle.isDigit(cast(char)ch)
+                 || ch == '_' || ch == '?' || ch == '@' ) // also used for C symbols
             s ~= cast(char) ch;
         else
         {
