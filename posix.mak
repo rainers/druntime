@@ -215,7 +215,7 @@ MANIFEST= \
 	src/rt/llmath.d \
 	src/rt/mars.h \
 	src/rt/memory.d \
-	src/rt/memory_osx.c \
+	src/rt/memory_osx.d \
 	src/rt/memset.d \
 	src/rt/minit.asm \
 	src/rt/monitor_.d \
@@ -329,6 +329,7 @@ SRC_D_MODULES = \
 	rt/lifetime \
 	rt/llmath \
 	rt/memory \
+	rt/memory_osx \
 	rt/memset \
 	rt/obj \
 	rt/qsort \
@@ -414,7 +415,7 @@ else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
     DOTEXE =
     O = o
-    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o $(OBJDIR)/complex.o $(OBJDIR)/memory_osx.o
+    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o $(OBJDIR)/complex.o
 endif
 
 DOCS=\
