@@ -138,6 +138,7 @@ version( Windows )
         import core.sys.windows.threadaux;   // for OpenThreadHandle
 
         const DWORD TLS_OUT_OF_INDEXES  = 0xFFFFFFFF;
+        const CREATE_SUSPENDED = 0x00000004;
 
         extern (Windows) alias uint function(void*) btex_fptr;
         extern (C) uintptr_t _beginthreadex(void*, uint, btex_fptr, void*, uint, uint*);
@@ -802,6 +803,22 @@ class Thread
                 throw new ThreadException( "Error setting thread joinable" );
         }
 
+        version( Windows )
+        {
+            // NOTE: If a thread is just executing DllMain() 
+            //       while another thread is started here, it holds an OS internal
+            //       lock that serializes DllMain with CreateThread. As the code
+            //       might request a synchronization on slock (e.g. in thread_findByAddr()),
+            //       we cannot hold that lock while creating the thread without
+            //       creating a deadlock
+            //
+            // Solution: Create the thread in suspended state and then
+            //       add and resume it with slock acquired
+            m_hndl = cast(HANDLE) _beginthreadex( null, m_sz, &thread_entryPoint, cast(void*) this, CREATE_SUSPENDED, &m_addr );
+            if( cast(size_t) m_hndl == 0 )
+                throw new ThreadException( "Error creating thread" );
+        }
+
         // NOTE: The starting thread must be added to the global thread list
         //       here rather than within thread_entryPoint to prevent a race
         //       with the main thread, which could finish and terminat the
@@ -810,21 +827,21 @@ class Thread
         //       having thread being treated like a daemon thread.
         synchronized( slock )
         {
-	    // when creating threads from inside a DLL, DllMain(THREAD_ATTACH)
-	    //  might be called before _beginthreadex returns, but the dll
-	    //  helper functions need to know whether the thread is created
-	    //  from the runtime itself or from another DLL or the application
-	    //  to just attach to it
-	    // as the consequence, the new Thread object is added before actual
-	    //  creation of the thread. There should be no problem with the GC
-	    //  calling thread_suspendAll, because of the slock synchronization
+            // NOTE: when creating threads from inside a DLL, DllMain(THREAD_ATTACH)
+            //       might be called before ResumeThread returns, but the dll
+            //       helper functions need to know whether the thread is created
+            //       from the runtime itself or from another DLL or the application
+            //       to just attach to it
+            //       as a consequence, the new Thread object is added before actual
+            //       creation of the thread. There should be no problem with the GC
+            //       calling thread_suspendAll, because of the slock synchronization
+            //
+            // VERIFY: does this actually also apply to other platforms?
             add( this );
-	    
+
             version( Windows )
             {
-                m_hndl = cast(HANDLE) _beginthreadex( null, m_sz, &thread_entryPoint, cast(void*) this, 0, &m_addr );
-                if( cast(size_t) m_hndl == 0 )
-                    throw new ThreadException( "Error creating thread" );
+                ResumeThread( m_hndl );
             }
             else version( Posix )
             {
@@ -1732,7 +1749,7 @@ private:
     {
         assert( t );
         assert( !t.next && !t.prev );
-        //assert( t.isRunning );
+        assert( t.isRunning );
     }
     body
     {
