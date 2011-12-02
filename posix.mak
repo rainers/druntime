@@ -35,6 +35,8 @@ IMPDIR=import
 
 MODEL=32
 
+DFLAGS=-m$(MODEL) -O -release -inline -nofloat -w -d -Isrc -Iimport -property
+UDFLAGS=-m$(MODEL) -O -release -nofloat -w -d -Isrc -Iimport -property
 DMDDEP = $(shell which $(DMD))
 
 ifeq ($(BUILD),debug)
@@ -44,8 +46,6 @@ else
 	OPTFLAGS=-O -release -inline
 endif
 
-DFLAGS=-m$(MODEL) $(OPTFLAGS) -nofloat -w -d -Isrc -Iimport
-UDFLAGS=-m$(MODEL) $(OPTFLAGS) -nofloat -w -d -Isrc -Iimport
 
 # Set CFLAGS 
 ifeq ($(CC),cc)

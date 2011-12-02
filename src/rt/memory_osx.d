@@ -32,7 +32,7 @@ struct SegRef
 enum SegRef[5] dataSegs = [{SEG_DATA, SECT_DATA},
                            {SEG_DATA, SECT_BSS},
                            {SEG_DATA, SECT_COMMON},
-				           // These two must match names used by compiler machobj.c
+                                           // These two must match names used by compiler machobj.c
                            {SEG_DATA, "__tls_data"},
                            {SEG_DATA, "__tlscoal_nt"}];
 
@@ -40,7 +40,7 @@ enum SegRef[5] dataSegs = [{SEG_DATA, SECT_DATA},
 ubyte[] getSection(in mach_header* header, intptr_t slide,
                    in char* segmentName, in char* sectionName)
 {
-    if ((header.magic & MH_MAGIC) != 0)
+    if (header.magic == MH_MAGIC)
     {
         auto sect = getsectbynamefromheader(header,
                                             segmentName,
@@ -55,7 +55,7 @@ ubyte[] getSection(in mach_header* header, intptr_t slide,
         return null;
 
     }
-    else if ((header.magic & MH_MAGIC_64) != 0)
+    else if (header.magic == MH_MAGIC_64)
     {
         auto header64 = cast(mach_header_64*) header;
         auto sect     = getsectbynamefromheader_64(header64,
@@ -70,7 +70,8 @@ ubyte[] getSection(in mach_header* header, intptr_t slide,
         }
         return null;
     }
-    return null;
+    else
+        return null;
 }
 
 

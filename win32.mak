@@ -1,24 +1,23 @@
 
-DMD=..\dmd\src\dmd
+DMD=dmd
 
-CC=c:\l\dmc\bin\dmc
+CC=dmc
 
 DOCDIR=doc
 IMPDIR=import
-LIBDIR=..\lib\
-OBJDIR=..\obj\$(DRUNTIME_BASE)\
 
-DBGFLAGS=-g -O -release -inline
-DFLAGS=$(DBGFLAGS) -nofloat -w -d -Isrc -Iimport
-UDFLAGS=-O -release -nofloat -w -d -Isrc -Iimport
+DFLAGS=-O -release -inline -nofloat -w -d -Isrc -Iimport -property
+UDFLAGS=-O -release -nofloat -w -d -Isrc -Iimport -property
 
-CFLAGS=-g
+CFLAGS=
 
 DRUNTIME_BASE=druntime
-DRUNTIME=$(LIBDIR)$(DRUNTIME_BASE).lib
-GCSTUB=$(LIBDIR)gcstub.obj
+DRUNTIME=lib\$(DRUNTIME_BASE).lib
+GCSTUB=lib\gcstub.obj
 
 DOCFMT=
+
+target : import $(DRUNTIME) doc $(GCSTUB)
 
 MANIFEST= \
 	LICENSE_1_0.txt \
@@ -344,12 +343,10 @@ SRCS= \
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
 
-OBJS_TO_DELETE = $(OBJDIR)errno_c.obj $(OBJDIR)complex.obj $(OBJDIR)monitor.obj $(OBJDIR)critical.obj
-OBJS = $(OBJS_TO_DELETE) src\rt\minit.obj
+OBJS= errno_c.obj complex.obj src\rt\minit.obj monitor.obj critical.obj
+OBJS_TO_DELETE= errno_c.obj complex.obj monitor.obj critical.obj
 
-DOCS =
-
-xDOCS=\
+DOCS=\
 	$(DOCDIR)\object.html \
 	$(DOCDIR)\core_atomic.html \
 	$(DOCDIR)\core_bitop.html \
@@ -462,8 +459,6 @@ IMPORTS=\
 	$(IMPDIR)\core\sys\windows\stacktrace.di \
 	$(IMPDIR)\core\sys\windows\threadaux.di \
 	$(IMPDIR)\core\sys\windows\windows.di
-
-target : $(DOCS) $(IMPORTS) $(DRUNTIME) $(GCSTUB)
 
 ######################## Doc .html file generation ##############################
 
@@ -778,20 +773,20 @@ $(IMPDIR)\core\sys\windows\windows.di : src\core\sys\windows\windows.d
 
 ################### C\ASM Targets ############################
 
-$(OBJDIR)errno_c.obj : src\core\stdc\errno.c
-	$(CC) -c $(CFLAGS) -o$@ src\core\stdc\errno.c
+errno_c.obj : src\core\stdc\errno.c
+	$(CC) -c $(CFLAGS) src\core\stdc\errno.c -oerrno_c.obj
 
-$(OBJDIR)complex.obj : src\rt\complex.c
-	$(CC) -c $(CFLAGS) -o$@ src\rt\complex.c
+complex.obj : src\rt\complex.c
+	$(CC) -c $(CFLAGS) src\rt\complex.c
 
 src\rt\minit.obj : src\rt\minit.asm
-	$(CC) -c $(CFLAGS) -o$@ src\rt\minit.asm
+	$(CC) -c $(CFLAGS) src\rt\minit.asm
 
-$(OBJDIR)critical.obj : src\rt\critical.c
-	$(CC) -c $(CFLAGS) -o$@ src\rt\critical.c
+critical.obj : src\rt\critical.c
+	$(CC) -c $(CFLAGS) src\rt\critical.c
 
-$(OBJDIR)monitor.obj : src\rt\monitor.c
-	$(CC) -c $(CFLAGS) -o$@ src\rt\monitor.c
+monitor.obj : src\rt\monitor.c
+	$(CC) -c $(CFLAGS) src\rt\monitor.c
 
 ################### gcstub generation #########################
 
