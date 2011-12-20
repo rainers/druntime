@@ -217,6 +217,7 @@ MANIFEST= \
 	src/rt/memory.d \
 	src/rt/memory_osx.d \
 	src/rt/memset.d \
+	src/rt/minfo.d \
 	src/rt/minit.asm \
 	src/rt/monitor_.d \
 	src/rt/obj.d \
@@ -331,6 +332,8 @@ SRC_D_MODULES = \
 	rt/memory \
 	rt/memory_osx \
 	rt/memset \
+	rt/minfo \
+	rt/monitor_ \
 	rt/obj \
 	rt/qsort \
 	rt/switch_ \
