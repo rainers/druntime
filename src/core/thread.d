@@ -118,8 +118,8 @@ private
     }
 
 
-    alias scope void delegate() gc_atom;
-    extern (C) void function(gc_atom) gc_atomic;
+    alias void delegate() gc_atom;
+    extern (C) void function(scope gc_atom) gc_atomic;
 }
 
 
@@ -841,6 +841,7 @@ class Thread
 
             version( Windows )
             {
+                assert(m_sz <= uint.max, "m_sz must be less than or equal to uint.max");
                 ResumeThread( m_hndl );
             }
             else version( Posix )
@@ -1571,7 +1572,7 @@ private:
       }
       else
       {
-        static assert( "Architecture not supported." );
+        static assert(false, "Architecture not supported." );
       }
     }
     else version( OSX )
@@ -1587,7 +1588,7 @@ private:
       }
       else
       {
-        static assert( "Architecture not supported." );
+        static assert(false, "Architecture not supported." );
       }
     }
 
@@ -2293,7 +2294,7 @@ extern (C) void thread_suspendAll()
             }
             else
             {
-                static assert( "Architecture not supported." );
+                static assert(false, "Architecture not supported." );
             }
         }
         else version( OSX )
@@ -2357,7 +2358,7 @@ extern (C) void thread_suspendAll()
             }
             else
             {
-                static assert( "Architecture not supported." );
+                static assert(false, "Architecture not supported." );
             }
         }
         else version( Posix )
@@ -2550,9 +2551,14 @@ body
     }
 }
 
+enum ScanType
+{
+    stack,
+    tls,
+}
 
-private alias void delegate( void*, void* ) scanAllThreadsFn;
-
+alias void delegate(void*, void*) ScanAllThreadsFn;
+alias void delegate(ScanType, void*, void*) NewScanAllThreadsFn;
 
 /**
  * The main entry point for garbage collection.  The supplied delegate
@@ -2565,7 +2571,7 @@ private alias void delegate( void*, void* ) scanAllThreadsFn;
  * In:
  *  This routine must be preceded by a call to thread_suspendAll.
  */
-extern (C) void thread_scanAll( scanAllThreadsFn scan, void* curStackTop = null )
+extern (C) void thread_scanAll( scope NewScanAllThreadsFn scan, void* curStackTop = null )
 in
 {
     assert( suspendDepth > 0 );
@@ -2606,24 +2612,55 @@ body
             // NOTE: We can't index past the bottom of the stack
             //       so don't do the "+1" for StackGrowsDown.
             if( c.tstack && c.tstack < c.bstack )
-                scan( c.tstack, c.bstack );
+                scan( ScanType.stack, c.tstack, c.bstack );
         }
         else
         {
             if( c.bstack && c.bstack < c.tstack )
-                scan( c.bstack, c.tstack + 1 );
+                scan( ScanType.stack, c.bstack, c.tstack + 1 );
         }
     }
 
     for( Thread t = Thread.sm_tbeg; t; t = t.next )
     {
-        scan( t.m_tls.ptr, t.m_tls.ptr + t.m_tls.length );
+        scan( ScanType.tls, t.m_tls.ptr, t.m_tls.ptr + t.m_tls.length );
 
         version( Windows )
         {
-            scan( t.m_reg.ptr, t.m_reg.ptr + t.m_reg.length );
+            // Ideally, we'd pass ScanType.regs or something like that, but this
+            // would make portability annoying because it only makes sense on Windows.
+            scan( ScanType.stack, t.m_reg.ptr, t.m_reg.ptr + t.m_reg.length );
         }
     }
+}
+
+version(none)
+{
+/**
+ * The main entry point for garbage collection.  The supplied delegate
+ * will be passed ranges representing both stack and register values.
+ *
+ * Params:
+ *  scan        = The scanner function.  It should scan from p1 through p2 - 1.
+ *  curStackTop = An optional pointer to the top of the calling thread's stack.
+ *
+ * In:
+ *  This routine must be preceded by a call to thread_suspendAll.
+ */
+extern (C) void thread_scanAll( scope ScanAllThreadsFn scan, void* curStackTop = null )
+in
+{
+    assert( suspendDepth > 0 );
+}
+body
+{
+    void op( ScanType type, void* p1, void* p2 )
+    {
+        scan(p1, p2);
+    }
+
+    thread_scanAll(&op, curStackTop);
+}
 }
 
 /**
