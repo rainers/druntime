@@ -2123,7 +2123,7 @@ version( Windows )
 
 /**
  * Deregisters the calling thread from use with the runtime.  If this routine
- * is called for a thread which is already registered, the result is undefined.
+ * is called for a thread which is not registered, the result is undefined.
  */
 extern (C) void thread_detachThis()
 {
@@ -2558,7 +2558,7 @@ enum ScanType
 }
 
 alias void delegate(void*, void*) ScanAllThreadsFn;
-alias void delegate(ScanType, void*, void*) NewScanAllThreadsFn;
+alias void delegate(ScanType, void*, void*) ScanAllThreadsTypeFn;
 
 /**
  * The main entry point for garbage collection.  The supplied delegate
@@ -2571,7 +2571,7 @@ alias void delegate(ScanType, void*, void*) NewScanAllThreadsFn;
  * In:
  *  This routine must be preceded by a call to thread_suspendAll.
  */
-extern (C) void thread_scanAll( scope NewScanAllThreadsFn scan, void* curStackTop = null )
+extern (C) void thread_scanAllType( scope ScanAllThreadsTypeFn scan, void* curStackTop = null )
 in
 {
     assert( suspendDepth > 0 );
@@ -2634,8 +2634,6 @@ body
     }
 }
 
-version(none)
-{
 /**
  * The main entry point for garbage collection.  The supplied delegate
  * will be passed ranges representing both stack and register values.
@@ -2659,8 +2657,7 @@ body
         scan(p1, p2);
     }
 
-    thread_scanAll(&op, curStackTop);
-}
+    thread_scanAllType(&op, curStackTop);
 }
 
 /**
