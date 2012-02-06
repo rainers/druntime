@@ -159,6 +159,7 @@ MANIFEST= \
 	src/core/sys/posix/sys/uio.d \
 	src/core/sys/posix/sys/un.d \
 	src/core/sys/posix/sys/wait.d \
+	src/core/sys/posix/sys/utsname.d \
 	\
 	src/core/sys/windows/dbghelp.d \
 	src/core/sys/windows/dll.d \
@@ -377,6 +378,7 @@ SRC_D_MODULES_POSIX = \
 	core/sys/posix/sys/stat \
 	core/sys/posix/sys/wait \
 	core/sys/posix/netdb \
+	core/sys/posix/sys/utsname \
 	core/sys/posix/netinet/in_ \
 	\
 	rt/alloca \
@@ -522,6 +524,7 @@ IMPORTS=\
 	$(IMPDIR)/core/sys/posix/sys/uio.di \
 	$(IMPDIR)/core/sys/posix/sys/un.di \
 	$(IMPDIR)/core/sys/posix/sys/wait.di \
+	$(IMPDIR)/core/sys/posix/sys/utsname.di \
 	\
 	$(IMPDIR)/core/sys/windows/dbghelp.di \
 	$(IMPDIR)/core/sys/windows/dll.di \
