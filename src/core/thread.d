@@ -1841,6 +1841,31 @@ private:
     }
 }
 
+// These must be kept in sync with core/thread.di
+version (D_LP64)
+{
+    version (Windows)
+        static assert(__traits(classInstanceSize, Thread) == 304);
+    else version (OSX)
+        static assert(__traits(classInstanceSize, Thread) == 312);
+    else version (Posix)
+        static assert(__traits(classInstanceSize, Thread) == 176);
+    else
+            static assert(0, "Platform not supported.");
+}
+else
+{
+    static assert((void*).sizeof == 4); // 32-bit
+
+    version (Windows)
+        static assert(__traits(classInstanceSize, Thread) == 124);
+    else version (OSX)
+        static assert(__traits(classInstanceSize, Thread) == 124);
+    else version (Posix)
+        static assert(__traits(classInstanceSize, Thread) ==  88);
+    else
+        static assert(0, "Platform not supported.");
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // GC Support Routines
@@ -2863,6 +2888,17 @@ class ThreadGroup
 
 private:
     Thread[Thread]  m_all;
+}
+
+// These must be kept in sync with core/thread.di
+version (D_LP64)
+{
+    static assert(__traits(classInstanceSize, ThreadGroup) == 24);
+}
+else
+{
+    static assert((void*).sizeof == 4); // 32-bit
+    static assert(__traits(classInstanceSize, ThreadGroup) == 12);
 }
 
 
@@ -4022,6 +4058,33 @@ private:
         tobj.m_curr.tstack = tobj.m_curr.bstack;
     }
 }
+
+// These must be kept in sync with core/thread.di
+version (D_LP64)
+{
+    version (Windows)
+        static assert(__traits(classInstanceSize, Fiber) == 88);
+    else version (OSX)
+        static assert(__traits(classInstanceSize, Fiber) == 88);
+    else version (Posix)
+        static assert(__traits(classInstanceSize, Fiber) == 88);
+    else
+        static assert(0, "Platform not supported.");
+}
+else
+{
+    static assert((void*).sizeof == 4); // 32-bit
+
+    version (Windows)
+        static assert(__traits(classInstanceSize, Fiber) == 44);
+    else version (OSX)
+        static assert(__traits(classInstanceSize, Fiber) == 44);
+    else version (Posix)
+        static assert(__traits(classInstanceSize, Fiber) == 44);
+    else
+        static assert(0, "Platform not supported.");
+}
+
 
 version( unittest )
 {
