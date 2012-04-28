@@ -326,6 +326,10 @@ class TypeInfo
     {   arg1 = this;
         return 0;
     }
+
+    /** Return info used by the garbage collector to do precise collection.
+     */
+    @property immutable(void)* rtInfo() nothrow pure const @safe { return null; }
 }
 
 class TypeInfo_Vector : TypeInfo
@@ -387,6 +391,8 @@ class TypeInfo_Typedef : TypeInfo
     version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
     {   return base.argTypes(arg1, arg2);
     }
+
+    @property override immutable(void)* rtInfo() { return base.rtInfo; }
 
     TypeInfo base;
     string   name;
@@ -845,7 +851,9 @@ class TypeInfo_Class : TypeInfo
     void*       deallocator;
     OffsetTypeInfo[] m_offTi;
     void function(Object) defaultConstructor;   // default Constructor
-    const(MemberInfo[]) function(in char[]) xgetMembers;
+
+    immutable(void)* m_RTInfo;        // data for precise GC
+    @property override immutable(void)* rtInfo() { return m_RTInfo; }
 
     /**
      * Search all modules for TypeInfo_Class corresponding to classname.
@@ -882,17 +890,6 @@ class TypeInfo_Class : TypeInfo
             defaultConstructor(o);
         }
         return o;
-    }
-
-    /**
-     * Search for all members with the name 'name'.
-     * If name[] is null, return all members.
-     */
-    const(MemberInfo[]) getMembers(in char[] name)
-    {
-        if (m_flags & 16 && xgetMembers)
-            return xgetMembers(name);
-        return null;
     }
 }
 
@@ -1058,13 +1055,13 @@ class TypeInfo_Struct : TypeInfo
     char[]   function(in void*)           xtoString;
 
     uint m_flags;
-
-    const(MemberInfo[]) function(in char[]) xgetMembers;
   }
     void function(void*)                    xdtor;
     void function(void*)                    xpostblit;
 
     uint m_align;
+
+    @property override immutable(void)* rtInfo() { return m_RTInfo; }
 
     version (X86_64)
     {
@@ -1076,6 +1073,7 @@ class TypeInfo_Struct : TypeInfo
         TypeInfo m_arg1;
         TypeInfo m_arg2;
     }
+    immutable(void)* m_RTInfo;                // data for precise GC
 }
 
 unittest
@@ -2510,4 +2508,13 @@ bool _ArrayEq(T1, T2)(T1[] a1, T2[] a2)
 bool _xopEquals(in void*, in void*)
 {
     throw new Error("TypeInfo.equals is not implemented");
+}
+
+/******************************************
+ * Create RTInfo for type T
+ */
+
+template RTInfo(T)
+{
+    enum RTInfo = null;
 }

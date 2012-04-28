@@ -26,7 +26,7 @@ ifeq (Win,$(findstring Win,$(OS)))
 	OS:=win32
 endif
 
-DMD=dmd
+DMD?=dmd
 
 MKDIR=mkdir
 
