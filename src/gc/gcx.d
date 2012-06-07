@@ -8,7 +8,7 @@
 
 /*          Copyright Digital Mars 2001 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE_1_0.txt or copy at
+ *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module gc.gcx;
@@ -268,7 +268,7 @@ debug (LOGGING)
 
 const uint GCVERSION = 1;       // increment every time we change interface
                                 // to GC.
-                              
+
 // This just makes Mutex final to de-virtualize member function calls.
 final class GCMutex : Mutex {}
 
@@ -281,7 +281,7 @@ class GC
     uint gcversion = GCVERSION;
 
     Gcx *gcx;                   // implementation
-    
+
     // We can't allocate a Mutex on the GC heap because we are the GC.
     // Store it in the static data segment instead.
     __gshared GCMutex gcLock;    // global lock
@@ -336,7 +336,7 @@ class GC
             assert(gcx.disabled > 0);
             gcx.disabled--;
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -355,7 +355,7 @@ class GC
         {
             gcx.disabled++;
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -392,7 +392,7 @@ class GC
         {
             return go();
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -430,7 +430,7 @@ class GC
         {
             return go();
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -468,7 +468,7 @@ class GC
         {
             return go();
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -492,7 +492,7 @@ class GC
         void* p = void;
         size_t localAllocSize = void;
         if(alloc_size is null) alloc_size = &localAllocSize;
-        
+
         // Since a finalizer could launch a new thread, we always need to lock
         // when collecting.  The safest way to do this is to simply always lock
         // when allocating.
@@ -506,7 +506,7 @@ class GC
         {
             memset(p + size, 0, *alloc_size - size);
         }
-        
+
         return p;
     }
 
@@ -609,14 +609,14 @@ class GC
      *
      */
     void *calloc(size_t size, uint bits = 0, size_t *alloc_size = null)
-    {      
+    {
         if (!size)
         {
             if(alloc_size)
                 *alloc_size = 0;
             return null;
         }
-    
+
         size_t localAllocSize = void;
         void* p = void;
         if(alloc_size is null) alloc_size = &localAllocSize;
@@ -629,13 +629,13 @@ class GC
             scope(exit) gcLock.unlock();
             p = mallocNoSync(size, bits, alloc_size);
         }
-        
+
         memset(p, 0, size);
         if (!(bits & BlkAttr.NO_SCAN))
         {
             memset(p + size, 0, *alloc_size - size);
         }
-        
+
         return p;
     }
 
@@ -647,7 +647,7 @@ class GC
         size_t localAllocSize = void;
         auto oldp = p;
         if(alloc_size is null) alloc_size = &localAllocSize;
-        
+
         // Since a finalizer could launch a new thread, we always need to lock
         // when collecting.  The safest way to do this is to simply always lock
         // when allocating.
@@ -656,12 +656,12 @@ class GC
             scope(exit) gcLock.unlock();
             p = reallocNoSync(p, size, bits, alloc_size);
         }
-        
+
         if (p !is oldp && !(bits & BlkAttr.NO_SCAN))
         {
             memset(p + size, 0, *alloc_size - size);
         }
-        
+
         return p;
     }
 
@@ -970,7 +970,7 @@ class GC
         {
             return freeNoSync(p);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1047,7 +1047,7 @@ class GC
         {
             return addrOfNoSync(p);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1085,7 +1085,7 @@ class GC
         {
             return sizeOfNoSync(p);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1182,7 +1182,7 @@ class GC
         {
             checkNoSync(p);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1272,7 +1272,7 @@ class GC
         {
             gcx.addRoot(p);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1295,7 +1295,7 @@ class GC
         {
             gcx.removeRoot(p);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1313,7 +1313,7 @@ class GC
         {
             return &gcx.rootIter;
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1337,7 +1337,7 @@ class GC
         {
             gcx.addRange(p, p + sz);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1379,7 +1379,7 @@ class GC
         {
             return &gcx.rangeIter;
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
@@ -1464,7 +1464,7 @@ class GC
         {
             getStatsNoSync(stats);
         }
-        else 
+        else
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();

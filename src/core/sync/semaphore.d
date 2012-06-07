@@ -9,7 +9,7 @@
 
 /*          Copyright Sean Kelly 2005 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE_1_0.txt or copy at
+ *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module core.sync.semaphore;
@@ -260,8 +260,8 @@ class Semaphore
 
 
     /**
-     * $(RED Scheduled for deprecation in January 2012. Please use the version
-     *       which takes a $(D Duration) instead.)
+     * $(RED Deprecated. It will be removed in December 2012. Please use the
+     *       version which takes a $(D Duration) instead.)
      *
      * Suspends the calling thread until the current count moves above zero or
      * until the supplied time period has elapsed.  If the count moves above
@@ -282,7 +282,7 @@ class Semaphore
      * Returns:
      *  true if notified before the timeout and false if not.
      */
-    bool wait( long period )
+    deprecated bool wait( long period )
     in
     {
         assert( period >= 0 );

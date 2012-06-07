@@ -33,7 +33,7 @@ MKDIR=mkdir
 DOCDIR=doc
 IMPDIR=import
 
-MODEL=32
+MODEL?=32
 
 DFLAGS=-m$(MODEL) -O -release -inline -nofloat -w -d -Isrc -Iimport -property
 UDFLAGS=-m$(MODEL) -O -release -nofloat -w -d -Isrc -Iimport -property
@@ -55,13 +55,13 @@ else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
 endif
 
-DOCFMT=
+DOCFMT=-version=CoreDdoc
 
 target : import $(DRUNTIME) doc
 
 MANIFEST= \
-	LICENSE_1_0.txt \
-	README.txt \
+	LICENSE \
+	README \
 	posix.mak \
 	win32.mak \
 	\
@@ -80,7 +80,6 @@ MANIFEST= \
 	src/core/simd.d \
 	src/core/thread.d \
 	src/core/thread.di \
-	src/core/threadasm.S \
 	src/core/time.d \
 	src/core/vararg.d \
 	\
@@ -195,7 +194,6 @@ MANIFEST= \
 	src/rt/arrayshort.d \
 	src/rt/cast_.d \
 	src/rt/cmath2.d \
-	src/rt/compiler.d \
 	src/rt/complex.c \
 	src/rt/cover.d \
 	src/rt/critical_.d \
@@ -419,7 +417,7 @@ else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
     DOTEXE =
     O = o
-    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o $(OBJDIR)/complex.o
+    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/complex.o
 endif
 
 DOCS=\
@@ -582,10 +580,6 @@ $(OBJDIR)/%.$O : src/rt/%.c
 $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
 	@$(MKDIR) -p $(OBJDIR)
 	$(CC) -c $(CFLAGS) $< -o$@
-
-$(OBJDIR)/threadasm.$O : src/core/threadasm.S
-	@$(MKDIR) -p $(OBJDIR)
-	$(CC) -Wa,-noexecstack -c $(CFLAGS) $< -o$@
 
 ################### Library generation #########################
 

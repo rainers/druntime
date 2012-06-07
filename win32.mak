@@ -16,13 +16,13 @@ DRUNTIME_BASE=druntime
 DRUNTIME=lib\$(DRUNTIME_BASE).lib
 GCSTUB=lib\gcstub.obj
 
-DOCFMT=
+DOCFMT=-version=CoreDdoc
 
 target : import $(DRUNTIME) doc $(GCSTUB)
 
 MANIFEST= \
-	LICENSE_1_0.txt \
-	README.txt \
+	LICENSE \
+	README \
 	posix.mak \
 	win32.mak \
 	\
@@ -41,7 +41,6 @@ MANIFEST= \
 	src\core\simd.d \
 	src\core\thread.d \
 	src\core\thread.di \
-	src\core\threadasm.S \
 	src\core\time.d \
 	src\core\vararg.d \
 	\
@@ -157,7 +156,6 @@ MANIFEST= \
 	src\rt\arrayshort.d \
 	src\rt\cast_.d \
 	src\rt\cmath2.d \
-	src\rt\compiler.d \
 	src\rt\complex.c \
 	src\rt\cover.d \
 	src\rt\critical.c \

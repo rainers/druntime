@@ -9,7 +9,7 @@
 
 /*          Copyright Sean Kelly 2005 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE_1_0.txt or copy at
+ *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  * Source: $(LINK http://www.dsource.org/projects/druntime/browser/trunk/src/core/thread.d)
  */
@@ -318,8 +318,8 @@ class Thread
 
 
     /**
-     * $(RED Scheduled for deprecation in January 2012. Please use the version
-     *       which takes a $(D Duration) instead.)
+     * $(RED Deprecated. It will be removed in December 2012. Please use the
+     *       version which takes a $(D Duration) instead.)
      *
      * Suspends the calling thread for at least the supplied period.  This may
      * result in multiple OS calls if period is greater than the maximum sleep
@@ -340,7 +340,7 @@ class Thread
      *
      * ------------------------------------------------------------------------
      */
-    static void sleep( long period );
+    deprecated static void sleep( long period );
 
 
     /**
@@ -359,7 +359,8 @@ class Thread
      *
      * Returns:
      *  The thread object representing the calling thread.  The result of
-     *  deleting this object is undefined.
+     *  deleting this object is undefined.  If the current thread is not
+     *  attached to the runtime, a null reference is returned.
      */
     static Thread getThis();
 
@@ -403,9 +404,6 @@ class Thread
     ///////////////////////////////////////////////////////////////////////////
     // Stuff That Should Go Away
     ///////////////////////////////////////////////////////////////////////////
-
-
-    deprecated alias thread_findByAddr findThread;
 
 
 private:
@@ -467,7 +465,7 @@ extern (C) bool thread_isMainThread();
 
 /**
  * Registers the calling thread for use with the D Runtime.  If this routine
- * is called for a thread which is already registered, the result is undefined.
+ * is called for a thread which is already registered, no action is performed.
  */
 extern (C) Thread thread_attachThis();
 
@@ -489,21 +487,12 @@ version( Windows )
 
     /// ditto
     extern (C) Thread thread_attachByAddrB( Thread.ThreadAddr addr, void* bstack );
-
-    /// This should be handled automatically by thread_attach.
-    deprecated extern (C) void thread_setNeedLock( bool need ) nothrow;
-
-    /// Renamed to be more consistent with other extern (C) routines.
-    deprecated alias thread_attachByAddr thread_attach;
-
-    /// ditto
-    deprecated alias thread_detachByAddr thread_detach;
 }
 
 
 /**
  * Deregisters the calling thread from use with the runtime.  If this routine
- * is called for a thread which is not registered, the result is undefined.
+ * is called for a thread which is not registered, no action is performed.
  */
 extern (C) void thread_detachThis();
 
@@ -831,7 +820,7 @@ class Fiber
      * D function.
      *
      * Params:
-     *  fn = The thread function.
+     *  fn = The fiber function.
      *  sz = The stack size for this fiber.
      *
      * In:
@@ -845,7 +834,7 @@ class Fiber
      * D function.
      *
      * Params:
-     *  dg = The thread function.
+     *  dg = The fiber function.
      *  sz = The stack size for this fiber.
      *
      * In:
@@ -894,11 +883,20 @@ class Fiber
      * classes, for example, may not be cleaned up properly if a fiber is reset
      * before it has terminated.
      *
+     * Params:
+     *  fn = The fiber function.
+     *  dg = The fiber function.
+     *
      * In:
      *  This fiber must be in state TERM.
      */
     final void reset();
 
+    /// ditto
+    final void reset( void function() fn );
+
+    /// ditto
+    final void reset( void delegate() dg );
 
     ///////////////////////////////////////////////////////////////////////////
     // General Properties

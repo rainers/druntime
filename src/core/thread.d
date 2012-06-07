@@ -9,7 +9,7 @@
 
 /*          Copyright Sean Kelly 2005 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE_1_0.txt or copy at
+ *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  * Source: $(LINK http://www.dsource.org/projects/druntime/browser/trunk/src/core/thread.d)
  */
@@ -1099,8 +1099,8 @@ class Thread
 
 
     /**
-     * $(RED Scheduled for deprecation in January 2012. Please use the version
-     *       which takes a $(D Duration) instead.)
+     * $(RED Deprecated. It will be removed in December 2012. Please use the
+     *       version which takes a $(D Duration) instead.)
      *
      * Suspends the calling thread for at least the supplied period.  This may
      * result in multiple OS calls if period is greater than the maximum sleep
@@ -1121,7 +1121,7 @@ class Thread
      *
      * ------------------------------------------------------------------------
      */
-    static void sleep( long period )
+    deprecated static void sleep( long period )
     in
     {
         assert( period >= 0 );
@@ -1138,16 +1138,9 @@ class Thread
     static void yield()
     {
         version( Windows )
-        {
-            // NOTE: Sleep(1) is necessary because Sleep(0) does not give
-            //       lower priority threads any timeslice, so looping on
-            //       Sleep(0) could be resource-intensive in some cases.
-            Sleep( 1 );
-        }
+            SwitchToThread();
         else version( Posix )
-        {
             sched_yield();
-        }
     }
 
 
@@ -1161,7 +1154,8 @@ class Thread
      *
      * Returns:
      *  The thread object representing the calling thread.  The result of
-     *  deleting this object is undefined.
+     *  deleting this object is undefined.  If the current thread is not
+     *  attached to the runtime, a null reference is returned.
      */
     static Thread getThis()
     {
@@ -1283,9 +1277,6 @@ class Thread
     ///////////////////////////////////////////////////////////////////////////
     // Stuff That Should Go Away
     ///////////////////////////////////////////////////////////////////////////
-
-
-    deprecated alias thread_findByAddr findThread;
 
 
 private:
@@ -1798,6 +1789,41 @@ else
         static assert(0, "Platform not supported.");
 }
 
+
+unittest
+{
+    int x = 0;
+
+    auto t = new Thread(
+    {
+        x++;
+    });
+    t.start(); t.join();
+    assert( x == 1 );
+}
+
+
+unittest
+{
+    enum MSG = "Test message.";
+    string caughtMsg;
+
+    try
+    {
+        auto t = new Thread(
+        {
+            throw new Exception( MSG );
+        });
+        t.start(); t.join();
+        assert( false, "Expected rethrown exception." );
+    }
+    catch( Throwable t )
+    {
+        assert( t.msg == MSG );
+    }
+}
+
+
 ///////////////////////////////////////////////////////////////////////////////
 // GC Support Routines
 ///////////////////////////////////////////////////////////////////////////////
@@ -1889,11 +1915,14 @@ extern (C) bool thread_isMainThread()
 
 /**
  * Registers the calling thread for use with the D Runtime.  If this routine
- * is called for a thread which is already registered, the result is undefined.
+ * is called for a thread which is already registered, no action is performed.
  */
 extern (C) Thread thread_attachThis()
 {
     gc_disable(); scope(exit) gc_enable();
+
+    if (auto t = Thread.getThis())
+        return t;
 
     Thread          thisThread  = new Thread();
     Thread.Context* thisContext = &thisThread.m_main;
@@ -1979,85 +2008,48 @@ version( Windows )
     {
         gc_disable(); scope(exit) gc_enable();
 
+        if (auto t = thread_findByAddr(addr))
+            return t;
+
         Thread          thisThread  = new Thread();
         Thread.Context* thisContext = &thisThread.m_main;
         assert( thisContext == thisThread.m_curr );
 
-        version( Windows )
-        {
-            thisThread.m_addr  = addr;
-            thisContext.bstack = bstack;
-            thisContext.tstack = thisContext.bstack;
+        thisThread.m_addr  = addr;
+        thisContext.bstack = bstack;
+        thisContext.tstack = thisContext.bstack;
 
-            if( addr == GetCurrentThreadId() )
-            {
-                thisThread.m_hndl = GetCurrentThreadHandle();
-            }
-            else
-            {
-                thisThread.m_hndl = OpenThreadHandle( addr );
-            }
-        }
-        else version( Posix )
+        if( addr == GetCurrentThreadId() )
         {
-            thisThread.m_addr  = addr;
-            thisContext.bstack = bstack;
-            thisContext.tstack = thisContext.bstack;
-
-            thisThread.m_isRunning = true;
-        }
-        thisThread.m_isDaemon = true;
-
-        version( OSX )
-        {
-            thisThread.m_tmach = pthread_mach_thread_np( thisThread.m_addr );
-            assert( thisThread.m_tmach != thisThread.m_tmach.init );
-        }
-
-        version (OSX)
-        {
-            // NOTE: OSX does not support TLS, so we do it ourselves.  The TLS
-            //       data output by the compiler is bracketed by _tls_data_array[2],
-            //       so make a copy of it for each thread.
-            const sz0 = (_tls_data_array[0].length + 15) & ~cast(size_t)15;
-            const sz2 = sz0 + _tls_data_array[1].length;
-            auto p = gc_malloc( sz2 );
-            assert( p );
-            obj.m_tls = p[0 .. sz2];
-            memcpy( p, _tls_data_array[0].ptr, _tls_data_array[0].length );
-            memcpy( p + sz0, _tls_data_array[1].ptr, _tls_data_array[1].length );
-            // used gc_malloc so no need to free
-
-            if( t.m_addr == pthread_self() )
-                Thread.setThis( thisThread );
-        }
-        else version( Windows )
-        {
-            if( addr == GetCurrentThreadId() )
-            {
-                auto pstart = cast(void*) &_tlsstart;
-                auto pend   = cast(void*) &_tlsend;
-                thisThread.m_tls = pstart[0 .. pend - pstart];
-                Thread.setThis( thisThread );
-            }
-            else
-            {
-                // TODO: This seems wrong.  If we're binding threads from
-                //       a DLL, will they always have space reserved for
-                //       the TLS chunk we expect?  I don't know Windows
-                //       well enough to say.
-                auto pstart = cast(void*) &_tlsstart;
-                auto pend   = cast(void*) &_tlsend;
-                auto pos    = GetTlsDataAddress( thisThread.m_hndl );
-                if( pos ) // on x64, threads without TLS happen to exist
-                    thisThread.m_tls = pos[0 .. pend - pstart];
-                else
-                    thisThread.m_tls = [];
-            }
+            thisThread.m_hndl = GetCurrentThreadHandle();
         }
         else
         {
-            static assert( false, "Platform not supported." );
+            thisThread.m_hndl = OpenThreadHandle( addr );
+        }
+
+        thisThread.m_isDaemon = true;
+
+        if( addr == GetCurrentThreadId() )
+        {
+            auto pstart = cast(void*) &_tlsstart;
+            auto pend   = cast(void*) &_tlsend;
+            thisThread.m_tls = pstart[0 .. pend - pstart];
+            Thread.setThis( thisThread );
+        }
+        else
+        {
+            // TODO: This seems wrong.  If we're binding threads from
+            //       a DLL, will they always have space reserved for
+            //       the TLS chunk we expect?  I don't know Windows
+            //       well enough to say.
+            auto pstart = cast(void*) &_tlsstart;
+            auto pend   = cast(void*) &_tlsend;
+            auto pos    = GetTlsDataAddress( thisThread.m_hndl );
+            if( pos ) // on x64, threads without TLS happen to exist
+                thisThread.m_tls = pos[0 .. pend - pstart];
+            else
+                thisThread.m_tls = [];
         }
 
         Thread.add( thisThread );
@@ -2067,22 +2059,6 @@ version( Windows )
         thisThread.m_tlsgcdata = rt.tlsgc.init();
         return thisThread;
     }
-
-
-    /// This should be handled automatically by thread_attach.
-    deprecated extern (C) void thread_setNeedLock( bool need ) nothrow
-    {
-        if( need )
-            multiThreadedFlag = true;
-    }
-
-
-    /// Renamed to be more consistent with other extern (C) routines.
-    deprecated alias thread_attachByAddr thread_attach;
-
-
-    /// ditto
-    deprecated alias thread_detachByAddr thread_detach;
 }
 
 
@@ -2092,7 +2068,8 @@ version( Windows )
  */
 extern (C) void thread_detachThis()
 {
-    Thread.remove( Thread.getThis() );
+    if (auto t = Thread.getThis())
+        Thread.remove(t);
 }
 
 
@@ -3290,7 +3267,7 @@ class Fiber
      * D function.
      *
      * Params:
-     *  fn = The thread function.
+     *  fn = The fiber function.
      *  sz = The stack size for this fiber.
      *
      * In:
@@ -3303,11 +3280,8 @@ class Fiber
     }
     body
     {
-        m_fn    = fn;
-        m_call  = Call.FN;
-        m_state = State.HOLD;
         allocStack( sz );
-        initStack();
+        reset( fn );
     }
 
 
@@ -3316,7 +3290,7 @@ class Fiber
      * D function.
      *
      * Params:
-     *  dg = The thread function.
+     *  dg = The fiber function.
      *  sz = The stack size for this fiber.
      *
      * In:
@@ -3329,11 +3303,8 @@ class Fiber
     }
     body
     {
-        m_dg    = dg;
-        m_call  = Call.DG;
-        m_state = State.HOLD;
         allocStack( sz );
-        initStack();
+        reset( dg );
     }
 
 
@@ -3431,6 +3402,10 @@ class Fiber
      * classes, for example, may not be cleaned up properly if a fiber is reset
      * before it has terminated.
      *
+     * Params:
+     *  fn = The fiber function.
+     *  dg = The fiber function.
+     *
      * In:
      *  This fiber must be in state TERM.
      */
@@ -3447,6 +3422,21 @@ class Fiber
         m_unhandled = null;
     }
 
+    /// ditto
+    final void reset( void function() fn )
+    {
+        reset();
+        m_fn    = fn;
+        m_call  = Call.FN;
+    }
+
+    /// ditto
+    final void reset( void delegate() dg )
+    {
+        reset();
+        m_dg    = dg;
+        m_call  = Call.DG;
+    }
 
     ///////////////////////////////////////////////////////////////////////////
     // General Properties
@@ -4165,11 +4155,13 @@ version( unittest )
     }
 }
 
+
 // Single thread running separate fibers
 unittest
 {
     runTen();
 }
+
 
 // Multiple threads running separate fibers
 unittest
@@ -4181,6 +4173,7 @@ unittest
     }
     group.joinAll();
 }
+
 
 // Multiple threads running shared fibers
 unittest
@@ -4230,6 +4223,7 @@ unittest
     }
 }
 
+
 // Test exception handling inside fibers.
 unittest
 {
@@ -4247,6 +4241,78 @@ unittest
     })).call();
     assert(caughtMsg == MSG);
 }
+
+
+unittest
+{
+    int x = 0;
+
+    (new Fiber({
+        x++;
+    })).call();
+    assert( x == 1 );
+}
+
+
+unittest
+{
+    enum MSG = "Test message.";
+
+    try
+    {
+        (new Fiber({
+            throw new Exception( MSG );
+        })).call();
+        assert( false, "Expected rethrown exception." );
+    }
+    catch( Throwable t )
+    {
+        assert( t.msg == MSG );
+    }
+}
+
+
+// Test Fiber resetting
+unittest
+{
+    static string method;
+
+    static void foo()
+    {
+        method = "foo";
+    }
+
+    void bar()
+    {
+        method = "bar";
+    }
+
+    static void expect(Fiber fib, string s)
+    {
+        assert(fib.state == Fiber.State.HOLD);
+        fib.call();
+        assert(fib.state == Fiber.State.TERM);
+        assert(method == s); method = null;
+    }
+    auto fib = new Fiber(&foo);
+    expect(fib, "foo");
+
+    fib.reset();
+    expect(fib, "foo");
+
+    fib.reset(&foo);
+    expect(fib, "foo");
+
+    fib.reset(&bar);
+    expect(fib, "bar");
+
+    fib.reset(function void(){method = "function";});
+    expect(fib, "function");
+
+    fib.reset(delegate void(){method = "delegate";});
+    expect(fib, "delegate");
+}
+
 
 version( AsmX86_64_Posix )
 {
@@ -4266,6 +4332,7 @@ version( AsmX86_64_Posix )
         fib.call();
     }
 }
+
 
 version( OSX )
 {

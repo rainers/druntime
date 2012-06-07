@@ -9,7 +9,7 @@
 
 /*          Copyright Sean Kelly 2005 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE_1_0.txt or copy at
+ *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module core.runtime;
@@ -17,8 +17,6 @@ module core.runtime;
 
 private
 {
-    extern (C) bool rt_isHalting();
-
     alias bool function() ModuleUnitTester;
     alias bool function(Object) CollectHandler;
     alias Throwable.TraceInfo function( void* ptr ) TraceHandler;
@@ -133,20 +131,6 @@ struct Runtime
     static bool terminate( ExceptionHandler dg = null )
     {
         return rt_term( dg );
-    }
-
-
-    /**
-     * Returns true if the runtime is halting.  Under normal circumstances,
-     * this will be set between the time that normal application code has
-     * exited and before module dtors are called.
-     *
-     * Returns:
-     *  true if the runtime is halting.
-     */
-    deprecated static @property bool isHalting()
-    {
-        return rt_isHalting();
     }
 
 
@@ -420,7 +404,7 @@ Throwable.TraceInfo defaultTraceHandler( void* ptr = null )
                         auto stackPtr = stackTop;
 
                         for( numframes = 0; stackTop <= stackPtr &&
-                                            stackPtr < stackBottom && 
+                                            stackPtr < stackBottom &&
                                             numframes < MAXFRAMES; )
                         {
                             callstack[numframes++] = *(stackPtr + 1);

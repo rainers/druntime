@@ -10,7 +10,7 @@
 
 /*          Copyright Sean Kelly 2005 - 2009.
  * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE_1_0.txt or copy at
+ *    (See accompanying file LICENSE or copy at
  *          http://www.boost.org/LICENSE_1_0.txt)
  */
 module core.sync.condition;
@@ -211,8 +211,8 @@ class Condition
 
 
     /**
-     * $(RED Scheduled for deprecation in January 2012. Please use the version
-     *       which takes a $(D Duration) instead.)
+     * $(RED Deprecated. It will be removed in December 2012. Please use the
+     *       version which takes a $(D Duration) instead.)
      *
      * Suspends the calling thread until a notification occurs or until the
      * supplied time period has elapsed.
@@ -231,7 +231,7 @@ class Condition
      * Returns:
      *  true if notified before the timeout and false if not.
      */
-    bool wait( long period )
+    deprecated bool wait( long period )
     in
     {
         assert( period >= 0 );
