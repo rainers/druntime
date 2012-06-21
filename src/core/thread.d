@@ -387,7 +387,7 @@ else version( Posix )
             Thread.add( &obj.m_main );
             obj.m_tlsgcdata = rt.tlsgc.init();
 
-            static extern (C) void thread_cleanupHandler( void* arg )
+            static extern (C) void thread_cleanupHandler( void* arg ) nothrow
             {
                 Thread  obj = cast(Thread) arg;
                 assert( obj );
@@ -2100,6 +2100,22 @@ static Thread thread_findByAddr( Thread.ThreadAddr addr )
         }
     }
     return null;
+}
+
+
+/**
+ * Sets the current thread to a specific reference. Only to be used
+ * when dealing with externally-created threads (in e.g. C code).
+ * The primary use of this function is when Thread.getThis() must
+ * return a sensible value in, for example, TLS destructors. In
+ * other words, don't touch this unless you know what you're doing.
+ *
+ * Params:
+ *  t = A reference to the current thread. May be null.
+ */
+extern (C) void thread_setThis(Thread t)
+{
+    Thread.setThis(t);
 }
 
 

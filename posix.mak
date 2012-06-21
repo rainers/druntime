@@ -35,8 +35,8 @@ IMPDIR=import
 
 MODEL?=32
 
-DFLAGS=-m$(MODEL) -O -release -inline -nofloat -w -d -Isrc -Iimport -property
-UDFLAGS=-m$(MODEL) -O -release -nofloat -w -d -Isrc -Iimport -property
+DFLAGS=-m$(MODEL) -O -release -inline -w -d -Isrc -Iimport -property
+UDFLAGS=-m$(MODEL) -O -release -w -d -Isrc -Iimport -property
 DMDDEP = $(shell which $(DMD))
 DDOCFLAGS=-m$(MODEL) -c -w -d -o- -Isrc -Iimport
 
