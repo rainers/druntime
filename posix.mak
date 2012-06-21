@@ -577,6 +577,13 @@ $(IMPDIR)/%.di : src/%.di
 $(IMPDIR)/%.d : src/%.d
 	cp $< $@
 
+ifeq (win,$(findstring win,$(OS)))
+else
+# building on windows fails, but file is still generated
+$(IMPDIR)/core/sys/freebsd/%.di : src/core/sys/freebsd/%.di
+	-$(DMD) -m$(MODEL) -c -d -o- -Isrc -Iimport -Hf$@ $<
+endif
+
 ################### C/ASM Targets ############################
 
 $(OBJDIR)/%.o : src/rt/%.c
