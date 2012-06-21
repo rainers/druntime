@@ -571,6 +571,13 @@ $(IMPDIR)/core/%.di : src/core/%.di
 $(IMPDIR)/core/%.di : src/core/%.d
 	$(DMD) -m$(MODEL) -c -d -o- -Isrc -Iimport -Hf$@ $<
 
+ifeq (win,$(findstring win,$(OS)))
+else
+# building on windows fails, but file is still generated
+$(IMPDIR)/core/sys/freebsd/%.di : src/core/sys/freebsd/%.di
+	-$(DMD) -m$(MODEL) -c -d -o- -Isrc -Iimport -Hf$@ $<
+endif
+
 ################### C/ASM Targets ############################
 
 $(OBJDIR)/%.$O : src/rt/%.c
