@@ -122,7 +122,6 @@ private
 {
     extern (C) void rt_finalize_gc(void* p);
 
-    extern (C) bool thread_needLock();
     extern (C) void thread_suspendAll();
     extern (C) void thread_resumeAll();
 
@@ -310,18 +309,10 @@ class GC
      */
     void enable()
     {
-        if (!thread_needLock())
-        {
-            assert(gcx.disabled > 0);
-            gcx.disabled--;
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            assert(gcx.disabled > 0);
-            gcx.disabled--;
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        assert(gcx.disabled > 0);
+        gcx.disabled--;
     }
 
 
@@ -330,16 +321,9 @@ class GC
      */
     void disable()
     {
-        if (!thread_needLock())
-        {
-            gcx.disabled++;
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            gcx.disabled++;
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.disabled++;
     }
 
 
@@ -367,16 +351,9 @@ class GC
             return oldb;
         }
 
-        if (!thread_needLock())
-        {
-            return go();
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return go();
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return go();
     }
 
 
@@ -405,16 +382,9 @@ class GC
             return oldb;
         }
 
-        if (!thread_needLock())
-        {
-            return go();
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return go();
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return go();
     }
 
 
@@ -443,16 +413,9 @@ class GC
             return oldb;
         }
 
-        if (!thread_needLock())
-        {
-            return go();
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return go();
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return go();
     }
 
 
@@ -812,16 +775,9 @@ class GC
      */
     size_t extend(void* p, size_t minsize, size_t maxsize)
     {
-        if (!thread_needLock())
-        {
-            return extendNoSync(p, minsize, maxsize);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return extendNoSync(p, minsize, maxsize);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return extendNoSync(p, minsize, maxsize);
     }
 
 
@@ -907,16 +863,9 @@ class GC
             return 0;
         }
 
-        if (!thread_needLock())
-        {
-            return reserveNoSync(size);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return reserveNoSync(size);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return reserveNoSync(size);
     }
 
 
@@ -945,16 +894,9 @@ class GC
             return;
         }
 
-        if (!thread_needLock())
-        {
-            return freeNoSync(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return freeNoSync(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return freeNoSync(p);
     }
 
 
@@ -1022,16 +964,9 @@ class GC
             return null;
         }
 
-        if (!thread_needLock())
-        {
-            return addrOfNoSync(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return addrOfNoSync(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return addrOfNoSync(p);
     }
 
 
@@ -1060,16 +995,9 @@ class GC
             return 0;
         }
 
-        if (!thread_needLock())
-        {
-            return sizeOfNoSync(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return sizeOfNoSync(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return sizeOfNoSync(p);
     }
 
 
@@ -1120,16 +1048,9 @@ class GC
             return  i;
         }
 
-        if (!thread_needLock())
-        {
-            return queryNoSync(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return queryNoSync(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return queryNoSync(p);
     }
 
 
@@ -1157,16 +1078,9 @@ class GC
             return;
         }
 
-        if (!thread_needLock())
-        {
-            checkNoSync(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            checkNoSync(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        checkNoSync(p);
     }
 
 
@@ -1221,16 +1135,9 @@ class GC
             return;
         }
 
-        if (!thread_needLock())
-        {
-            gcx.addRoot(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            gcx.addRoot(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.addRoot(p);
     }
 
 
@@ -1244,16 +1151,9 @@ class GC
             return;
         }
 
-        if (!thread_needLock())
-        {
-            gcx.removeRoot(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            gcx.removeRoot(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.removeRoot(p);
     }
 
 
@@ -1262,16 +1162,9 @@ class GC
      */
     @property int delegate(int delegate(ref void*)) rootIter()
     {
-        if (!thread_needLock())
-        {
-            return &gcx.rootIter;
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return &gcx.rootIter;
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return &gcx.rootIter;
     }
 
 
@@ -1286,16 +1179,11 @@ class GC
         }
 
         //debug(PRINTF) printf("+GC.addRange(p = %p, sz = 0x%zx), p + sz = %p\n", p, sz, p + sz);
-        if (!thread_needLock())
-        {
-            gcx.addRange(p, p + sz);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            gcx.addRange(p, p + sz);
-        }
+
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.addRange(p, p + sz);
+
         //debug(PRINTF) printf("-GC.addRange()\n");
     }
 
@@ -1310,16 +1198,9 @@ class GC
             return;
         }
 
-        if (!thread_needLock())
-        {
-            gcx.removeRange(p);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            gcx.removeRange(p);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.removeRange(p);
     }
 
 
@@ -1328,16 +1209,9 @@ class GC
      */
     @property int delegate(int delegate(ref Range)) rangeIter()
     {
-        if (!thread_needLock())
-        {
-            return &gcx.rangeIter;
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            return &gcx.rangeIter;
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return &gcx.rangeIter;
     }
 
 
@@ -1394,16 +1268,9 @@ class GC
      */
     void minimize()
     {
-        if (!thread_needLock())
-        {
-            gcx.minimize();
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            gcx.minimize();
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.minimize();
     }
 
 
@@ -1413,16 +1280,9 @@ class GC
      */
     void getStats(out GCStats stats)
     {
-        if (!thread_needLock())
-        {
-            getStatsNoSync(stats);
-        }
-        else
-        {
-            gcLock.lock();
-            scope(exit) gcLock.unlock();
-            getStatsNoSync(stats);
-        }
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        getStatsNoSync(stats);
     }
 
 
