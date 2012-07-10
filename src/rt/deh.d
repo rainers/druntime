@@ -594,13 +594,12 @@ extern(C)
 void _d_throwc(Object h)
 {
     // create a standard stack frame, so walking the stack is possible
-    version(Windows)
-        asm 
-        { 
-            naked; 
-            push EBP; 
-            mov EBP,ESP; 
-        }
+    asm 
+    { 
+        naked; 
+        push EBP; 
+        mov EBP,ESP; 
+    }
     // @@@ TODO @@@ Signature should change: h will always be a Throwable.
 
     //printf("_d_throw(h = %p, &h = %p)\n", h, &h);
@@ -609,28 +608,25 @@ void _d_throwc(Object h)
 
     // add some space on the stack to allow the stack walker to resynchronize
     //  even without symbols for kernel32/kernelbase.dll
-    version(Windows)
-        asm 
-        {
-            mov EAX, 500;
-        clear_stack:
-            push 0;
-            dec EAX;
-            jnz clear_stack;
-            //mov ESP,EBP;
-        }
+    asm 
+    {
+        mov EAX, 1000;
+    clear_stack:
+        push 0;
+        dec EAX;
+        jnz clear_stack;
+    }
 
     //_d_setUnhandled(h);
     RaiseException(STATUS_DIGITAL_MARS_D_EXCEPTION,
                    EXCEPTION_NONCONTINUABLE,
                    1, cast(void *)&h);
 
-    version(Windows)
-        asm
-        {
-            leave;
-            ret;
-        }
+    asm
+    {
+        mov ESP,EBP;
+        pop EBP;
+    }
 }
 
 /***********************************
