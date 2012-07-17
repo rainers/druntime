@@ -381,6 +381,7 @@ SRC_D_MODULES = \
 SRC_D_MODULES_POSIX = \
 	core/sys/freebsd/sys/event \
 	\
+	core/sys/posix/signal \
 	core/sys/posix/sys/select \
 	core/sys/posix/sys/socket \
 	core/sys/posix/sys/stat \
