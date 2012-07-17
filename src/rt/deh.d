@@ -214,6 +214,8 @@ void _d_createTrace(Object);
 int _d_isbaseof(ClassInfo b, ClassInfo c);
 }
 
+class StackTracingThrowable : Throwable { this() { super(""); } }
+
 /+
 
 Implementation of Structured Exception Handling in DMD-Windows
@@ -490,7 +492,10 @@ EXCEPTION_DISPOSITION _d_framehandler(
                              // invalid.
                             er = inflightExceptionList;
                     }
-                    if (_d_isbaseof(masterClassInfo, pcb.type))
+                    auto pcb_type = pcb.type;
+                    if(_d_isbaseof(pcb.type, typeid(StackTracingThrowable))) // behave like a Throwable
+                        pcb_type = typeid(Throwable);
+                    if (_d_isbaseof(masterClassInfo, pcb_type))
                     {
                         // Matched the catch type, so we've found the catch
                         // handler for this exception.
@@ -527,7 +532,7 @@ EXCEPTION_DISPOSITION _d_framehandler(
 
                         for(;;)
                         {
-                            Throwable w = _d_translate_se_to_d_exception(z);
+                            Throwable w = _d_translate_se_to_d_exception(z, pcb.type !is pcb_type);
                             if (z == master && (z.ExceptionFlags & EXCEPTION_COLLATERAL))
                             {   // if it is a short-circuit master, save it
                                 masterError = cast(Error)w;
@@ -592,7 +597,7 @@ int _d_exception_filter(EXCEPTION_POINTERS *eptrs,
                         int retval,
                         Object *exceptionObject)
 {
-    *exceptionObject = _d_translate_se_to_d_exception(eptrs.ExceptionRecord);
+    *exceptionObject = _d_translate_se_to_d_exception(eptrs.ExceptionRecord, true);
     return retval;
 }
 
@@ -613,7 +618,7 @@ private void throwImpl(Object h)
     // @@@ TODO @@@ Signature should change: h will always be a Throwable.
     //printf("_d_throw(h = %p, &h = %p)\n", h, &h);
     //printf("\tvptr = %p\n", *(void **)h);
-    _d_createTrace(h);
+    //_d_createTrace(h);
 
     // add some space on the stack to allow the stack walker to resynchronize
     //  even without symbols for kernel32/kernelbase.dll
@@ -670,7 +675,7 @@ extern(C) void _d_throwc(Object h)
  * Converts a Windows Structured Exception code to a D Throwable Object.
  */
 
-Throwable _d_translate_se_to_d_exception(EXCEPTION_RECORD *exceptionRecord)
+Throwable _d_translate_se_to_d_exception(EXCEPTION_RECORD *exceptionRecord, bool createTrace)
 {
     Throwable pti;
    // BUG: what if _d_newclass() throws an out of memory exception?
@@ -766,7 +771,8 @@ Throwable _d_translate_se_to_d_exception(EXCEPTION_RECORD *exceptionRecord)
             pti = new Error("Win32 Exception");
             break;
     }
-    _d_createTrace(pti);
+    if(createTrace)
+        _d_createTrace(pti);
     return pti;
 }
 

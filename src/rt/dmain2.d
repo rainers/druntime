@@ -27,6 +27,7 @@ private
 version (Windows)
 {
     private import core.stdc.wchar_;
+    private import rt.deh;
 
     extern (Windows) alias int function() FARPROC;
     extern (Windows) FARPROC    GetProcAddress(void*, in char*);
@@ -508,7 +509,7 @@ extern (C) int main(int argc, char** argv)
             {
                 dg();
             }
-            catch (Throwable t)
+            catch (StackTracingThrowable t)
             {
                 print(t);
                 result = EXIT_FAILURE;
