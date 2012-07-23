@@ -15,6 +15,15 @@ module rt.deh;
 import core.sys.windows.windows;
 //import core.stdc.stdio;
 
+version (D_InlineAsm_X86)
+{
+    version = AsmX86;
+}
+else version (D_InlineAsm_X86_64)
+{
+    version = AsmX86;
+}
+
 enum EXCEPTION_DISPOSITION {
     ExceptionContinueExecution,
     ExceptionContinueSearch,
@@ -631,6 +640,47 @@ void _d_throwc(Object h)
     {
         mov ESP,EBP;
         pop EBP;
+    }
+}
+
+/***********************************
+ * Throw a D object.
+ */
+
+private void throwImpl(Object h)
+{
+    // @@@ TODO @@@ Signature should change: h will always be a Throwable.
+    //printf("_d_throw(h = %p, &h = %p)\n", h, &h);
+    //printf("\tvptr = %p\n", *(void **)h);
+    _d_createTrace(h);
+    //_d_setUnhandled(h);
+    RaiseException(STATUS_DIGITAL_MARS_D_EXCEPTION,
+                   EXCEPTION_NONCONTINUABLE,
+                   1, cast(void *)&h);
+}
+
+extern(C) void _d_throwc(Object h)
+{
+    // set up a stack frame for trace unwinding
+    version (AsmX86)
+    {
+        asm
+        {
+            naked;
+            enter 0, 0;
+        }
+        version (D_InlineAsm_X86)
+            asm { mov EAX, [EBP+8]; }
+        asm
+        {
+            call throwImpl;
+            leave;
+            ret;
+        }
+    }
+    else
+    {
+        throwImpl(h);
     }
 }
 

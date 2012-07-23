@@ -35,10 +35,10 @@ IMPDIR=import
 
 MODEL=32
 
-DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -d -Isrc -Iimport -property
-UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -d -Isrc -Iimport -property
+DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
+UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
 DMDDEP = $(shell which $(DMD))
-DDOCFLAGS=-m$(MODEL) -c -w -d -o- -Isrc -Iimport
+DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
 ifeq ($(BUILD),debug)
 	OPTFLAGS=-g
@@ -65,11 +65,8 @@ MANIFEST= \
 	posix.mak \
 	win32.mak \
 	\
-	import/object.di \
-	\
-	import/core/thread.di \
-	\
 	src/object_.d \
+	src/object.di \
 	\
 	src/core/atomic.d \
 	src/core/bitop.d \
@@ -81,6 +78,7 @@ MANIFEST= \
 	src/core/runtime.d \
 	src/core/simd.d \
 	src/core/thread.d \
+	src/core/thread.di \
 	src/core/time.d \
 	src/core/vararg.d \
 	\
@@ -456,6 +454,7 @@ IMPORTS=\
 	$(IMPDIR)/core/sync/semaphore.di
 
 COPY=\
+	$(IMPDIR)/object.di \
 	$(IMPDIR)/core/atomic.d \
 	$(IMPDIR)/core/bitop.d \
 	$(IMPDIR)/core/cpuid.d \
@@ -465,6 +464,7 @@ COPY=\
 	$(IMPDIR)/core/memory.d \
 	$(IMPDIR)/core/runtime.d \
 	$(IMPDIR)/core/simd.d \
+	$(IMPDIR)/core/thread.di \
 	$(IMPDIR)/core/time.d \
 	$(IMPDIR)/core/vararg.d \
 	\
@@ -573,10 +573,10 @@ $(DOCDIR)/core_sync_%.html : src/core/sync/%.d
 
 ######################## Header .di file generation ##############################
 
-import: $(IMPORTS) 
+import: $(IMPORTS)
 
 $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
-	$(DMD) -m$(MODEL) -c -d -o- -Isrc -Iimport -Hf$@ $<
+	$(DMD) -m$(MODEL) -c -o- -Isrc -Iimport -Hf$@ $<
 
 ######################## Header .di file copy ##############################
 
@@ -592,7 +592,10 @@ copydir:
 
 copy: $(COPY)
 
-$(IMPDIR)/core/%.d : src/core/%.d
+$(IMPDIR)/%.di : src/%.di
+	cp $< $@
+
+$(IMPDIR)/%.d : src/%.d
 	cp $< $@
 
 ifeq (win,$(findstring win,$(OS)))
@@ -666,5 +669,4 @@ install: druntime.zip
 	unzip -o druntime.zip -d /dmd2/src/druntime
 
 clean:
-	rm -rf obj lib $(IMPDIR)/core/stdc $(IMPDIR)/core/sync $(IMPDIR)/core/sys doc
-	rm -rf $(IMPDIR)/core/atomic.d $(IMPDIR)/core/bitop.d $(IMPDIR)/core/cpuid.d $(IMPDIR)/core/demangle.d $(IMPDIR)/core/exception.d $(IMPDIR)/core/math.d $(IMPDIR)/core/memory.d $(IMPDIR)/core/runtime.d $(IMPDIR)/core/simd.d $(IMPDIR)/core/time.d $(IMPDIR)/core/vararg.d
+	rm -rf obj lib $(IMPDIR) $(DOCDIR)
