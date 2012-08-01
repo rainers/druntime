@@ -14,6 +14,7 @@
 module gc.gcbits;
 
 
+debug (PRINTF) import core.stdc.stdio : printf;
 private
 {
     import core.bitop;
@@ -182,18 +183,21 @@ struct GCBits
 	for (size_t i = 0; i<destlen; i++)
 	{
 	    bool b;
-	    if (i<sourcelen) b = (source[(target + i)/8] & ((target + i) % 8)) != 0;
+	    if (i<sourcelen) b = (source[(target + i)/8] & BITS_1 << ((target + i) % 8)) != 0;
 	    else b = false;
-	    if (b) set(target);
-	    else clear(target);
+	    if (b) set(target+i);
+	    else clear(target+i);
 	}
     }
     void setRange(size_t target, size_t len, bool content)
     {
-	for (size_t i = target; i<(target+len);i++)
+//	debug(PRINTF) printf("setting %d bits from %d to %d, in a pool of %d bits\n", len, target, content, this.nbits);
+	for (size_t i = 0; i<len;i++)
 	{
-	    if (content) set(target);
-	    else clear(target);
+	    if (content) 
+		this.set(target+i);
+	    else 
+		this.clear(target+i);
 	}
     }
  

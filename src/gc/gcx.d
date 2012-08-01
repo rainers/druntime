@@ -420,7 +420,7 @@ class GC
     
     void setPointerBitmap(void* p, Pool* pool, size_t s, const TypeInfo ti)
     {
-	size_t offset = p-pool;
+	size_t offset = p-pool.baseAddr;
 //	if (!ti) 
 	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
 //	else 
@@ -2356,12 +2356,47 @@ struct Gcx
         void **p2 = cast(void **)ptop;
         size_t pcache = 0;
         uint changes = 0;
+	GCBits * is_pointer = null;
+	byte* hostBaseAddr = null;
 
+	//do we have precise pointer data for the area we are searching? If yes, use it
+	if (cast(byte*)p1 >= minAddr && cast(byte*)p2 < maxAddr)
+	{
+	    auto hostpool1 = findPool(p1);
+	    auto hostpool2 = findPool(p2-1);
+	    
+	    //found host pool
+	    if (hostpool1){
+		//mark call spans multiple pools, this is very bad
+		if (hostpool1 == hostpool2)
+		{
+		    is_pointer = &(hostpool1.is_pointer);
+		    hostBaseAddr = cast(byte*)hostpool1.baseAddr;
+
+//		    debug(PRINTF)
+//		    {
+//			for(;p1<p2; p1++) printf("loc = %p cont = % p biti = %d bit = %d\n", p1, cast(byte*)(*p1),((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof));
+//		    }
+		}
+		else debug(PRINTF) printf("Mark call from %p to %p spans multiple pools.", p1, p2);
+	    }
+	}
         //printf("marking range: %p -> %p\n", pbot, ptop);
         for (; p1 < p2; p1++)
         {
             auto p = cast(byte *)(*p1);
-
+	    if (is_pointer)
+	    {
+		if (!(is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof)!= 0))
+		{
+		//    debug(PRINTF) printf("skipping %p, biti = %d\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof);
+		    continue;
+		}
+		else
+		{
+//		    debug(PRINTF) printf("not skipping %p, biti = %d\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof);
+		}
+	    }
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
             if (p >= minAddr && p < maxAddr)
             {
