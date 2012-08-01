@@ -177,6 +177,26 @@ struct GCBits
         }
     }
 
+    void copyRange(byte* source, size_t target, size_t sourcelen, size_t destlen)
+    {
+	for (size_t i = 0; i<destlen; i++)
+	{
+	    bool b;
+	    if (i<sourcelen) b = (source[(target + i)/8] & ((target + i) % 8)) != 0;
+	    else b = false;
+	    if (b) set(target);
+	    else clear(target);
+	}
+    }
+    void setRange(size_t target, size_t len, bool content)
+    {
+	for (size_t i = target; i<(target+len);i++)
+	{
+	    if (content) set(target);
+	    else clear(target);
+	}
+    }
+ 
     void zero()
     {
         memset(data + 1, 0, nwords * wordtype.sizeof);
