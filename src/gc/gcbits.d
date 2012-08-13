@@ -178,17 +178,31 @@ struct GCBits
         }
     }
 
-    void copyRange(byte* source, size_t target, size_t sourcelen, size_t destlen)
+    void copyRange(const ubyte* source, size_t target, size_t sourcelen, size_t destlen)
     {
 	for (size_t i = 0; i<destlen; i++)
 	{
 	    bool b;
-	    if (i<sourcelen) b = (source[(target + i)/8] & BITS_1 << ((target + i) % 8)) != 0;
+	    if (i<sourcelen) b = (source[i/8] & BITS_1 << (i % 8)) != 0;
 	    else b = false;
 	    if (b) set(target+i);
 	    else clear(target+i);
 	}
     }
+
+    void copyRangeTail(const ubyte* source, size_t target, size_t sourcelen, size_t destlen, const ubyte* sourcetail, size_t taillen)
+    {
+    for (size_t i=0; i<destlen; i++)
+    {
+        bool b;
+        if (i<sourcelen) b = (source[i/8] & BITS_1 << (i % 8)) != 0;
+        else b = (sourcetail[(i%taillen)/8] & BITS_1 << ((i %taillen) %8)) != 0;
+        
+        if (b) set(target+i);
+        else clear(target+i);
+    }
+    }
+
     void setRange(size_t target, size_t len, bool content)
     {
 //	debug(PRINTF) printf("setting %d bits from %d to %d, in a pool of %d bits\n", len, target, content, this.nbits);

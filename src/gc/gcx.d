@@ -39,11 +39,11 @@ version = STACKGROWSDOWN;       // growing the stack means subtracting from the 
 private import gc.gcbits;
 private import gc.gcstats;
 private import gc.gcalloc;
-
 private import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
 private import core.stdc.string;
 private import core.bitop;
 private import core.sync.mutex;
+private import gctemplates;
 
 version (GNU) import gcc.builtins;
 
@@ -417,15 +417,39 @@ class GC
         scope(exit) gcLock.unlock();
         return go();
     }
-    
+/*    //definition from gctemplates
+    struct GCInfo
+    {
+	//size of the base portion
+	immutable size_t size;
+	//base bitmap
+	immutable ubyte* bitmap;
+	//first bit = is this an array
+	immutable size_t flags;
+	//size of one array element
+	immutable size_t arrayelementsize;
+	//bitmap for one array element
+	immutable ubyte* arrayelementbitmap;
+    }
+*/
+ 
     void setPointerBitmap(void* p, Pool* pool, size_t s, const TypeInfo ti)
     {
 	size_t offset = p-pool.baseAddr;
-//	if (!ti) 
+	if (!ti) 
 	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
-//	else 
-//	    pool.is_pointer.copyRange(ti.RTInfo.p, offset/(void*).sizeof, ti.RTInfo.len, s/(void*).sizeof);
-    }
+	else
+	{
+	    const ubyte* bitmap = cast(immutable ubyte* function())ti.rtInfo();
+	    //does this TypeInfo have a repeating tail?
+/*	    if (info.flags & 0x1){
+		pool.is_pointer.copyRangeTail(info.bitmap, offset/(void*).sizeof, info.size/(void*).sizeof, s/(void*).sizeof,info.arrayelementbitmap, info.arrayelementsize/(void*).sizeof );
+	    }
+	    else { */
+		pool.is_pointer.copyRange(bitmap, offset/(void*).sizeof, ti.tsize()/(void*).sizeof, s/(void*).sizeof);
+//	    }
+	}   
+ }
 
 
     /**

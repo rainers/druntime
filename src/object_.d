@@ -29,6 +29,7 @@ private
     import rt.util.string;
     import rt.util.console;
     import rt.minfo;
+    import gctemplates;
     debug(PRINTF) import core.stdc.stdio;
 
     extern (C) void onOutOfMemoryError();
@@ -2564,5 +2565,5 @@ bool _xopEquals(in void*, in void*)
 
 template RTInfo(T)
 {
-    enum RTInfo = null;
+    enum RTInfo = cast (void function()*)gctemplates.RTInfoImpl!T;
 }
