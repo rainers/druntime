@@ -646,7 +646,7 @@ void __ctfeWriteln(T...)(auto ref T values) { __ctfeWrite(values, "\n"); }
 
 template RTInfo(T)
 {
-    enum RTInfo = cast(void function() *) gctemplates.RTInfoImpl!T;
+    enum RTInfo = gctemplates.RTInfoImpl!T;
 }
 
 version (unittest)

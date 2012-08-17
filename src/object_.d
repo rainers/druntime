@@ -2565,5 +2565,5 @@ bool _xopEquals(in void*, in void*)
 
 template RTInfo(T)
 {
-    enum RTInfo = cast (void function()*)gctemplates.RTInfoImpl!T;
+    enum RTInfo = gctemplates.RTInfoImpl!T;
 }

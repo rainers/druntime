@@ -6,7 +6,7 @@ static if ((void*).sizeof == 8)
     immutable ulong shiftBy = 3;
 else
     immutable ulong shiftBy = 2;
-immutable divby = 8* (void*).sizeof;
+immutable divby = 8* (void*).sizeof * size_t.sizeof;
 
 struct GCInfo
 {
@@ -32,11 +32,13 @@ template allocatedSize(T)
 
 template bitmapSize(T)
 {
-    // for 8 bits per byte and the size taken by one pointer. Round up.
-    static if (allocatedSize!T > ((allocatedSize!T>>(shiftBy+3))<<(shiftBy+3)))
-        enum bitmapSize = ((allocatedSize!T)>>(shiftBy+3)) + 1;
+    // returns the amount of size_t:s needed to accommodate for the bitmap.
+    // for 8 bits per byte, then shiftby for bytes per size_t, then shiftby because
+    // we only need a bit for each aligned, pointer-sized target.
+    static if (allocatedSize!T > ((allocatedSize!T>>(shiftBy+shiftBy+3))<<(shiftBy+shiftBy+3)))
+        enum bitmapSize = ((allocatedSize!T)>>(shiftBy+shiftBy+3)) + 1;
     else
-        enum bitmapSize = (allocatedSize!T)>>(shiftBy+3);
+        enum bitmapSize = (allocatedSize!T)>>(shiftBy+shiftBy+3);
 }
 
 /*GCInfo RTInfoImpl(T)()
@@ -44,47 +46,50 @@ template bitmapSize(T)
     return RTInfoImpl2!T;
 }*/
 
-ubyte * RTInfoImpl(T)()
+template RTInfoImpl(T)
 {
     static if (is (T == class) || is(T == struct) || is(T == union))
- //       return GCInfo(allocatedSize!T, compBitmap!T.ptr);
-        return cast(ubyte*) &compBitmap!T;
+       enum RTInfoImpl = (compBitmap!T).ptr;
+//GCInfo(allocatedSize!T, compBitmap!T.ptr);
+//        return cast(ubyte*), (compBitmap!T).ptr;
     else static if (isStaticArray!T)
-//        return GCInfo(0,cast(immutable ubyte*) 0,0x1,
-  //      allocatedSize!(typeof(T[0])),
-        return cast (ubyte*) &bitmap!(typeof(T[0]));
+       enum RTInfoImpl =  (bitmap!(typeof(T[0]))).ptr;
+// GCInfo(0,cast(immutable ubyte*) 0,0x1, allocatedSize!(typeof(T[0])), (bitmap!(typeof(T[0]))).ptr);
     else
-//        return GCInfo(
+        enum RTInfoImpl = (bitmap!T).ptr;
+//GCInfo(
 //	allocatedSize!T, 
-	return cast (ubyte*) &bitmap!T; //);
+//	(bitmap!T).ptr);
 }
 
 template bitmap(T)
 {
-    __gshared bitmap = bitmapImpl!T();
+    immutable bitmap = bitmapImpl!T();
 }
 
 template compBitmap(T)
 {
-    __gshared compBitmap = compBitmapImpl!T();
+    immutable compBitmap = compBitmapImpl!T();
 }
-
-ubyte[bitmapSize!T] compBitmapImpl(T)()
+// first element is size of the object that the bitmap corresponds to in bytes.
+size_t[bitmapSize!T + 1] compBitmapImpl(T)()
 {
-    ubyte[bitmapSize!T] A;
-    mkBitmapComposite!T(A.ptr, 0);
+    size_t[bitmapSize!T + 1] A;
+    mkBitmapComposite!T(A.ptr, (size_t.sizeof)*8 );
+    A[0] = allocatedSize!T;
     return A;
 }
 
-ubyte[bitmapSize!T] bitmapImpl(T)()
+size_t[bitmapSize!T+ 1] bitmapImpl(T)()
 {
-    ubyte[bitmapSize!T] A;
-    mkBitmap!T(A.ptr, 0);
+    size_t[bitmapSize!T + 1] A;
+    mkBitmap!T(A.ptr, size_t.sizeof*8);
+    A[0] = allocatedSize!T;
     return A;
 }
 
 // Scan any type that allMembers works on
-void mkBitmapComposite(T)(ubyte* p, size_t offset)
+void mkBitmapComposite(T)(size_t* p, size_t offset)
 {
     foreach(i, fieldName; (__traits(allMembers, T)))
     {
@@ -96,16 +101,16 @@ void mkBitmapComposite(T)(ubyte* p, size_t offset)
     }
 }
 
-void mkBitmap(T)(ubyte* p, size_t offset) if (!hasIndirections!T) {}
+void mkBitmap(T)(size_t* p, size_t offset) if (!hasIndirections!T) {}
 
-void mkBitmap(T)(ubyte* p, size_t offset) if (hasIndirections!T &&
+void mkBitmap(T)(size_t* p, size_t offset) if (hasIndirections!T &&
                                             (is(T == struct) ||
                                             is(T == union)))
 {
     mkBitmapComposite!T(p, offset);
 }
 
-void mkBitmap(T)(ubyte* p, size_t offset) if ((is(T == delegate) ||
+void mkBitmap(T)(size_t* p, size_t offset) if ((is(T == delegate) ||
                                             is(T : const(void*)) ||
                                             is(T == class) ||
                                             is(T == interface) ||
@@ -114,12 +119,12 @@ void mkBitmap(T)(ubyte* p, size_t offset) if ((is(T == delegate) ||
     setbit(p, offset);
 }
 
-void mkBitmap(T)(ubyte* p, size_t offset) if (isDynamicArray!T)
+void mkBitmap(T)(size_t* p, size_t offset) if (isDynamicArray!T)
 {
 setbit(p, offset+(void*).sizeof);
 }
 
-void mkBitmap(T)(ubyte* p, size_t offset) if (isStaticArray!T && hasIndirections!T)
+void mkBitmap(T)(size_t* p, size_t offset) if (isStaticArray!T && hasIndirections!T)
 {
 
 //mkArrayBitmap!T(p, offset);
@@ -132,10 +137,10 @@ void mkBitmap(T)(ubyte* p, size_t offset) if (isStaticArray!T && hasIndirections
         mkBitmap!(Unqual!(typeof(T[0])))(p, offset + i*T[0].sizeof);
 }
 
-void setbit(ubyte* a, ulong index)
+void setbit(size_t* a, ulong index)
 {
     a[index/divby] =
     a[index/divby] |
-    (1<<((index%divby)/8));
+    (1<<((index % divby)/(void*).sizeof));
 }
 

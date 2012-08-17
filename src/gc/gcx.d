@@ -440,14 +440,18 @@ class GC
 	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
 	else
 	{
-	    const ubyte* bitmap = cast(immutable ubyte* function())ti.rtInfo();
+	    const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
+	    size_t element_size = * bitmap;
+	    bitmap++;
 	    //does this TypeInfo have a repeating tail?
-/*	    if (info.flags & 0x1){
-		pool.is_pointer.copyRangeTail(info.bitmap, offset/(void*).sizeof, info.size/(void*).sizeof, s/(void*).sizeof,info.arrayelementbitmap, info.arrayelementsize/(void*).sizeof );
+	    if (auto arrayti = cast(TypeInfo_StaticArray)ti)
+	    {
+		pool.is_pointer.copyRangeRepeating(offset, bitmap, element_size, s, arrayti.len);
 	    }
-	    else { */
-		pool.is_pointer.copyRange(bitmap, offset/(void*).sizeof, ti.tsize()/(void*).sizeof, s/(void*).sizeof);
-//	    }
+	    else { 
+		pool.is_pointer.copyRange(offset, bitmap, element_size, s);
+	    }
+		debug (PRINTF) printf("Setting bitmap for new object \n\tat %p\tcopying from %p\n", p, bitmap);
 	}   
  }
 
@@ -457,7 +461,8 @@ class GC
      */
     void *malloc(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
-        if (!size)
+        debug(PRINTF) printf("malloc call\n");
+	if (!size)
         {
             if(alloc_size)
                 *alloc_size = 0;
@@ -2396,7 +2401,7 @@ struct Gcx
 		{
 		    is_pointer = &(hostpool1.is_pointer);
 		    hostBaseAddr = cast(byte*)hostpool1.baseAddr;
-
+		    debug(PRINTF) printf("scanning at pool %p with precise pointer data\n", hostpool1);
 //		    debug(PRINTF)
 //		    {
 //			for(;p1<p2; p1++) printf("loc = %p cont = % p biti = %d bit = %d\n", p1, cast(byte*)(*p1),((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof));
