@@ -604,6 +604,7 @@ int _d_exception_filter(EXCEPTION_POINTERS *eptrs,
 /***********************************
  * Throw a D object.
  */
+version(none)
 extern(C)
 void _d_throwc(Object h)
 {
@@ -652,7 +653,7 @@ private void throwImpl(Object h)
     // @@@ TODO @@@ Signature should change: h will always be a Throwable.
     //printf("_d_throw(h = %p, &h = %p)\n", h, &h);
     //printf("\tvptr = %p\n", *(void **)h);
-    _d_createTrace(h);
+    //_d_createTrace(h);
     //_d_setUnhandled(h);
     RaiseException(STATUS_DIGITAL_MARS_D_EXCEPTION,
                    EXCEPTION_NONCONTINUABLE,

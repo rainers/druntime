@@ -74,8 +74,13 @@ MANIFEST= \
 	src\core\sync\rwmutex.d \
 	src\core\sync\semaphore.d \
 	\
+	src\core\sys\freebsd\dlfcn.d \
+	src\core\sys\freebsd\execinfo.d \
 	src\core\sys\freebsd\sys\event.d \
 	\
+	src\core\sys\linux\execinfo.d \
+	\
+	src\core\sys\osx\execinfo.d \
 	src\core\sys\osx\pthread.d \
 	src\core\sys\osx\mach\dyld.d \
 	src\core\sys\osx\mach\getsect.d \
@@ -378,6 +383,7 @@ DOCS=\
 	$(DOCDIR)\core_sync_semaphore.html
 
 IMPORTS=\
+	$(IMPDIR)\object.di \
 	$(IMPDIR)\core\sync\barrier.di \
 	$(IMPDIR)\core\sync\condition.di \
 	$(IMPDIR)\core\sync\config.di \
@@ -423,8 +429,14 @@ COPY=\
 	$(IMPDIR)\core\stdc\wchar_.d \
 	$(IMPDIR)\core\stdc\wctype.d \
 	\
+	$(IMPDIR)\core\sys\freebsd\dlfcn.d \
+	$(IMPDIR)\core\sys\freebsd\execinfo.d \
 	$(IMPDIR)\core\sys\freebsd\sys\event.d \
 	\
+	$(IMPDIR)\core\sys\linux\execinfo.d \
+	\
+	$(IMPDIR)\core\sys\osx\execinfo.d \
+	$(IMPDIR)\core\sys\osx\pthread.d \
 	$(IMPDIR)\core\sys\osx\mach\kern_return.d \
 	$(IMPDIR)\core\sys\osx\mach\port.d \
 	$(IMPDIR)\core\sys\osx\mach\semaphore.d \
@@ -575,6 +587,7 @@ copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\sys\posix\netinet
 	mkdir $(IMPDIR)\core\sys\osx\mach
 	mkdir $(IMPDIR)\core\sys\freebsd\sys
+	mkdir $(IMPDIR)\core\sys\linux
 	mkdir $(IMPDIR)\core\stdc
 
 copy: $(COPY)
@@ -681,7 +694,22 @@ $(IMPDIR)\core\stdc\wchar_.d : src\core\stdc\wchar_.d
 $(IMPDIR)\core\stdc\wctype.d : src\core\stdc\wctype.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\freebsd\dlfcn.d : src\core\sys\freebsd\dlfcn.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\freebsd\execinfo.d : src\core\sys\freebsd\execinfo.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\freebsd\sys\event.d : src\core\sys\freebsd\sys\event.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\execinfo.d : src\core\sys\linux\execinfo.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\osx\execinfo.d : src\core\sys\osx\execinfo.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\osx\pthread.d : src\core\sys\osx\pthread.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\osx\mach\kern_return.d : src\core\sys\osx\mach\kern_return.d
@@ -853,7 +881,7 @@ zip: druntime.zip
 
 druntime.zip:
 	del druntime.zip
-	zip32 -u druntime $(MANIFEST) $(DOCS) $(IMPORTS) src\rt\minit.obj
+	zip32 -ur druntime $(MANIFEST) $(DOCS) $(IMPDIR) src\rt\minit.obj
 
 install: druntime.zip
 	unzip -o druntime.zip -d \dmd2\src\druntime
