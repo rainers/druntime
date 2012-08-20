@@ -196,17 +196,13 @@ struct GCBits
 	}
     }
 
-    void copyRangeRepeating(size_t target, const size_t* source, size_t sourcelen, size_t destlen, size_t len)
+    void copyRangeRepeating(size_t target, const size_t* source, size_t sourcelen, size_t destlen)
     {
 	for (size_t i=0; i<destlen; i++)
 	{
 	    bool b;
-	    if (i<len*(sourcelen/(void*).sizeof))
-		{
-		    size_t j = i % sourcelen;
-		    b = (source[j/8] & BITS_1 << (j % 8)) != 0;
-		}
-	    else b = false;
+	    size_t j = i % sourcelen;
+	    b = (source[j/8] & BITS_1 << (j % 8)) != 0;
 	    if (b) set((target/(void*).sizeof)+i);
 	    else clear((target/(void*).sizeof)+i);
 	}

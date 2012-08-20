@@ -456,33 +456,42 @@ debug(PRINTF) import std.string;
 		printf("\n");
 	    }
 
-	    if (!(cast(size_t*)ti.rtInfo())) 
+	
+	    //does this TypeInfo have a repeating tail?
+	    if (auto arrayti = cast(TypeInfo_Array)ti)
+	    {
+		if (!(cast(size_t*)arrayti.value.rtInfo()))
+		{}
+		else
+		{
+    
+		    const(size_t)* bitmap = cast (size_t*) arrayti.value.rtInfo();
+		    //first element of rtInfo is the size of the object the bitmap encodes
+		    size_t element_size = * bitmap;
+		    bitmap++;
+		    pool.is_pointer.copyRangeRepeating(offset, bitmap, element_size, s);
+		    debug(PRINTF) printf("\tSetting repeating bitmap "
+					 "\n\t\tfor object at %p"
+					 "\n\t\tcopying TypeInfo from %p\n",p, bitmap);
+		}
+	    }
+	    else if (!(cast(size_t*)ti.rtInfo())) 
 	    {
 		debug(PRINTF) printf("\tTypeInfo does not contain a rtInfo\n");
 		pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
 	    }
 	    else
 	    {	
-		const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
-		//first element of rtInfo is the size of the object the bitmap encodes
-		size_t element_size = * bitmap;
-		bitmap++;
 
-	/*	//does this TypeInfo have a repeating tail?
-		if (auto arrayti = cast(TypeInfo_StaticArray)ti)
-		{
-		    pool.is_pointer.copyRangeRepeating(offset, bitmap, element_size, s, arrayti.len);
-		    debug(PRINTF) printf("\tSetting repeating bitmap "
-					 "\n\t\tfor object at %p"
-					 "\n\t\tfor %d elements"
-					 "\n\t\tcopying TypeInfo from %p\n",p,arrayti.len, bitmap);
-		}
-		else {*/ 
+		     
+		    const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
+		    //first element of rtInfo is the size of the object the bitmap encodes
+		    size_t element_size = * bitmap;
+		    bitmap++;
 		    pool.is_pointer.copyRange(offset, bitmap, element_size, s);
 		    debug(PRINTF) printf("\tSetting bitmap for new object \n\t\tat %p\t\tcopying from %p\n", p, bitmap);
-	//	}
+		}
 	    
-	    }
 	}
 	else 
 	{
