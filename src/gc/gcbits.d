@@ -13,7 +13,7 @@
  */
 module gc.gcbits;
 
-
+//debug = PRINTF;
 debug (PRINTF) import core.stdc.stdio : printf;
 private
 {
@@ -187,7 +187,11 @@ struct GCBits
 	    bool b;
 	    if (i<sourcelen/(void*).sizeof) b = (source[i/8] & BITS_1 << (i % 8)) != 0;
 	    else b = false;
-	    if (b) set((target/(void*).sizeof)+i);
+	    if (b) 
+	    {
+		set((target/(void*).sizeof)+i);
+		debug(PRINTF) printf("setting biti %d\n",((target/(void*).sizeof)+i));
+	    }
 	    else clear((target/(void*).sizeof)+i);
 	}
     }
@@ -213,8 +217,10 @@ struct GCBits
 //	debug(PRINTF) printf("setting %d bits from %d to %d, in a pool of %d bits\n", len, target, content, this.nbits);
 	for (size_t i = 0; i<len;i++)
 	{
-	    if (content) 
+	    if (content){
 		this.set(target+i);
+		//debug(PRINTF) printf("setting biti %d", target+1);
+	    }
 	    else 
 		this.clear(target+i);
 	}

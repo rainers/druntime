@@ -11,7 +11,7 @@
  */
 
 module rt.lifetime;
-
+debug = PRINTF;
 private
 {
     import core.stdc.stdlib;
@@ -407,7 +407,7 @@ void processGCMarks(BlkInfo* cache, scope rt.tlsgc.IsMarkedDg isMarked)
     // called after the mark routine to eliminate block cache data when it
     // might be ready to sweep
 
-    debug(PRINTF) printf("processing GC Marks, %x\n", tls.ptr);
+    //debug(PRINTF) printf("processing GC Marks, %x\n", tls.ptr);
     if(cache)
     {
         debug(PRINTF) foreach(i; 0 .. N_CACHE_BLOCKS)
@@ -1036,7 +1036,7 @@ extern (C) void* _d_newitemT(TypeInfo ti)
     else
     {*/
         // allocate a block to hold this item
-        auto ptr = gc_malloc(size, !(ti.next.flags() & 1) ? BlkAttr.NO_SCAN : 0, ti);
+        auto ptr = gc_malloc(size, !(ti.next.flags() & 1) ? BlkAttr.NO_SCAN : 0, ti.next);
         debug(PRINTF) printf(" p = %p\n", ptr);
         if(size == ubyte.sizeof)
             *cast(ubyte*)ptr = 0;
@@ -1067,7 +1067,7 @@ extern (C) void* _d_newitemiT(TypeInfo ti)
         auto isize = initializer.length;
         auto q = initializer.ptr;
 
-        auto ptr = gc_malloc(size, !(ti.next.flags() & 1) ? BlkAttr.NO_SCAN : 0, ti);
+        auto ptr = gc_malloc(size, !(ti.next.flags() & 1) ? BlkAttr.NO_SCAN : 0, ti.next);
         debug(PRINTF) printf(" p = %p\n", ptr);
         if (isize == 1)
             *cast(ubyte*)ptr =  *cast(ubyte*)q;

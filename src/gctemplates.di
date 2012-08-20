@@ -54,13 +54,18 @@ template RTInfoImpl(T)
 //GCInfo(allocatedSize!T, compBitmap!T.ptr);
 //        return cast(ubyte*), (compBitmap!T).ptr;
     else static if (isStaticArray!T)
-       enum RTInfoImpl =  (bitmap!(typeof(T[0]))).ptr;
+       enum RTInfoImpl = (staticArrayBitmap!T).ptr;
 // GCInfo(0,cast(immutable ubyte*) 0,0x1, allocatedSize!(typeof(T[0])), (bitmap!(typeof(T[0]))).ptr);
     else
         enum RTInfoImpl = (bitmap!T).ptr;
 //GCInfo(
 //	allocatedSize!T, 
 //	(bitmap!T).ptr);
+}
+
+template staticArrayBitmap(T)
+{
+    immutable staticArrayBitmap = staticArrayBitmapImpl!(T)();
 }
 
 template bitmap(T)
@@ -81,6 +86,17 @@ size_t[bitmapSize!T + 1] compBitmapImpl(T)()
     return A;
 }
 
+size_t[bitmapSize!T + 1] staticArrayBitmapImpl(T)()
+{
+    size_t[bitmapSize!T + 1] A;
+    for(int i=0; i<T.length; i++)
+    {   
+        mkBitmap!T((A.ptr+1), i*allocatedSize!(T[0]));
+    }    
+    A[0] = allocatedSize!T;
+    return A;
+}
+
 size_t[bitmapSize!T+ 1] bitmapImpl(T)()
 {
     size_t[bitmapSize!T + 1] A;
@@ -97,17 +113,26 @@ void mkBitmapComposite(T)(size_t* p, size_t offset)
 	// the +1 is a hack to make empty Tuple! made with std/typecons not fail
         static if (__traits(compiles, mixin("((T." ~ fieldName ~").offsetof)+1")))
         {
+
             size_t cur_offset = mixin("(T." ~ fieldName ~").offsetof");
             alias Unqual!(typeof(mixin("T." ~ fieldName))) U;
+    
 	    bitmapD!U(p, offset+cur_offset);
         }
     }
 }
 
 //exists for better error messages on template failures
+//This way, we get to see what exactly causes a conflict when instatiating templates.
 void bitmapD(T)(size_t* p, size_t offset)
 {
-    mkBitmap!T(p, offset);
+    
+    // FIXME workaround for http://d.puremagic.com/issues/show_bug.cgi?id=8567
+    	    static if ((is (T == struct)) && (isDynamicArray!T))
+	    {
+		mkBitmapComposite!T(p, offset);
+	    }
+	    else mkBitmap!T(p, offset);
 }
 
 void mkBitmap(T)(size_t* p, size_t offset) if (!hasIndirections!T) {}
@@ -121,7 +146,7 @@ void mkBitmap(T)(size_t* p, size_t offset) if (hasIndirections!T &&
 
 void mkBitmap(T)(size_t* p, size_t offset) if ((is(T == delegate) ||
                                             is(T : const(void*)) ||
-					    is(T : shared(const(void*))) ||
+					    is(T : shared(const(void*))) || //FIXME what is going on here. Comment this line to find a bug
                                             is(T == class) ||
                                             is(T == interface) ||
                                             isAssociativeArray!T) &&
@@ -132,20 +157,13 @@ void mkBitmap(T)(size_t* p, size_t offset) if ((is(T == delegate) ||
     gctemplates_setbit(p, offset);
 }
 
-void mkBitmap(T)(size_t* p, size_t offset) if (isDynamicArray!T && !(is(T == struct)))
+void mkBitmap(T)(size_t* p, size_t offset) if (isDynamicArray!T)
 {
     gctemplates_setbit(p, offset+(void*).sizeof);
 }
 
 void mkBitmap(T)(size_t* p, size_t offset) if (isStaticArray!T && hasIndirections!T)
 {
-
-//mkArrayBitmap!T(p, offset);
-   // ubyte[allocatedSize!(T[0])] A;
-  //  mkBitmap!(T[0])(A.ptr, 0);
-//    for(size_t i = 0; i< T.length; i++)
-//      mkBitmap!(T[0])(p, i*T[0].sizeof);
-//      copyBitmap(A.ptr, T[0].sizeof, p, offset + i*(T[0].alignof));
     for(size_t i = 0; i< T.length; i++)
         mkBitmap!(Unqual!(typeof(T[0])))(p, offset + i*T[0].sizeof);
 }

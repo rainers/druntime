@@ -260,6 +260,14 @@ const uint GCVERSION = 1;       // increment every time we change interface
 // This just makes Mutex final to de-virtualize member function calls.
 final class GCMutex : Mutex {}
 
+    void printGCBits(GCBits* bits)
+    {
+	for (size_t i = 0; i<bits.nwords; i++){
+	    if (i % 32 == 0) printf("\n\t");
+	    printf("%x ", bits.data[i]);
+	}
+	printf("\n");
+    }
 class GC
 {
     // For passing to debug code (not thread safe)
@@ -432,28 +440,60 @@ class GC
 	immutable ubyte* arrayelementbitmap;
     }
 */
- 
+debug(PRINTF) import std.string;
+
     void setPointerBitmap(void* p, Pool* pool, size_t s, const TypeInfo ti)
-    {
+    {	
 	size_t offset = p-pool.baseAddr;
-	if (!ti || !(cast(size_t*)ti.rtInfo())) 
-	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
-	else
+	//debug(PRINTF) printGCBits(&pool.is_pointer);	
+	if (ti)
 	{
-	    const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
-	    size_t element_size = * bitmap;
-	    bitmap++;
-	    //does this TypeInfo have a repeating tail?
-	    if (auto arrayti = cast(TypeInfo_StaticArray)ti)
+	    debug(PRINTF) 
 	    {
-		pool.is_pointer.copyRangeRepeating(offset, bitmap, element_size, s, arrayti.len);
+		string ss = ti.classinfo.name;
+		printf("Setting a pointer bitmap for ");
+		printf(toStringz(ss));
+		printf("\n");
 	    }
-	    else { 
-		pool.is_pointer.copyRange(offset, bitmap, element_size, s);
+
+	    if (!(cast(size_t*)ti.rtInfo())) 
+	    {
+		debug(PRINTF) printf("\tTypeInfo does not contain a rtInfo\n");
+		pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
 	    }
-		debug(PRINTF) printf("Setting bitmap for new object \n\tat %p\tcopying from %p\n", p, bitmap);
-	}   
- }
+	    else
+	    {	
+		const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
+		//first element of rtInfo is the size of the object the bitmap encodes
+		size_t element_size = * bitmap;
+		bitmap++;
+
+	/*	//does this TypeInfo have a repeating tail?
+		if (auto arrayti = cast(TypeInfo_StaticArray)ti)
+		{
+		    pool.is_pointer.copyRangeRepeating(offset, bitmap, element_size, s, arrayti.len);
+		    debug(PRINTF) printf("\tSetting repeating bitmap "
+					 "\n\t\tfor object at %p"
+					 "\n\t\tfor %d elements"
+					 "\n\t\tcopying TypeInfo from %p\n",p,arrayti.len, bitmap);
+		}
+		else {*/ 
+		    pool.is_pointer.copyRange(offset, bitmap, element_size, s);
+		    debug(PRINTF) printf("\tSetting bitmap for new object \n\t\tat %p\t\tcopying from %p\n", p, bitmap);
+	//	}
+	    
+	    }
+	}
+	else 
+	{
+	    printf("Allocating a block without TypeInfo\n");
+	}
+	if (!ti || !(cast(size_t*)ti.rtInfo())) 
+	{    
+	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
+	}
+	//debug(PRINTF) printGCBits(&pool.is_pointer);    
+    }
 
 
     /**
@@ -461,7 +501,19 @@ class GC
      */
     void *malloc(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
-        debug(PRINTF) printf("malloc call\n");
+	if (ti)
+	{
+	    debug(PRINTF)
+            {
+                string ss = ti.classinfo.name;
+                printf("malloc call with ");
+                printf(toStringz(ss));
+                printf("\n");
+            }
+	}
+	
+
+
 	if (!size)
         {
             if(alloc_size)
@@ -493,7 +545,8 @@ class GC
 
     //
     //
-    //
+    //           debug(PRINTF)
+
     private void *mallocNoSync(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
         assert(size != 0);
@@ -2403,10 +2456,13 @@ struct Gcx
 		    hostBaseAddr = cast(byte*)hostpool1.baseAddr;
 		    debug(PRINTF) printf("scanning at pool %p with precise pointer data, starting from pointer %p\n", hostpool1,pbot);
 		    debug(PRINTF) printf("pointer data is at %p + %d\n", &hostpool1.is_pointer, pbot - hostBaseAddr);  
-//		    debug(PRINTF)
-//		    {
-//			for(;p1<p2; p1++) printf("loc = %p cont = % p biti = %d bit = %d\n", p1, cast(byte*)(*p1),((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof));
-//		    }
+		    debug(PRINTF)
+		    {
+			//printGCBits(is_pointer);
+			auto tp1 = p1;
+			auto tp2 = p2;
+//			for(;tp1<tp2; tp1++) printf("loc = %p cont = % p biti = %d bit = %d\n", tp1, cast(byte*)(*tp1),((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof));
+		    }
 		}
 		else debug(PRINTF) printf("Mark call from %p to %p spans multiple pools.", p1, p2);
 	    }
