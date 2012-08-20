@@ -27,8 +27,8 @@ IMPDIR=import
 
 MODEL=32
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property
-UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property
+DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property -g
+UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property -g
 DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
 CFLAGS=-m$(MODEL) -O
@@ -601,7 +601,7 @@ $(OBJDIR)/errno_c.o : src/core/stdc/errno.c
 ################### Library generation #########################
 
 $(DRUNTIME): $(OBJS) $(SRCS) win32.mak
-	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
+	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS) src/gctemplates.di
 
 unittest : $(addprefix $(OBJDIR)/,$(SRC_D_MODULES)) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo done

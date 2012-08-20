@@ -1083,8 +1083,7 @@ class TypeInfo_Struct : TypeInfo
 
     uint m_align;
 
-    override @property immutable(void)* rtInfo() const { return m_RTInfo; }
-
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return m_RTInfo; }
     version (X86_64)
     {
         override int argTypes(out TypeInfo arg1, out TypeInfo arg2)

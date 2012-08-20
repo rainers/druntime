@@ -436,7 +436,7 @@ class GC
     void setPointerBitmap(void* p, Pool* pool, size_t s, const TypeInfo ti)
     {
 	size_t offset = p-pool.baseAddr;
-	if (!ti) 
+	if (!ti || !(cast(size_t*)ti.rtInfo())) 
 	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
 	else
 	{
@@ -451,7 +451,7 @@ class GC
 	    else { 
 		pool.is_pointer.copyRange(offset, bitmap, element_size, s);
 	    }
-		debug (PRINTF) printf("Setting bitmap for new object \n\tat %p\tcopying from %p\n", p, bitmap);
+		debug(PRINTF) printf("Setting bitmap for new object \n\tat %p\tcopying from %p\n", p, bitmap);
 	}   
  }
 
@@ -2401,7 +2401,8 @@ struct Gcx
 		{
 		    is_pointer = &(hostpool1.is_pointer);
 		    hostBaseAddr = cast(byte*)hostpool1.baseAddr;
-		    debug(PRINTF) printf("scanning at pool %p with precise pointer data\n", hostpool1);
+		    debug(PRINTF) printf("scanning at pool %p with precise pointer data, starting from pointer %p\n", hostpool1,pbot);
+		    debug(PRINTF) printf("pointer data is at %p + %d\n", &hostpool1.is_pointer, pbot - hostBaseAddr);  
 //		    debug(PRINTF)
 //		    {
 //			for(;p1<p2; p1++) printf("loc = %p cont = % p biti = %d bit = %d\n", p1, cast(byte*)(*p1),((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof));
@@ -2418,12 +2419,12 @@ struct Gcx
 	    {
 		if (!(is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof)!= 0))
 		{
-		//    debug(PRINTF) printf("skipping %p, biti = %d\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof);
+		    debug(PRINTF) printf("skipping %p, biti = %d, at %p\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
 		    continue;
 		}
 		else
 		{
-//		    debug(PRINTF) printf("not skipping %p, biti = %d\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof);
+		    debug(PRINTF) printf("not skipping %p, biti = %d, at %p\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
 		}
 	    }
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);

@@ -1,12 +1,13 @@
 module gctemplates;
 
 import rumptraits;
-
+//import object;
 static if ((void*).sizeof == 8)
     immutable ulong shiftBy = 3;
 else
     immutable ulong shiftBy = 2;
 immutable divby = 8* (void*).sizeof * size_t.sizeof;
+
 
 struct GCInfo
 {
@@ -75,7 +76,7 @@ template compBitmap(T)
 size_t[bitmapSize!T + 1] compBitmapImpl(T)()
 {
     size_t[bitmapSize!T + 1] A;
-    mkBitmapComposite!T(A.ptr, (size_t.sizeof)*8 );
+    mkBitmapComposite!T((A.ptr+1),0 );
     A[0] = allocatedSize!T;
     return A;
 }
@@ -83,7 +84,7 @@ size_t[bitmapSize!T + 1] compBitmapImpl(T)()
 size_t[bitmapSize!T+ 1] bitmapImpl(T)()
 {
     size_t[bitmapSize!T + 1] A;
-    mkBitmap!T(A.ptr, size_t.sizeof*8);
+    mkBitmap!T((A.ptr+1), 0);
     A[0] = allocatedSize!T;
     return A;
 }
@@ -93,12 +94,20 @@ void mkBitmapComposite(T)(size_t* p, size_t offset)
 {
     foreach(i, fieldName; (__traits(allMembers, T)))
     {
-        static if (__traits(compiles, mixin("(T." ~ fieldName ~").offsetof")))
+	// the +1 is a hack to make empty Tuple! made with std/typecons not fail
+        static if (__traits(compiles, mixin("((T." ~ fieldName ~").offsetof)+1")))
         {
             size_t cur_offset = mixin("(T." ~ fieldName ~").offsetof");
-            mkBitmap!(Unqual!(typeof(mixin("T." ~ fieldName))))(p, offset+cur_offset);
+            alias Unqual!(typeof(mixin("T." ~ fieldName))) U;
+	    bitmapD!U(p, offset+cur_offset);
         }
     }
+}
+
+//exists for better error messages on template failures
+void bitmapD(T)(size_t* p, size_t offset)
+{
+    mkBitmap!T(p, offset);
 }
 
 void mkBitmap(T)(size_t* p, size_t offset) if (!hasIndirections!T) {}
@@ -112,16 +121,20 @@ void mkBitmap(T)(size_t* p, size_t offset) if (hasIndirections!T &&
 
 void mkBitmap(T)(size_t* p, size_t offset) if ((is(T == delegate) ||
                                             is(T : const(void*)) ||
+					    is(T : shared(const(void*))) ||
                                             is(T == class) ||
                                             is(T == interface) ||
-                                            isAssociativeArray!T) && hasIndirections!T)
+                                            isAssociativeArray!T) &&
+					    hasIndirections!T &&
+					    !isDynamicArray!T &&
+					    !isStaticArray!T)
 {
-    setbit(p, offset);
+    gctemplates_setbit(p, offset);
 }
 
-void mkBitmap(T)(size_t* p, size_t offset) if (isDynamicArray!T)
+void mkBitmap(T)(size_t* p, size_t offset) if (isDynamicArray!T && !(is(T == struct)))
 {
-setbit(p, offset+(void*).sizeof);
+    gctemplates_setbit(p, offset+(void*).sizeof);
 }
 
 void mkBitmap(T)(size_t* p, size_t offset) if (isStaticArray!T && hasIndirections!T)
@@ -137,7 +150,7 @@ void mkBitmap(T)(size_t* p, size_t offset) if (isStaticArray!T && hasIndirection
         mkBitmap!(Unqual!(typeof(T[0])))(p, offset + i*T[0].sizeof);
 }
 
-void setbit(size_t* a, ulong index)
+void gctemplates_setbit(size_t* a, ulong index)
 {
     a[index/divby] =
     a[index/divby] |
