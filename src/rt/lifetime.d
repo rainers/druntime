@@ -11,7 +11,7 @@
  */
 
 module rt.lifetime;
-debug = PRINTF;
+//debug = PRINTF;
 private
 {
     import core.stdc.stdlib;

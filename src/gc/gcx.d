@@ -260,7 +260,7 @@ const uint GCVERSION = 1;       // increment every time we change interface
 // This just makes Mutex final to de-virtualize member function calls.
 final class GCMutex : Mutex {}
 
-    void printGCBits(GCBits* bits)
+debug(PRINTF) { void printGCBits(GCBits* bits)
     {
 	for (size_t i = 0; i<bits.nwords; i++){
 	    if (i % 32 == 0) printf("\n\t");
@@ -268,6 +268,7 @@ final class GCMutex : Mutex {}
 	}
 	printf("\n");
     }
+}
 class GC
 {
     // For passing to debug code (not thread safe)
@@ -495,7 +496,7 @@ debug(PRINTF) import std.string;
 	}
 	else 
 	{
-	    printf("Allocating a block without TypeInfo\n");
+	    debug(PRINTF)printf("Allocating a block without TypeInfo\n");
 	}
 	if (!ti || !(cast(size_t*)ti.rtInfo())) 
 	{    
