@@ -30,11 +30,11 @@ private
     extern (C) uint gc_setAttr( void* p, uint a ) pure nothrow;
     extern (C) uint gc_clrAttr( void* p, uint a ) pure nothrow;
 
-    extern (C) void*    gc_malloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_calloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz ) pure nothrow;
+    extern (C) void*    gc_malloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_calloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz, const TypeInfo = null ) pure nothrow;
     extern (C) size_t   gc_reserve( size_t sz ) nothrow;
     extern (C) void     gc_free( void* p ) pure nothrow;
 
