@@ -54,7 +54,7 @@ template RTInfoImpl(T)
 //GCInfo(allocatedSize!T, compBitmap!T.ptr);
 //        return cast(ubyte*), (compBitmap!T).ptr;
     else static if (isStaticArray!T)
-       enum RTInfoImpl = (staticArrayBitmap!T).ptr;
+       enum RTInfoImpl = null;//(staticArrayBitmap!T).ptr;
 // GCInfo(0,cast(immutable ubyte*) 0,0x1, allocatedSize!(typeof(T[0])), (bitmap!(typeof(T[0]))).ptr);
     else
         enum RTInfoImpl = (bitmap!T).ptr;
