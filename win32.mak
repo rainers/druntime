@@ -237,7 +237,7 @@ MANIFEST= \
 
 SRCS= \
 	src\object_.d \
-	import\gctemplates.di \
+	src\gctemplates.di \
 	\
 	src\core\atomic.d \
 	src\core\bitop.d \
@@ -363,6 +363,7 @@ SRCS= \
 #       as both are used for debugging features (profiling and coverage)
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
+#
 
 OBJS= errno_c.obj complex.obj src\rt\minit.obj
 OBJS_TO_DELETE= errno_c.obj complex.obj
@@ -403,8 +404,8 @@ IMPORTS=\
 
 COPY=\
 	$(IMPDIR)\object.di \
-	$(IMPDIR)\rumptraits.di \
-	$(IMPDIR)\gctemplates.di \
+	$(IMPDIR)\rumptraits.di \
+	$(IMPDIR)\gctemplates.di \
 	$(IMPDIR)\core\atomic.d \
 	$(IMPDIR)\core\bitop.d \
 	$(IMPDIR)\core\cpuid.d \
@@ -605,6 +606,12 @@ copydir: $(IMPDIR)
 copy: $(COPY)
 
 $(IMPDIR)\object.di : src\object.di
+	copy $** $@
+
+$(IMPDIR)\gctemplates.di : src\gctemplates.di
+	copy $** $@
+
+$(IMPDIR)\rumptraits.di : src\rumptraits.di
 	copy $** $@
 
 $(IMPDIR)\core\atomic.d : src\core\atomic.d

@@ -168,7 +168,7 @@ void mkBitmap(T)(size_t* p, size_t offset) if (isStaticArray!T && hasIndirection
         mkBitmap!(Unqual!(typeof(T[0])))(p, offset + i*T[0].sizeof);
 }
 
-void gctemplates_setbit(size_t* a, ulong index)
+void gctemplates_setbit(size_t* a, size_t index)
 {
     a[index/divby] =
     a[index/divby] |
