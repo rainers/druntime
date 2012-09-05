@@ -61,6 +61,16 @@ XOE     ends
 
 DGROUP         group   FMB,FM,FME
 
+; These segments bracket RO, which contains the noscan data
+ROB     segment dword use32 public 'DATA'
+ROB     ends
+RO      segment dword use32 public 'DATA'
+RO      ends
+ROE     segment dword use32 public 'DATA'
+ROE     ends
+
+DGROUP         group   ROB,RO,ROE
+
     begcode minit
 
 ; extern (C) void _minit();
@@ -81,5 +91,23 @@ __minit proc    near
 __minit endp
 
     endcode minit
+
+    begcode noscanarea
+
+; extern (C) void[] _noscanarea();
+; Converts array of ModuleInfo pointers to a D dynamic array of them,
+; so they can be accessed via D.
+; Result is written to:
+; extern (C) ModuleInfo[] _moduleinfo_array;
+
+    public  __noscanarea
+__noscanarea proc    near
+    mov EDX,offset DATAGRP:ROB
+    mov EAX,offset DATAGRP:ROE
+    sub EAX,EDX         ; size in bytes of FM segment
+    ret
+__noscanarea endp
+
+    endcode noscanarea
 
     end

@@ -30,6 +30,7 @@ private
                 int _edata;  // &_edata is start of BSS segment
                 int _end;    // &_end is past end of BSS
             }
+			void[] _noscanarea();
         }
     }
     else version( linux )
@@ -96,7 +97,10 @@ void initStaticDataGC()
 {
     version( Windows )
     {
-        gc_addRange( &_xi_a, cast(size_t) &_end - cast(size_t) &_xi_a );
+		void[] noscan = _noscanarea();
+        gc_addRange( &_xi_a, cast(size_t) noscan.ptr - cast(size_t) &_xi_a );
+		void* noscan_end = noscan.ptr + noscan.length;
+        gc_addRange( noscan_end, cast(size_t) &_end - cast(size_t) noscan_end );
     }
     else version( linux )
     {
