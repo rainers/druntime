@@ -79,6 +79,7 @@ MANIFEST= \
 	src\core\sys\freebsd\sys\event.d \
 	\
 	src\core\sys\linux\execinfo.d \
+	src\core\sys\linux\sys\xattr.d \
 	\
 	src\core\sys\osx\execinfo.d \
 	src\core\sys\osx\pthread.d \
@@ -383,7 +384,6 @@ DOCS=\
 	$(DOCDIR)\core_sync_semaphore.html
 
 IMPORTS=\
-	$(IMPDIR)\object.di \
 	$(IMPDIR)\core\sync\barrier.di \
 	$(IMPDIR)\core\sync\condition.di \
 	$(IMPDIR)\core\sync\config.di \
@@ -434,6 +434,7 @@ COPY=\
 	$(IMPDIR)\core\sys\freebsd\sys\event.d \
 	\
 	$(IMPDIR)\core\sys\linux\execinfo.d \
+	$(IMPDIR)\core\sys\linux\sys\xattr.d \
 	\
 	$(IMPDIR)\core\sys\osx\execinfo.d \
 	$(IMPDIR)\core\sys\osx\pthread.d \
@@ -587,7 +588,7 @@ copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\sys\posix\netinet
 	mkdir $(IMPDIR)\core\sys\osx\mach
 	mkdir $(IMPDIR)\core\sys\freebsd\sys
-	mkdir $(IMPDIR)\core\sys\linux
+	mkdir $(IMPDIR)\core\sys\linux\sys
 	mkdir $(IMPDIR)\core\stdc
 
 copy: $(COPY)
@@ -704,6 +705,9 @@ $(IMPDIR)\core\sys\freebsd\sys\event.d : src\core\sys\freebsd\sys\event.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\linux\execinfo.d : src\core\sys\linux\execinfo.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\linux\sys\xattr.d : src\core\sys\linux\sys\xattr.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\osx\execinfo.d : src\core\sys\osx\execinfo.d
