@@ -47,9 +47,20 @@ private import gctemplates;
 
 version (GNU) import gcc.builtins;
 
-debug (PRINTF) import core.stdc.stdio : printf;
-debug (COLLECT_PRINTF) import core.stdc.stdio : printf;
+debug (PRINTF) import core.stdc.stdio : fprintf, fopen, fflush, FILE;
+//debug (COLLECT_PRINTF) import core.stdc.stdio : printf;
 debug private import core.stdc.stdio;
+
+debug (PRINTF) __gshared FILE* fh;
+
+debug (PRINTF) int printf(ARGS...)(const char* fmt, ARGS args)
+{
+    if(!fh) 
+        fh = fopen("c:/tmp/gcx.log", "w");
+    int len = fprintf(fh, fmt, args);
+    fflush(fh);
+    return len;
+}
 
 debug(PRINTF) void printFreeInfo(Pool* pool)
 {
@@ -82,15 +93,15 @@ version (COLLECT_PROFILE)
     __gshared long allocationBytes;
     __gshared long allocatedBytes;
 
-	__gshared FILE* prof_fh;
-	shared static this()
-	{
-		prof_fh = fopen("c:/tmp/gcprof.txt", "w");
-	}
-	shared static ~this()
-	{
-		fclose(prof_fh);
-	}
+    __gshared FILE* prof_fh;
+    shared static this()
+    {
+        prof_fh = fopen("c:/tmp/gcprof.txt", "w");
+    }
+    shared static ~this()
+    {
+        fclose(prof_fh);
+    }
 }
 
 private
@@ -262,11 +273,11 @@ final class GCMutex : Mutex {}
 
 debug(PRINTF) { void printGCBits(GCBits* bits)
     {
-	for (size_t i = 0; i<bits.nwords; i++){
-	    if (i % 32 == 0) printf("\n\t");
-	    printf("%x ", bits.data[i]);
-	}
-	printf("\n");
+        for (size_t i = 0; i<bits.nwords; i++){
+            if (i % 32 == 0) printf("\n\t");
+            printf("%x ", bits.data[i]);
+        }
+        printf("\n");
     }
 }
 class GC
@@ -441,90 +452,113 @@ class GC
 	immutable ubyte* arrayelementbitmap;
     }
 */
-debug(PRINTF) import std.string;
+//debug(PRINTF) import std.string;
 
-    void setPointerBitmap(void* p, Pool* pool, size_t s, const TypeInfo ti)
-    {	
-	size_t offset = p-pool.baseAddr;
-	//debug(PRINTF) printGCBits(&pool.is_pointer);	
-	if (ti)
-	{
-	    debug(PRINTF) 
-	    {
-		string ss = ti.classinfo.name;
-		printf("Setting a pointer bitmap for ");
-		printf(toStringz(ss));
-		printf("\n");
-	    }
+    void setPointerBitmap(void* p, Pool* pool, size_t s, size_t allocSize, const TypeInfo ti)
+    {
+        size_t offset = p-pool.baseAddr;
+        //debug(PRINTF) printGCBits(&pool.is_pointer);	
+        debug(PRINTF) 
+        {
+            string ss = ti ? ti.classinfo.name : "<unknown>";
+            printf("Setting a pointer bitmap for %*s at %p + %zu\n", ss, p, s);
+        }
 
-	
-	    //does this TypeInfo have a repeating tail?
-	    if (auto arrayti = cast(TypeInfo_Array)ti)
-	    {
-		if (!(cast(size_t*)arrayti.value.rtInfo()))
-		{}
-		else
-		{
-    
-		    const(size_t)* bitmap = cast (size_t*) arrayti.value.rtInfo();
-		    //first element of rtInfo is the size of the object the bitmap encodes
-		    size_t element_size = * bitmap;
-		    bitmap++;
-		    pool.is_pointer.copyRangeRepeating(offset, bitmap, element_size, s);
-		    debug(PRINTF) printf("\tSetting repeating bitmap "
-					 "\n\t\tfor object at %p"
-					 "\n\t\tcopying TypeInfo from %p\n",p, bitmap);
-		}
-	    }
-	    else if (!(cast(size_t*)ti.rtInfo())) 
-	    {
-		debug(PRINTF) printf("\tTypeInfo does not contain a rtInfo\n");
-		pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
-	    }
-	    else
-	    {	
+        if (ti)
+        {
+            string name = "unknown";
+            if(auto ci = cast(TypeInfo_Class)ti)
+                name = ci.name;
+            else if(auto si = cast(TypeInfo_Struct)ti)
+                name = si.name;
 
-		     
-		    const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
-		    //first element of rtInfo is the size of the object the bitmap encodes
-		    size_t element_size = * bitmap;
-		    bitmap++;
-		    pool.is_pointer.copyRange(offset, bitmap, element_size, s);
-		    debug(PRINTF) printf("\tSetting bitmap for new object \n\t\tat %p\t\tcopying from %p\n", p, bitmap);
-		}
-	    
-	}
-	else 
-	{
-	    debug(PRINTF)printf("Allocating a block without TypeInfo\n");
-	}
-	if (!ti || !(cast(size_t*)ti.rtInfo())) 
-	{    
-	    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
-	}
-	//debug(PRINTF) printGCBits(&pool.is_pointer);    
+            auto rtInfo = cast(const(size_t)*)ti.rtInfo();
+
+            //does this TypeInfo have a repeating tail?
+            if (auto arrayti = cast(TypeInfo_Array)ti)
+            {
+                // an array can be appended without notifying the GC, so we prefill the yet unused space with the pointer pattern
+                s = allocSize;
+                // arrays larger than the pagesize prepend the length in the first 16 bytes, so we must offset the pointer patterns
+                if (s >= PAGESIZE && (offset & (PAGESIZE - 1)) == 0 && pool.pagetable[offset/PAGESIZE] == B_PAGE)
+                {
+                    p = p + 16;
+                    s -= 16;
+                }
+                const(size_t)* bitmap = cast(const(size_t)*) 1;  // defaut is to set full range
+                if (arrayti.value)
+                    bitmap = cast(size_t*)arrayti.value.rtInfo();
+                if(!bitmap || cast(size_t) bitmap == 1)
+                {
+                    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
+                    debug(PRINTF) printf("\tSetting array of incomplete type info at %p\n", p);
+                }
+                else if (auto ci = cast(TypeInfo_Class)arrayti.value)
+                {
+                    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
+                    debug(PRINTF) printf("\tSetting array of class %d references (%s) at %p\n", s/(void*).sizeof, ci.name.ptr, p);
+                }
+                else
+                {
+                    //first element of rtInfo is the size of the object the bitmap encodes
+                    size_t element_size = * bitmap;
+                    bitmap++;
+                    pool.is_pointer.copyRangeRepeating(offset/(void*).sizeof, s/(void*).sizeof, bitmap, element_size/(void*).sizeof);
+                    debug(PRINTF) printf("\tSetting repeating bitmap "
+                                         "\n\t\tfor object at %p"
+                                         "\n\t\tcopying TypeInfo from %p\n",p, bitmap);
+                }
+            }
+            else if (!rtInfo || cast(size_t)rtInfo == 1) 
+            {
+                debug(PRINTF) printf("\tTypeInfo does not contain a rtInfo\n");
+                pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
+            }
+            else
+            {	
+                const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
+                //first element of rtInfo is the size of the object the bitmap encodes
+                size_t element_size = * bitmap;
+                bitmap++;
+                size_t tocopy = (s < element_size ? s : element_size)/(void*).sizeof;
+                pool.is_pointer.copyRange(offset/(void*).sizeof, tocopy, bitmap, tocopy);
+                debug(PRINTF) printf("\tSetting bitmap for new object (%*s)\n\t\tat %p\t\tcopying from %p + %zu: ", name, p, bitmap, element_size);
+                debug(PRINTF) 
+                    for(size_t i = 0; i < element_size/((void*).sizeof); i++) 
+                        printf("%d", (bitmap[i/(8*size_t.sizeof)] >> (i%(8*size_t.sizeof))) & 1);
+                debug(PRINTF) printf("\n");
+                if(tocopy*(void*).sizeof < s) // better safe than sorry: if allocated more, assume pointers inside
+                {
+                    debug(PRINTF) printf("    Appending %d pointer bits\n", s/(void*).sizeof - tocopy);
+                    pool.is_pointer.setRange(offset/(void*).sizeof + tocopy, s/(void*).sizeof - tocopy, true);
+                }
+            }
+
+        }
+        else 
+        {
+            debug(PRINTF) printf("Allocating a block without TypeInfo\n");
+            pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
+        }
+        //debug(PRINTF) printGCBits(&pool.is_pointer);    
     }
 
 
     /**
-     *
-     */
+    *
+    */
     void *malloc(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
-	if (ti)
-	{
-	    debug(PRINTF)
+        if (ti)
+        {
+            debug(PRINTF)
             {
                 string ss = ti.classinfo.name;
-                printf("malloc call with ");
-                printf(toStringz(ss));
-                printf("\n");
+                printf("malloc call with %*s\n", ss);
             }
-	}
-	
+        }
 
-
-	if (!size)
+        if (!size)
         {
             if(alloc_size)
                 *alloc_size = 0;
@@ -568,7 +602,7 @@ debug(PRINTF) import std.string;
         {
             allocations++;
             allocationBytes += size;
-		}
+        }
 
         //debug(PRINTF) printf("GC::malloc(size = %d, gcx = %p)\n", size, gcx);
         assert(gcx);
@@ -581,9 +615,13 @@ debug(PRINTF) import std.string;
         bin = gcx.findBin(size);
         Pool *pool;
 
+        size_t allocated;
+        if (!alloc_size)
+           alloc_size = &allocated;
+
         if (bin < B_PAGE)
         {
-			version (COLLECT_PROFILE) allocatedBytes += binsize[bin];
+            version (COLLECT_PROFILE) allocatedBytes += binsize[bin];
             if(alloc_size)
                 *alloc_size = binsize[bin];
             int  state     = gcx.disabled ? 1 : 0;
@@ -644,7 +682,7 @@ debug(PRINTF) import std.string;
         {
             gcx.setBits(pool, cast(size_t)(p - pool.baseAddr) >> pool.shiftBy, bits);
         }
-	setPointerBitmap(p, pool, size, ti);
+        setPointerBitmap(p, pool, size, *alloc_size, ti);
         return p;
     }
 
@@ -776,11 +814,11 @@ debug(PRINTF) import std.string;
                     auto psz = psize / PAGESIZE;
                     auto newsz = (size + PAGESIZE - 1) / PAGESIZE;
                     auto pool = gcx.findPool(p);
-		    if (newsz == psz)
-		    {
-			setPointerBitmap(p, pool, size, ti);
+                    if (newsz == psz)
+                    {
+                        setPointerBitmap(p, pool, size, newsz * PAGESIZE, ti);
                         return p;
-		    }
+                    }
                     auto pagenum = (p - pool.baseAddr) / PAGESIZE;
 
                     if (newsz < psz)
@@ -794,7 +832,7 @@ debug(PRINTF) import std.string;
                         }
                         if(alloc_size)
                             *alloc_size = newsz * PAGESIZE;
-			setPointerBitmap(p, pool, size, ti);
+                        setPointerBitmap(p, pool, size, newsz * PAGESIZE, ti);
                         return p;
                     }
                     else if (pagenum + newsz <= pool.npages)
@@ -816,8 +854,8 @@ debug(PRINTF) import std.string;
                                     pool.freepages -= (newsz - psz);
                                     debug(PRINTF) printFreeInfo(pool);
 
-				    setPointerBitmap(p, pool, size, ti);
-				    return p;
+                                    setPointerBitmap(p, pool, size, newsz * PAGESIZE, ti);
+                                    return p;
                                 }
                                 if (i == pool.ncommitted)
                                 {
@@ -863,14 +901,13 @@ debug(PRINTF) import std.string;
                     memcpy(p2, p, size);
                     p = p2;
                 }
-		else
-		{
-		    if(alloc_size)
-			*alloc_size = psize;
-		    Pool *pool = gcx.findPool(p);
-		    setPointerBitmap(p, pool, size, ti);
-		}
-
+                else
+                {
+                    if(alloc_size)
+                        *alloc_size = psize;
+                    Pool *pool = gcx.findPool(p);
+                    setPointerBitmap(p, pool, size, psize, ti);
+                }
             }
         }
         return p;
@@ -962,7 +999,8 @@ debug(PRINTF) import std.string;
             gcx.cached_size_val = (psz + sz) * PAGESIZE;
         if (p == gcx.cached_info_key)
             gcx.cached_info_val.size = (psz + sz) * PAGESIZE;
-	setPointerBitmap(p, pool, (psz+sz) * PAGESIZE, ti);
+        void* end = pool.baseAddr + (pagenum + psz + sz) * PAGESIZE;
+        setPointerBitmap(p, pool, end - p, end - p, ti);
         return (psz + sz) * PAGESIZE;
     }
 
@@ -1042,17 +1080,18 @@ debug(PRINTF) import std.string;
         debug(PRINTF) if(pool.isLargeObject) printf("Block size = %d\n", pool.bPageOffsets[pagenum]);
         biti = cast(size_t)(p - pool.baseAddr) >> pool.shiftBy;
 
+        assert(!pool.freebits.test(biti));
         gcx.clrBits(pool, biti, BlkAttr.ALL_BITS);
 
-	bin = cast(Bins)pool.pagetable[pagenum];
+        bin = cast(Bins)pool.pagetable[pagenum];
         if (bin == B_PAGE)              // if large alloc
         {   size_t npages;
 
             // Free pages
             npages = pool.bPageOffsets[pagenum];
             debug (MEMSTOMP) memset(p, 0xF2, npages * PAGESIZE);
-	    
-	    pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof,(npages* PAGESIZE)/(void*).sizeof, false); 
+
+            pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof,(npages* PAGESIZE)/(void*).sizeof, false); 
             pool.freePages(pagenum, npages);
         }
         else
@@ -1061,9 +1100,9 @@ debug(PRINTF) import std.string;
 
             debug (MEMSTOMP) memset(p, 0xF2, binsize[bin]);
 
-	    pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof, binsize[bin]/(void*).sizeof, false); 
+            pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof, binsize[bin]/(void*).sizeof, false); 
             
-	    list.next = gcx.bucket[bin];
+            list.next = gcx.bucket[bin];
             list.pool = pool;
             gcx.bucket[bin] = list;
         }
@@ -1631,8 +1670,12 @@ struct Gcx
 
             for (size_t i = 0; i < B_PAGE; i++)
             {
+                size_t j = 0;
+                List* prev, pprev, ppprev;
                 for (auto list = cast(List*)bucket[i]; list; list = list.next)
                 {
+                    ppprev = pprev; pprev = prev; prev = list;
+                    j++;
                 }
             }
         }
@@ -2299,7 +2342,7 @@ struct Gcx
         if(alloc_size)
             *alloc_size = npages * PAGESIZE;
         //debug(PRINTF) printf("\tp = %p\n", p);
-		version (COLLECT_PROFILE) allocatedBytes += npages * PAGESIZE;
+        version (COLLECT_PROFILE) allocatedBytes += npages * PAGESIZE;
 
         *poolPtr = pool;
         return p;
@@ -2448,51 +2491,52 @@ struct Gcx
         void **p2 = cast(void **)ptop;
         size_t pcache = 0;
         uint changes = 0;
-	GCBits * is_pointer = null;
-	byte* hostBaseAddr = null;
+        GCBits * is_pointer = null;
+        byte* hostBaseAddr = null;
 
-	//do we have precise pointer data for the area we are searching? If yes, use it
-	if (cast(byte*)p1 >= minAddr && cast(byte*)p2 < maxAddr)
-	{
-	    auto hostpool1 = findPool(p1);
-	    auto hostpool2 = findPool(p2-1);
-	    
-	    //found host pool
-	    if (hostpool1){
-		//mark call spans multiple pools, this is very bad
-		if (hostpool1 == hostpool2)
-		{
-		    is_pointer = &(hostpool1.is_pointer);
-		    hostBaseAddr = cast(byte*)hostpool1.baseAddr;
-		    debug(PRINTF) printf("scanning at pool %p with precise pointer data, starting from pointer %p\n", hostpool1,pbot);
-		    debug(PRINTF) printf("pointer data is at %p + %d\n", &hostpool1.is_pointer, pbot - hostBaseAddr);  
-		    debug(PRINTF)
-		    {
-			//printGCBits(is_pointer);
-			auto tp1 = p1;
-			auto tp2 = p2;
-//			for(;tp1<tp2; tp1++) printf("loc = %p cont = % p biti = %d bit = %d\n", tp1, cast(byte*)(*tp1),((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof));
-		    }
-		}
-		else debug(PRINTF) printf("Mark call from %p to %p spans multiple pools.", p1, p2);
-	    }
-	}
+        debug(PRINTF) int indent = MAX_MARK_RECURSIONS - nRecurse;
+        //do we have precise pointer data for the area we are searching? If yes, use it
+        if (cast(byte*)p1 >= minAddr && cast(byte*)p2 < maxAddr)
+        {
+            auto hostpool1 = findPool(p1);
+            auto hostpool2 = findPool(p2-1);
+
+            //found host pool
+            if (hostpool1){
+                //mark call spans multiple pools, this is very bad
+                if (hostpool1 == hostpool2)
+                {
+                    is_pointer = &(hostpool1.is_pointer);
+                    hostBaseAddr = cast(byte*)hostpool1.baseAddr;
+                    debug(PRINTF) printf("%*sscanning at pool %p with precise pointer data, starting from pointer %p\n", indent, "".ptr, hostpool1,pbot);
+                    debug(PRINTF) printf("%*spointer data is at %p + %d\n", indent, "".ptr, &hostpool1.is_pointer, pbot - hostBaseAddr);  
+                    debug(PRINTF)
+                    {
+                        //printGCBits(is_pointer);
+                        auto tp1 = p1;
+                        auto tp2 = p2;
+                        // for(;tp1<tp2; tp1++) printf("loc = %p cont = % p biti = %d bit = %d\n", tp1, cast(byte*)(*tp1),((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof));
+                    }
+                }
+                else debug(PRINTF) printf("%*sMark call from %p to %p spans multiple pools.", indent, "".ptr, p1, p2);
+            }
+        }
         //printf("marking range: %p -> %p\n", pbot, ptop);
         for (; p1 < p2; p1++)
         {
             auto p = cast(byte *)(*p1);
-	    if (is_pointer)
-	    {
-		if (!(is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof)!= 0))
-		{
-		    debug(PRINTF) printf("skipping %p, biti = %d, at %p\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
-		    continue;
-		}
-		else
-		{
-		    debug(PRINTF) printf("not skipping %p, biti = %d, at %p\n", p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
-		}
-	    }
+            if (is_pointer)
+            {
+                if (!(is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof)!= 0))
+                {
+                    debug(PRINTF) printf("%*sskipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
+                    continue;
+                }
+                else
+                {
+                    debug(PRINTF) printf("%*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
+                }
+            }
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
             if (p >= minAddr && p < maxAddr)
             {
@@ -2944,12 +2988,12 @@ struct Gcx
         debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
 
         version (COLLECT_PROFILE) 
-		{
-			allocatedBytes -= (freedpages + recoveredpages) * PAGESIZE;
-			fprintf(prof_fh, "fullcollect() after %10lld allocations, %10lld bytes of %10lld bytes: %ld ms\n",
-				   allocations, allocationBytes, allocatedBytes, (clock() - prof_start) * 1000 / CLOCKS_PER_SEC);
-			fflush(prof_fh);
-		}
+        {
+            allocatedBytes -= (freedpages + recoveredpages) * PAGESIZE;
+            fprintf(prof_fh, "fullcollect() after %10lld allocations, %10lld bytes of %10lld bytes: %ld ms\n",
+                    allocations, allocationBytes, allocatedBytes, (clock() - prof_start) * 1000 / CLOCKS_PER_SEC);
+            fflush(prof_fh);
+        }
 
         running = 0; // only clear on success
 
@@ -3248,7 +3292,7 @@ struct Pool
     GCBits nointerior;  // interior pointers should be ignored.
                         // Only implemented for large object pools.
 
-    GCBits is_pointer;	// Per-word, not per-block like the rest of them
+    GCBits is_pointer;  // Per-word, not per-block like the rest of them
     size_t npages;
     size_t freepages;     // The number of pages not in use.
     size_t ncommitted;    // ncommitted <= npages
@@ -3297,7 +3341,7 @@ struct Pool
 
         mark.alloc(nbits);
         scan.alloc(nbits);
-	is_pointer.alloc(cast(size_t)poolsize/(void*).sizeof);
+        is_pointer.alloc(cast(size_t)poolsize/(void*).sizeof);
 
         // pagetable already keeps track of what's free for the large object
         // pool.
@@ -3359,7 +3403,7 @@ struct Pool
 
         mark.Dtor();
         scan.Dtor();
-	is_pointer.Dtor();
+        is_pointer.Dtor();
         if(isLargeObject)
         {
             nointerior.Dtor();

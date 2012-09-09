@@ -180,48 +180,48 @@ struct GCBits
 
     // target = the biti to start the copy to
     // sourcelen, destlen = sizeof of the object defintion and the memory block, in bytes
-    void copyRange(size_t target, const size_t* source, size_t sourcelen, size_t destlen)
+    void copyRange(size_t target, size_t destlen, const size_t* source, size_t sourcelen)
     {
-	for (size_t i = 0; i<(destlen/(void*).sizeof); i++)
-	{
-	    bool b;
-	    if (i<sourcelen/(void*).sizeof) b = (source[i/8] & BITS_1 << (i % 8)) != 0;
-	    else b = false;
-	    if (b) 
-	    {
-		set((target/(void*).sizeof)+i);
-		debug(PRINTF) printf("setting biti %d\n",((target/(void*).sizeof)+i));
-	    }
-	    else clear((target/(void*).sizeof)+i);
-	}
+        for (size_t i = 0; i < destlen; i++)
+        {
+            bool b;
+            if (i < sourcelen) b = (source[i >> BITS_SHIFT] & (BITS_1 << (i & BITS_MASK))) != 0;
+            else b = false;
+            if (b) 
+            {
+                set(target+i);
+                debug(PRINTF) printf("setting biti %d\n", target+i);
+            }
+            else clear(target+i);
+        }
     }
 
-    void copyRangeRepeating(size_t target, const size_t* source, size_t sourcelen, size_t destlen)
+    void copyRangeRepeating(size_t target, size_t destlen, const size_t* source, size_t sourcelen)
     {
-	for (size_t i=0; i<destlen; i++)
-	{
-	    bool b;
-	    size_t j = i % sourcelen;
-	    b = (source[j/8] & BITS_1 << (j % 8)) != 0;
-	    if (b) set((target/(void*).sizeof)+i);
-	    else clear((target/(void*).sizeof)+i);
-	}
+        for (size_t i=0; i < destlen; i++)
+        {
+            bool b;
+            size_t j = i % sourcelen;
+            b = (source[j >> BITS_SHIFT] & (BITS_1 << (j & BITS_MASK))) != 0;
+            if (b) set(target+i);
+            else clear(target+i);
+        }
     }
 
     void setRange(size_t target, size_t len, bool content)
     {
 //	debug(PRINTF) printf("setting %d bits from %d to %d, in a pool of %d bits\n", len, target, content, this.nbits);
-	for (size_t i = 0; i<len;i++)
-	{
-	    if (content){
-		this.set(target+i);
-		//debug(PRINTF) printf("setting biti %d", target+1);
-	    }
-	    else 
-		this.clear(target+i);
-	}
+        for (size_t i = 0; i<len;i++)
+        {
+            if (content){
+                this.set(target+i);
+                //debug(PRINTF) printf("setting biti %d", target+1);
+            }
+            else 
+                this.clear(target+i);
+        }
     }
- 
+
     void zero()
     {
         memset(data + 1, 0, nwords * wordtype.sizeof);
