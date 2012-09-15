@@ -328,6 +328,7 @@ SRC_D_MODULES = \
 	rt/arrayshort \
 	rt/cast_ \
 	rt/cover \
+	rt/critical_ \
 	rt/dmain2 \
 	rt/invariant \
 	rt/invariant_ \
@@ -400,9 +401,7 @@ SRC_D_MODULES_POSIX = \
 	\
 	rt/alloca \
 	rt/cmath2 \
-	rt/critical_ \
 	rt/deh2 \
-	rt/monitor_ \
 
 SRC_D_MODULES_WIN = \
 	core/sys/windows/dll \
@@ -422,7 +421,7 @@ ifeq (win,$(findstring win,$(OS)))
     SRC_D_MODULES += $(SRC_D_MODULES_WIN)
     O = obj
     DOTEXE = .exe
-    OBJS= $(OBJDIR)/errno_c.obj $(OBJDIR)/monitor.obj $(OBJDIR)/complex.obj $(OBJDIR)/critical.obj \
+    OBJS= $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj \
           src\rt\minit.obj
 else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
