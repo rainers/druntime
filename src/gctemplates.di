@@ -1,36 +1,8 @@
 module gctemplates;
 
+import rumptraits;
+
 // version = RTInfoPRINTF; // want some compile time debug output?
-
-///////////////////////////////////////////////////////////////////////
-// some basic type traits helper
-template Unqual(T)
-{
-    // workaround for recursive alias declaration @@@BUG1308@@@
-    static if (is(T U == shared(const U))) alias U Unqual;
-    else static if (is(T U ==        const U )) alias U Unqual;
-    else static if (is(T U ==    immutable U )) alias U Unqual;
-    else static if (is(T U ==        inout U )) alias U Unqual;
-    else static if (is(T U ==       shared U )) alias U Unqual;
-    else                                        alias T Unqual;
-}
-
-template TypeTuple(TList...)
-{
-    alias TList TypeTuple;
-}
-
-bool isBasicType(T)()
-{
-    foreach(t; TypeTuple!(byte, ubyte, short, ushort, int, uint, long, ulong,
-                          float, double, real,
-                          ifloat, idouble, ireal,
-                          cfloat, cdouble, creal,
-                          char, wchar, dchar, bool, void))
-        static if(is(T == t))
-            return true;
-    return false;
-}
 
 ///////////////////////////////////////////////////////////////////////
 
@@ -55,12 +27,12 @@ template bitmapSize(T)
 ////////////////////////////////////////////////////////
 template RTInfoImpl(T)
 {
-    enum RTInfoImpl = RTInfoImpl2!T.ptr;
+    immutable RTInfoImpl = RTInfoImpl2!T.ptr;
 }
 
 template RTInfoImpl2(T)
 {
-    enum RTInfoImpl2 = bitmap!T();
+    immutable RTInfoImpl2 = bitmap!T();
 }
 
 // first element is size of the object that the bitmap corresponds to in bytes.

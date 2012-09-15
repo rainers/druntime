@@ -55,9 +55,5 @@ class TypeInfo_D : TypeInfo
         return 1;
     }
 
-    override @property immutable(void)* rtInfo() nothrow pure const @safe 
-    {
-        static immutable size_t[2] info = [ dg.sizeof, 0b01 ]; // context pointer comes first
-        return info.ptr;
-    }
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(dg); }
 }

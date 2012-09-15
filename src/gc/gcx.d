@@ -26,7 +26,6 @@ module gc.gcx;
 //debug = PTRCHECK2;            // thorough but slow pointer checking
 //debug = PROFILING;            // measure performance of various steps.
 //debug = GCXINVARIANT;         // more invariants (seem not thread safe)
-//version = COLLECT_PROFILE;    // measure collections
 
 /*************** Configuration *********************/
 
@@ -56,7 +55,7 @@ debug (PRINTF) __gshared FILE* fh;
 debug (PRINTF) int printf(ARGS...)(const char* fmt, ARGS args)
 {
     if(!fh) 
-        fh = fopen("c:/tmp/gcx.log", "w");
+        fh = fopen("gcx.log", "w");
     int len = fprintf(fh, fmt, args);
     fflush(fh);
     return len;
@@ -85,27 +84,6 @@ debug(PROFILING)
 
 alias void function(Gcx* gcx, bool start) fnProfileCollectionHook;
 __gshared fnProfileCollectionHook profileCollectionHook;
-
-version (COLLECT_PROFILE) 
-{
-    import core.stdc.stdio; 
-    import core.stdc.time;
-
-    __gshared long collectTime;
-    __gshared long allocations;
-    __gshared long allocationBytes;
-    __gshared long allocatedBytes;
-
-    __gshared FILE* prof_fh;
-    shared static this()
-    {
-        prof_fh = fopen("c:/tmp/gcprof.txt", "w");
-    }
-    shared static ~this()
-    {
-        fclose(prof_fh);
-    }
-}
 
 private
 {
@@ -614,12 +592,6 @@ L_setarray:
         void *p = null;
         Bins bin;
 
-        version (COLLECT_PROFILE) 
-        {
-            allocations++;
-            allocationBytes += size;
-        }
-
         //debug(PRINTF) printf("GC::malloc(size = %d, gcx = %p)\n", size, gcx);
         assert(gcx);
         //debug(PRINTF) printf("gcx.self = %x, pthread_self() = %x\n", gcx.self, pthread_self());
@@ -637,7 +609,6 @@ L_setarray:
 
         if (bin < B_PAGE)
         {
-            version (COLLECT_PROFILE) allocatedBytes += binsize[bin];
             if(alloc_size)
                 *alloc_size = binsize[bin];
             int  state     = gcx.disabled ? 1 : 0;
@@ -2359,7 +2330,6 @@ struct Gcx
         if(alloc_size)
             *alloc_size = npages * PAGESIZE;
         //debug(PRINTF) printf("\tp = %p\n", p);
-        version (COLLECT_PROFILE) allocatedBytes += npages * PAGESIZE;
 
         *poolPtr = pool;
         return p;
@@ -2807,8 +2777,7 @@ struct Gcx
         }
 
         thread_processGCMarks(&isMarked);
-        version(none)
-            thread_resumeAll();
+        thread_resumeAll();
 
         debug(PROFILING)
         {
@@ -3008,17 +2977,6 @@ struct Gcx
 
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
         debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
-
-        version (COLLECT_PROFILE) 
-        {
-            allocatedBytes -= (freedpages + recoveredpages) * PAGESIZE;
-            fprintf(prof_fh, "fullcollect() after %10lld allocations, %10lld bytes of %10lld bytes: %ld ms\n",
-                    allocations, allocationBytes, allocatedBytes, (clock() - prof_start) * 1000 / CLOCKS_PER_SEC);
-            fflush(prof_fh);
-        }
-
-        version(none) {} else
-            thread_resumeAll();
 
         running = 0; // only clear on success
 

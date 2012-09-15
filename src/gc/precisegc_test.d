@@ -1,3 +1,6 @@
+// compile with
+//   dmd -I.. -unittest precisegc_test.d
+//
 // TODO
 // - GCBits.setRange,copyRange,etc need optimization
 // - Array appender?
@@ -6,6 +9,7 @@
 // - AA: no type info on Nodes
 // - new void[]
 // - emplace
+//
 // BUGS:
 // - passing struct larger than 64kB causes bad leave instruction (bugzilla 8658)
 // - TypeInfo_Const: next/base (bugzilla 8656)
@@ -19,6 +23,7 @@ module precisegc_test;
 
 import gctemplates;
 import std.stdio;
+import std.conv;
 
 import gc.gcx;
 import gc.gc;
@@ -45,9 +50,10 @@ bool testBit(const(size_t)* p, size_t biti)
 
 void testGC(T)(size_t[] expected)
 {
-    T* p = new T;
-
-    Pool* pool = gc_findPool( cast(void*)p );
+    auto t = new T;
+    void* p = *cast(void**) &t; // avoid all possible cast troubles
+    // write(" p = ", p);
+    Pool* pool = gc_findPool( p );
     assert(pool);
     size_t biti = cast(void**) p - cast(void**) pool.baseAddr;
 
@@ -65,11 +71,11 @@ void __testType(T)(size_t[] expected)
     // check compile time info
     enum bits  = (T.sizeof + bytesPerPtr - 1) / bytesPerPtr;
     enum words = (T.sizeof + bytesPerBitmapWord - 1) / bytesPerBitmapWord;
-    enum info = RTInfoImpl2!(T);
+    enum info = RTInfoImpl2!(T); // we want the array, not the pointer
     writef("%-20s:", T.stringof);
     writef(" CT:%s", info);
     writef(" EXP:%s", expected);
-    assert(info[0] == T.sizeof);
+    assert(info[0] == allocatedSize!T);
     assert(info[1..$] == expected);
     assert(words == expected.length);
 
@@ -130,7 +136,7 @@ L_testNull:
     else
     {
         write(" RT:", pinfo[1 .. words+1]);
-        assert(pinfo[0] == T.sizeof);
+        assert(pinfo[0] == allocatedSize!T);
         assert(pinfo[1 .. words+1] == expected[]);
     }
 L_xit:
@@ -155,6 +161,33 @@ struct S(T, aliasTo = void)
     size_t x;
     T t;
     void* p;
+
+}
+
+template tOff(T)
+{
+    enum tOff = T.t.offsetof / bytesPerPtr;
+}
+
+template pOff(T)
+{
+    enum pOff = T.p.offsetof / bytesPerPtr;
+}
+
+class C(T, aliasTo = void)
+{
+    static if(!is(aliasTo == void))
+    {
+        aliasTo a;
+        alias a this;
+    }
+
+    size_t x;
+    T t;
+    void* p;
+
+    enum tOff = t.offsetof / bytesPerPtr;
+    enum pOff = p.offsetof / bytesPerPtr;
 }
 
 ///////////////////////////////////////
@@ -174,16 +207,31 @@ void testType(T)(size_t[] expected)
     // generate bit pattern for S!T
     assert(expected.length == 1);
     size_t[] sexp;
-    sexp ~= (expected[0] << (S!T.t.offsetof / bytesPerPtr)) | (1 << (S!T.p.offsetof / bytesPerPtr));
+
+    sexp ~= (expected[0] << tOff!(S!T)) | (1 << pOff!((S!T)));
     _testType!(S!T)(sexp);
 
     // prepend Object
-    sexp[0] = (expected[0] << (S!(T, Object).t.offsetof / bytesPerPtr)) | (1 << (S!(T, Object).p.offsetof / bytesPerPtr)) | 1;
+    sexp[0] = (expected[0] << tOff!(S!(T, Object))) | (1 << pOff!(S!(T, Object))) | 1;
     _testType!(S!(T, Object))(sexp);
 
     // prepend string
-    sexp[0] = (expected[0] << (S!(T, string).t.offsetof / bytesPerPtr)) | (1 << (S!(T, string).p.offsetof / bytesPerPtr)) | 2;
+    sexp[0] = (expected[0] << tOff!(S!(T, string))) | (1 << pOff!(S!(T, string))) | 2; // arr ptr
     _testType!(S!(T, string))(sexp);
+
+    // generate bit pattern for C!T
+    C!T ct = null;
+    int ctpOff = ct.p.offsetof / bytesPerPtr;
+    int cttOff = ct.t.offsetof / bytesPerPtr;
+    sexp[0] = (expected[0] << cttOff) | (1 << ctpOff) | 2; // mutex
+    _testType!(C!(T))(sexp);
+
+    C!(T, string) cts = null;
+    int ctspOff = cts.p.offsetof / bytesPerPtr;
+    int ctstOff = cts.t.offsetof / bytesPerPtr;
+    // generate bit pattern for C!T
+    sexp[0] = (expected[0] << ctstOff) | (1 << ctspOff) | 0b1010; // mutex + arr ptr
+    _testType!(C!(T, string))(sexp);
 }
 
 ///////////////////////////////////////
@@ -206,6 +254,7 @@ void testRTInfo()
     testType!(cdouble)      ([ 0b0000 ]);
     testType!(dg)           ([ 0b01 ]);
 //    testType!(fn)           ([ 0b1 ]); // single function pointer typed as pointer, inconsistent in structs 
+    testType!(S!fn)         ([ 0b100 ]); // but works inside struct (not a pointer to scan)
 
     testType!(Object[int])       ([ 0b1 ]);
     testType!(Object[])       ([ 0b10 ]);

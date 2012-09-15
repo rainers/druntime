@@ -562,11 +562,7 @@ class TypeInfo_Array : TypeInfo
         return 0;
     }
 
-    override @property immutable(void)* rtInfo() nothrow pure const @safe 
-    {
-        static immutable size_t[2] info = [ (void[]).sizeof, 0b10 ]; // length comes first, then pointer
-        return info.ptr;
-    }
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(void[]); }
 }
 
 class TypeInfo_StaticArray : TypeInfo
@@ -800,12 +796,7 @@ class TypeInfo_Delegate : TypeInfo
         return 0;
     }
 
-    override @property immutable(void)* rtInfo() nothrow pure const @safe 
-    {
-        alias int delegate() dg;
-        static immutable size_t[2] info = [ dg.sizeof, 0b01 ]; // context pointer comes first
-        return info.ptr;
-    }
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(int delegate()); }
 }
 
 /**
