@@ -67,18 +67,20 @@ template RTInfoImpl2(T)
 size_t[bitmapSize!T + 1] bitmap(T)()
 {
     size_t[bitmapSize!T + 1] A;
-    bitmapImpl!(Unqual!T)(A.ptr + 1, 0);
+    bitmapImpl!(Unqual!T)(A.ptr + 1);
     A[0] = allocatedSize!T;
     return A;
 }
 
-void bitmapImpl(T)(size_t* p, size_t offset)
+void bitmapImpl(T)(size_t* p)
 {
-    static if(is(T == class) ||
-              is(T == interface))
-        mkBitmapComposite!(T)(p, offset);
+    static if(is(T == class))
+    {
+        gctemplates_setbit(p, bytesPerPtr); // mark mutex member
+        mkBitmapComposite!(T)(p, 0);
+    }
     else
-        mkBitmap!(Unqual!T)(p, offset);
+        mkBitmap!(Unqual!T)(p, 0);
 }
 
 ////////////////////////////////////////////////////////
@@ -118,15 +120,22 @@ void mkBitmap(T)(size_t* p, size_t offset)
         version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " reference");
         gctemplates_setbit(p, offset);
     }
-    else static if (isBasicType!(T)() ||
-                    is(T == function))
+    else static if (isBasicType!(T)())
     {
         version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " basic type");
     }
-    else static if (is(T P == U*, U) ||
-                    is(T == delegate)) // context pointer of delegate comes first
+    else static if (is(T F == F*) && is(F == function))
     {
-        version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " pointer/delegate");
+        version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " function");
+    }
+    else static if (is(T P == U*, U))
+    {
+        version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " pointer");
+        gctemplates_setbit(p, offset);
+    }
+    else static if (is(T == delegate)) // context pointer of delegate comes first
+    {
+        version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " delegate");
         gctemplates_setbit(p, offset);
     }
     else static if (is(T D == U[], U))

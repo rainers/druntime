@@ -179,14 +179,13 @@ struct GCBits
     }
 
     // target = the biti to start the copy to
-    // sourcelen, destlen = sizeof of the object defintion and the memory block, in bytes
-    void copyRange(size_t target, size_t destlen, const size_t* source, size_t sourcelen)
+    // destlen = the number of bits to copy from source
+    void copyRange(size_t target, size_t destlen, const size_t* source)
     {
+        // TODO: should be optimized to not use bitwise copy
         for (size_t i = 0; i < destlen; i++)
         {
-            bool b;
-            if (i < sourcelen) b = (source[i >> BITS_SHIFT] & (BITS_1 << (i & BITS_MASK))) != 0;
-            else b = false;
+            bool b = (source[i >> BITS_SHIFT] & (BITS_1 << (i & BITS_MASK))) != 0;
             if (b) 
             {
                 set(target+i);
@@ -198,6 +197,7 @@ struct GCBits
 
     void copyRangeRepeating(size_t target, size_t destlen, const size_t* source, size_t sourcelen)
     {
+        // TODO: should be optimized to not use bitwise copy
         for (size_t i=0; i < destlen; i++)
         {
             bool b;

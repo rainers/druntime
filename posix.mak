@@ -598,6 +598,9 @@ $(OBJDIR)/errno_c.o : src/core/stdc/errno.c
 	@mkdir -p $(OBJDIR)
 	$(CC) -c $(CFLAGS) $< -o$@
 
+src\rt\minit.obj : src\rt\minit.asm
+	ml -c /omf /D_WIN32 /Fo$@ src\rt\minit.asm
+
 ################### Library generation #########################
 
 $(DRUNTIME): $(OBJS) $(SRCS) win32.mak

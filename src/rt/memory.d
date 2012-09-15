@@ -31,6 +31,7 @@ private
                 int _end;    // &_end is past end of BSS
             }
 			void[] _noscanarea();
+			void[] _scanarea();
         }
     }
     else version( linux )
@@ -95,9 +96,14 @@ private
 
 void initStaticDataGC()
 {
-    version( Windows )
+    version( noWindows )
     {
-		void[] noscan = _noscanarea();
+        void[] scan = _scanarea();
+        gc_addRange( scan.ptr, scan.length );
+    }
+    else version( Windows )
+    {
+        void[] noscan = _noscanarea();
         gc_addRange( &_xi_a, cast(size_t) noscan.ptr - cast(size_t) &_xi_a );
 		void* noscan_end = noscan.ptr + noscan.length;
         gc_addRange( noscan_end, cast(size_t) &_end - cast(size_t) noscan_end );

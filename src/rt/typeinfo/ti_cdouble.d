@@ -96,4 +96,6 @@ class TypeInfo_r : TypeInfo
         arg2 = typeid(double);
         return 0;
     }
+
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return rtinfoNoPointers; }
 }

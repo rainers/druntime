@@ -273,7 +273,7 @@ body
     // Not found, create new elem
     //printf("create new one\n");
     size_t size = aaA.sizeof + aligntsize(keytitsize) + valuesize;
-    e = cast(aaA *) gc_malloc(size); // TODO: combined TypeInfo needed
+    e = cast(aaA *) gc_malloc(size, 0, typeid(aaA)); // TODO: combined TypeInfo needed
     e.next = null;
     e.hash = key_hash;
     ubyte* ptail = cast(ubyte*)(e + 1);
@@ -710,8 +710,9 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(aaA *) cast(void*) new void[aaA.sizeof + keytsize + valuesize];
+                    e = cast(aaA *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(aaA)); // TODO: provide full type info
                     memcpy(e + 1, pkey, keysize);
+                    e.next = null;
                     e.hash = key_hash;
                     *pe = e;
                     result.nodes++;
@@ -780,8 +781,9 @@ BB* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] val
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(aaA *) cast(void*) new void[aaA.sizeof + keytsize + valuesize];
+                    e = cast(aaA *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(aaA)); // TODO: provide full type info
                     memcpy(e + 1, pkey, keysize);
+                    e.next = null;
                     e.hash = key_hash;
                     *pe = e;
                     result.nodes++;

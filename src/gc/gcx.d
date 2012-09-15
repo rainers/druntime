@@ -83,6 +83,9 @@ debug(PROFILING)
     __gshared long recoverTime;
 }
 
+alias void function(Gcx* gcx, bool start) fnProfileCollectionHook;
+__gshared fnProfileCollectionHook profileCollectionHook;
+
 version (COLLECT_PROFILE) 
 {
     import core.stdc.stdio; 
@@ -454,25 +457,33 @@ class GC
 */
 //debug(PRINTF) import std.string;
 
-    void setPointerBitmap(void* p, Pool* pool, size_t s, size_t allocSize, const TypeInfo ti)
+    void setPointerBitmap(void* p, Pool* pool, size_t s, size_t allocSize, const TypeInfo cti)
     {
         size_t offset = p-pool.baseAddr;
-        //debug(PRINTF) printGCBits(&pool.is_pointer);	
+        //debug(PRINTF) printGCBits(&pool.is_pointer);
+        TypeInfo ti = cast(TypeInfo) cti;
+        TypeInfo_Const tic;
+        while((tic = cast(TypeInfo_Const) ti) !is null) // includes modifers immutable,shared,inout
+            ti = cast(TypeInfo) (tic.base);
+
         debug(PRINTF) 
         {
             string ss = ti ? ti.classinfo.name : "<unknown>";
-            printf("Setting a pointer bitmap for %*s at %p + %zu\n", ss, p, s);
+            printf("Setting a pointer bitmap for %.*s at %p + %zu\n", ss.length, ss.ptr, p, s);
         }
 
         if (ti)
         {
-            string name = "unknown";
-            if(auto ci = cast(TypeInfo_Class)ti)
-                name = ci.name;
-            else if(auto si = cast(TypeInfo_Struct)ti)
-                name = si.name;
-
+            debug(PRINTF)
+            {
+                string name = "unknown";
+                if(auto ci = cast(TypeInfo_Class)ti)
+                    name = ci.name;
+                else if(auto si = cast(TypeInfo_Struct)ti)
+                    name = si.name;
+            }
             auto rtInfo = cast(const(size_t)*)ti.rtInfo();
+            TypeInfo valueti;
 
             //does this TypeInfo have a repeating tail?
             if (auto arrayti = cast(TypeInfo_Array)ti)
@@ -485,15 +496,25 @@ class GC
                     p = p + 16;
                     s -= 16;
                 }
-                const(size_t)* bitmap = cast(const(size_t)*) 1;  // defaut is to set full range
-                if (arrayti.value)
-                    bitmap = cast(size_t*)arrayti.value.rtInfo();
-                if(!bitmap || cast(size_t) bitmap == 1)
+                valueti = arrayti.value;
+L_setarray:
+                TypeInfo_StaticArray sarrayti;
+                while ((sarrayti = cast(TypeInfo_StaticArray)valueti) !is null)
+                    valueti = sarrayti.value;
+
+                const(size_t)* bitmap = cast(const(size_t)*) 1;  // default is to set full range
+                if (valueti)
+                    bitmap = cast(size_t*)valueti.rtInfo();
+                if(!bitmap)
+                {
+                    debug(PRINTF) printf("\tCompiler generated element rtInfo: no pointers\n");
+                }
+                else if(cast(size_t) bitmap == 1)
                 {
                     pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
-                    debug(PRINTF) printf("\tSetting array of incomplete type info at %p\n", p);
+                    debug(PRINTF) printf("\tCompiler generated element rtInfo: has pointers\n");
                 }
-                else if (auto ci = cast(TypeInfo_Class)arrayti.value)
+                else if (auto ci = cast(TypeInfo_Class)valueti)
                 {
                     pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
                     debug(PRINTF) printf("\tSetting array of class %d references (%s) at %p\n", s/(void*).sizeof, ci.name.ptr, p);
@@ -506,23 +527,34 @@ class GC
                     pool.is_pointer.copyRangeRepeating(offset/(void*).sizeof, s/(void*).sizeof, bitmap, element_size/(void*).sizeof);
                     debug(PRINTF) printf("\tSetting repeating bitmap "
                                          "\n\t\tfor object at %p"
-                                         "\n\t\tcopying TypeInfo from %p\n",p, bitmap);
+                                         "\n\t\tcopying TypeInfo from %p\n", p, bitmap);
                 }
             }
-            else if (!rtInfo || cast(size_t)rtInfo == 1) 
+            else if (auto arrayti = cast(TypeInfo_StaticArray)ti)
             {
-                debug(PRINTF) printf("\tTypeInfo does not contain a rtInfo\n");
+                // there is no full type info for static arrays, repeat the elements
+                valueti = arrayti.value;
+                goto L_setarray;
+            }
+            else if (!rtInfo) 
+            {
+                debug(PRINTF) printf("\tCompiler generated rtInfo: no pointers\n");
+            }
+            else if (cast(size_t)rtInfo == 1) 
+            {
+                debug(PRINTF) printf("\tCompiler generated rtInfo: has pointers\n");
                 pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
             }
             else
             {	
-                const(size_t)* bitmap = cast (size_t*) ti.rtInfo;
+                const(size_t)* bitmap = cast (size_t*) rtInfo;
                 //first element of rtInfo is the size of the object the bitmap encodes
                 size_t element_size = * bitmap;
                 bitmap++;
                 size_t tocopy = (s < element_size ? s : element_size)/(void*).sizeof;
-                pool.is_pointer.copyRange(offset/(void*).sizeof, tocopy, bitmap, tocopy);
-                debug(PRINTF) printf("\tSetting bitmap for new object (%*s)\n\t\tat %p\t\tcopying from %p + %zu: ", name, p, bitmap, element_size);
+                pool.is_pointer.copyRange(offset/(void*).sizeof, tocopy, bitmap);
+                debug(PRINTF) printf("\tSetting bitmap for new object (%.*s)\n\t\tat %p\t\tcopying from %p + %zu: ", 
+                                     name.length, name.ptr, p, bitmap, element_size);
                 debug(PRINTF) 
                     for(size_t i = 0; i < element_size/((void*).sizeof); i++) 
                         printf("%d", (bitmap[i/(8*size_t.sizeof)] >> (i%(8*size_t.sizeof))) & 1);
@@ -554,7 +586,7 @@ class GC
             debug(PRINTF)
             {
                 string ss = ti.classinfo.name;
-                printf("malloc call with %*s\n", ss);
+                printf("malloc call with %.*s size=%d bits=%x\n", ss.length, ss.ptr, size, bits);
             }
         }
 
@@ -682,7 +714,8 @@ class GC
         {
             gcx.setBits(pool, cast(size_t)(p - pool.baseAddr) >> pool.shiftBy, bits);
         }
-        setPointerBitmap(p, pool, size, *alloc_size, ti);
+        if (!(bits & BlkAttr.NO_SCAN))
+            setPointerBitmap(p, pool, size, *alloc_size, ti);
         return p;
     }
 
@@ -2508,8 +2541,8 @@ struct Gcx
                 {
                     is_pointer = &(hostpool1.is_pointer);
                     hostBaseAddr = cast(byte*)hostpool1.baseAddr;
-                    debug(PRINTF) printf("%*sscanning at pool %p with precise pointer data, starting from pointer %p\n", indent, "".ptr, hostpool1,pbot);
-                    debug(PRINTF) printf("%*spointer data is at %p + %d\n", indent, "".ptr, &hostpool1.is_pointer, pbot - hostBaseAddr);  
+                    debug(PRINTF) printf("%.*sscanning at pool %p with precise pointer data, starting from pointer %p\n", indent, "".ptr, hostpool1,pbot);
+                    debug(PRINTF) printf("%.*spointer data is at %p + %d\n", indent, "".ptr, &hostpool1.is_pointer, pbot - hostBaseAddr);  
                     debug(PRINTF)
                     {
                         //printGCBits(is_pointer);
@@ -2518,7 +2551,7 @@ struct Gcx
                         // for(;tp1<tp2; tp1++) printf("loc = %p cont = % p biti = %d bit = %d\n", tp1, cast(byte*)(*tp1),((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof));
                     }
                 }
-                else debug(PRINTF) printf("%*sMark call from %p to %p spans multiple pools.", indent, "".ptr, p1, p2);
+                else debug(PRINTF) printf("%.*sMark call from %p to %p spans multiple pools.", indent, "".ptr, p1, p2);
             }
         }
         //printf("marking range: %p -> %p\n", pbot, ptop);
@@ -2529,12 +2562,12 @@ struct Gcx
             {
                 if (!(is_pointer.test(((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof)!= 0))
                 {
-                    debug(PRINTF) printf("%*sskipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
+                    debug(PRINTF) printf("%.*sskipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
                     continue;
                 }
                 else
                 {
-                    debug(PRINTF) printf("%*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
+                    debug(PRINTF) printf("%.*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
                 }
             }
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
@@ -2644,7 +2677,8 @@ struct Gcx
         size_t n;
         Pool*  pool;
 
-        version (COLLECT_PROFILE) clock_t prof_start = clock();
+        if(profileCollectionHook)
+            profileCollectionHook(&this, true);
         debug(PROFILING)
         {
             clock_t start, stop;
@@ -2789,7 +2823,8 @@ struct Gcx
         }
 
         thread_processGCMarks(&isMarked);
-        thread_resumeAll();
+        version(none)
+            thread_resumeAll();
 
         debug(PROFILING)
         {
@@ -2982,7 +3017,10 @@ struct Gcx
         {
             stop = clock();
             recoverTime += (stop - start);
+
         }
+        if(profileCollectionHook)
+            profileCollectionHook(&this, false);
 
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
         debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
@@ -2994,6 +3032,9 @@ struct Gcx
                     allocations, allocationBytes, allocatedBytes, (clock() - prof_start) * 1000 / CLOCKS_PER_SEC);
             fflush(prof_fh);
         }
+
+        version(none) {} else
+            thread_resumeAll();
 
         running = 0; // only clear on success
 

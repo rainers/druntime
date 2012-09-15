@@ -279,6 +279,12 @@ extern (C) GCStats gc_stats()
     return GCStats.init;
 }
 
+// for debugging purposes only
+extern (C) Pool* gc_findPool( void* p )
+{
+    return _gc.gcx.findPool( p );
+}
+
 extern (C) void gc_addRoot( void* p )
 {
     if( proxy is null )

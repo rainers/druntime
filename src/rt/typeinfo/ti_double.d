@@ -88,4 +88,6 @@ class TypeInfo_d : TypeInfo
     {
         return double.alignof;
     }
+
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return rtinfoNoPointers; }
 }
