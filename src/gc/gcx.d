@@ -440,22 +440,6 @@ class GC
         scope(exit) gcLock.unlock();
         return go();
     }
-/*    //definition from gctemplates
-    struct GCInfo
-    {
-	//size of the base portion
-	immutable size_t size;
-	//base bitmap
-	immutable ubyte* bitmap;
-	//first bit = is this an array
-	immutable size_t flags;
-	//size of one array element
-	immutable size_t arrayelementsize;
-	//bitmap for one array element
-	immutable ubyte* arrayelementbitmap;
-    }
-*/
-//debug(PRINTF) import std.string;
 
     void setPointerBitmap(void* p, Pool* pool, size_t s, size_t allocSize, const TypeInfo cti)
     {
@@ -621,7 +605,7 @@ L_setarray:
 
     //
     //
-    //           debug(PRINTF)
+    //
 
     private void *mallocNoSync(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
@@ -3358,7 +3342,6 @@ struct Pool
     {
         this.isLargeObject = isLargeObject;
         size_t poolsize;
-        auto div = this.divisor;
 
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
@@ -3378,6 +3361,7 @@ struct Pool
         }
         //assert(baseAddr);
         topAddr = baseAddr + poolsize;
+        auto div = this.divisor;
         auto nbits = cast(size_t)poolsize / div;
 
         mark.alloc(nbits);

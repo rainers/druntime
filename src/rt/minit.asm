@@ -61,26 +61,6 @@ XOE     ends
 
 DGROUP         group   FMB,FM,FME
 
-; These segments bracket NOSCAN, which contains data that does not need to be scanned
-NOSCANB segment dword use32 public 'DATA'
-NOSCANB ends
-NOSCAN  segment dword use32 public 'DATA'
-NOSCAN  ends
-NOSCANE segment dword use32 public 'DATA'
-NOSCANE ends
-
-DGROUP         group   NOSCANB,NOSCAN,NOSCANE
-
-; These segments bracket DDATA, which contains the data which must be scanned
-DDATAB  segment dword use32 public 'DATA'
-DDATAB  ends
-DDATA   segment dword use32 public 'DATA'
-DDATA   ends
-DDATAE  segment dword use32 public 'DATA'
-DDATAE  ends
-
-DGROUP         group   DDATAB,DDATA,DDATAE
-
     begcode minit
 
 ; extern (C) void _minit();
@@ -101,35 +81,5 @@ __minit proc    near
 __minit endp
 
     endcode minit
-
-    begcode noscanarea
-
-; extern (C) void[] _noscanarea();
-; return the NOSCAN segment
-
-    public  __noscanarea
-__noscanarea proc    near
-    mov EDX,offset DATAGRP:NOSCANB
-    mov EAX,offset DATAGRP:NOSCANE
-    sub EAX,EDX         ; size in bytes of FM segment
-    ret
-__noscanarea endp
-
-    endcode noscanarea
-
-    begcode scanarea
-
-; extern (C) void[] _scanarea();
-; return the DDATA segment containing the D global data objects with pointers
-
-    public  __scanarea
-__scanarea proc    near
-    mov EDX,offset DATAGRP:DDATAB
-    mov EAX,offset DATAGRP:DDATAE
-    sub EAX,EDX         ; size in bytes of FM segment
-    ret
-__scanarea endp
-
-    endcode scanarea
 
     end

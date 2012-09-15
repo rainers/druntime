@@ -1427,11 +1427,6 @@ private struct Demangle
 
     char[] opCall()
     {
-        if( (buf.length < 4 || buf[0] != '_' || buf[1] != '_' || buf[2] != 'D' || !isDigit(buf[3])) &&
-            (buf.length < 3 || buf[0] != '_' || buf[1] != 'D' || !isDigit(buf[2])) &&
-            (buf.length < 2 || buf[0] != 'D' || !isDigit(buf[1])) )
-           goto Lerror;
-
         while( true )
         {
             try
@@ -1458,14 +1453,12 @@ private struct Demangle
                     auto msg = e.toString();
                     printf( "error: %.*s\n", cast(int) msg.length, msg.ptr );
                 }
-                break;
+                if( dst.length < buf.length )
+                    dst.length = buf.length;
+                dst[0 .. buf.length] = buf[];
+                return dst[0 .. buf.length];
             }
         }
-Lerror:
-        if( dst.length < buf.length )
-            dst.length = buf.length;
-        dst[0 .. buf.length] = buf[];
-        return dst[0 .. buf.length];
     }
 }
 
@@ -1489,11 +1482,6 @@ char[] demangle( const(char)[] buf, char[] dst = null )
     return d();
 }
 
-char[] demangle( const(char)[] buf, bool addType_, char[] dst = null )
-{
-    auto d = Demangle(buf, addType_ ? Demangle.AddType.yes : Demangle.AddType.no, dst);
-    return d();
-} 
 
 unittest
 {
@@ -1574,8 +1562,7 @@ string decodeDmdString( const(char)[] ln, ref size_t p )
                 break;
             s ~= s[$ - zpos .. $ - zpos + zlen];
         }
-        else if( Demangle.isAlpha(cast(char)ch) || Demangle.isDigit(cast(char)ch)
-                 || ch == '_' || ch == '?' || ch == '@' ) // also used for C symbols
+        else if( Demangle.isAlpha(cast(char)ch) || Demangle.isDigit(cast(char)ch) || ch == '_' )
             s ~= cast(char) ch;
         else
         {
