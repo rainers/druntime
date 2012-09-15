@@ -64,6 +64,7 @@ MANIFEST= \
 	README.txt \
 	posix.mak \
 	win32.mak \
+	win64.mak \
 	\
 	src/object_.d \
 	src/object.di \

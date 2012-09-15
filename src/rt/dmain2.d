@@ -127,23 +127,23 @@ extern (C) void* rt_loadLibrary(in char[] name)
         // Load a DLL at runtime
         enum CP_UTF8 = 65001;
         auto len = MultiByteToWideChar(
-            CP_UTF8, 0, name.ptr, name.length, null, 0);
+            CP_UTF8, 0, name.ptr, cast(int)name.length, null, 0);
         if (len == 0)
             return null;
-        
+
         auto buf = cast(wchar_t*)malloc((len+1) * wchar_t.sizeof);
         if (buf is null)
             return null;
         scope (exit)
             free(buf);
-        
+
         len = MultiByteToWideChar(
-            CP_UTF8, 0, name.ptr, name.length, buf, len);
+            CP_UTF8, 0, name.ptr, cast(int)name.length, buf, len);
         if (len == 0)
             return null;
-        
+
         buf[len] = '\0';
-        
+
         // BUG: LoadLibraryW() call calls rt_init(), which fails if proxy is not set!
         auto mod = LoadLibraryW(buf);
         if (mod is null)
@@ -273,11 +273,8 @@ extern (C) __gshared bool rt_trapExceptions = true;
 
 void _d_criticalInit()
 {
-    version (Posix)
-    {
-        _STI_monitor_staticctor();
-        _STI_critical_init();
-    }
+  _STI_monitor_staticctor();
+  _STI_critical_init();
 }
 
 alias void delegate(Throwable) ExceptionHandler;
@@ -310,11 +307,8 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
 
 void _d_criticalTerm()
 {
-    version (Posix)
-    {
-        _STD_critical_term();
-        _STD_monitor_staticdtor();
-    }
+  _STD_critical_term();
+  _STD_monitor_staticdtor();
 }
 
 extern (C) bool rt_term(ExceptionHandler dg = null)
@@ -382,11 +376,8 @@ extern (C) int main(int argc, char** argv)
         }
     }
 
-    version (Posix)
-    {
-        _STI_monitor_staticctor();
-        _STI_critical_init();
-    }
+    _STI_monitor_staticctor();
+    _STI_critical_init();
 
     version (Windows)
     {
@@ -562,10 +553,8 @@ extern (C) int main(int argc, char** argv)
 
     tryExec(&runAll);
 
-    version (Posix)
-    {
-        _STD_critical_term();
-        _STD_monitor_staticdtor();
-    }
+    _STD_critical_term();
+    _STD_monitor_staticdtor();
+
     return result;
 }
