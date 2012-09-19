@@ -61,15 +61,25 @@ XOE     ends
 
 DGROUP         group   FMB,FM,FME
 
-; These segments bracket RO, which contains the noscan data
-ROB     segment dword use32 public 'DATA'
-ROB     ends
-RO      segment dword use32 public 'DATA'
-RO      ends
-ROE     segment dword use32 public 'DATA'
-ROE     ends
+; These segments bracket HP, which contains the "has pointer" data
+HPB     segment dword use32 public 'DATA'
+HPB     ends
+HP      segment dword use32 public 'DATA'
+HP      ends
+HPE     segment dword use32 public 'DATA'
+HPE     ends
 
-DGROUP         group   ROB,RO,ROE
+DGROUP         group   HPB,HP,HPE
+
+; These segments bracket HP, which contains the "has pointer" data
+HPTLSB  segment dword use32 public 'tls'
+HPTLSB  ends
+HPTLS   segment dword use32 public 'tls'
+HPTLS   ends
+HPTLSE  segment dword use32 public 'tls'
+HPTLSE  ends
+
+DGROUP         group   HPTLSB,HTLSP,HPTLSE
 
     begcode minit
 
@@ -92,22 +102,34 @@ __minit endp
 
     endcode minit
 
-    begcode noscanarea
+    begcode hparea
 
-; extern (C) void[] _noscanarea();
-; Converts array of ModuleInfo pointers to a D dynamic array of them,
+; extern (C) void[] _hparea();
+; returns the memory area containing "has pointer" info [address of data,TypeInfo]
 ; so they can be accessed via D.
-; Result is written to:
-; extern (C) ModuleInfo[] _moduleinfo_array;
 
-    public  __noscanarea
-__noscanarea proc    near
-    mov EDX,offset DATAGRP:ROB
-    mov EAX,offset DATAGRP:ROE
+    public  __hparea
+__hparea proc    near
+    mov EDX,offset DATAGRP:HPB
+    mov EAX,offset DATAGRP:HPE
     sub EAX,EDX         ; size in bytes of FM segment
     ret
-__noscanarea endp
+__hparea endp
 
-    endcode noscanarea
+    endcode tlshparea
+
+; extern (C) void[] _tlshparea();
+; returns the memory area containing "has pointer" info in TLS [tls offset of data,TypeInfo]
+; so they can be accessed via D.
+
+    public  __tlshparea
+__tlshparea proc    near
+    mov EDX,offset DATAGRP:HPTLSB
+    mov EAX,offset DATAGRP:HPTLSE
+    sub EAX,EDX         ; size in bytes of FM segment
+    ret
+__tlshparea endp
+
+    endcode tlshparea
 
     end

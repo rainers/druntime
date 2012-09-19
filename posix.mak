@@ -21,9 +21,9 @@ ifeq (,$(OS))
         endif
     endif
 endif
-# make Windows_NT lowercase
+# normalize windows names, e.g. Windows_NT
 ifeq (Win,$(findstring Win,$(OS)))
-	OS:=win32
+	OS:=windows
 endif
 
 DMD?=dmd
@@ -37,7 +37,7 @@ MODEL=32
 
 DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
 UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
-DMDDEP = $(shell which $(DMD))
+DMDDEP = # $(shell which $(DMD))
 DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
 ifeq ($(BUILD),debug)
@@ -47,9 +47,16 @@ else
 	OPTFLAGS=-O -release -inline
 endif
 
+ifeq (windows64,$(OS)$(MODEL))
+	CFLAGS_O = $(subst -g,/Zi,$(CFLAGS)) -Fo
+	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
+else
+	CFLAGS_O = $(CFLAGS) -o
+endif
+	
 OBJDIR=obj/$(MODEL)
 DRUNTIME_BASE=druntime-$(OS)$(MODEL)
-ifeq (win32,$(OS))
+ifeq (windows,$(OS))
 	DRUNTIME=$(LIBDIR)/$(DRUNTIME_BASE).lib
 else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
@@ -409,20 +416,26 @@ SRC_D_MODULES_WIN = \
 	core/sys/windows/dbghelp \
 	core/sys/windows/stacktrace \
 	core/sys/windows/windows \
-	\
+
+SRC_D_MODULES_WIN32 = \
 	rt/deh \
+
+SRC_D_MODULES_WIN64 = \
+	rt/deh2 \
 
 # NOTE: trace.d and cover.d are not necessary for a successful build
 #       as both are used for debugging features (profiling and coverage)
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
 
-ifeq (win,$(findstring win,$(OS)))
-    SRC_D_MODULES += $(SRC_D_MODULES_WIN)
+ifeq (windows,$(OS))
+    SRC_D_MODULES += $(SRC_D_MODULES_WIN) $(SRC_D_MODULES_WIN$(MODEL))
     O = obj
     DOTEXE = .exe
-    OBJS= $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj \
-          src\rt\minit.obj
+    OBJS = $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj
+    ifeq ($(MODEL),32)
+          OBJS += src\rt\minit.obj
+    endif
 else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
     DOTEXE =
@@ -616,8 +629,7 @@ $(IMPDIR)/%.di : src/%.di
 $(IMPDIR)/%.d : src/%.d
 	cp $< $@
 
-ifeq (win,$(findstring win,$(OS)))
-else
+ifeq (windows,$(OS))
 # building on windows fails, but file is still generated
 $(IMPDIR)/core/sys/freebsd/%.di : src/core/sys/freebsd/%.di
 	-$(DMD) -m$(MODEL) -c -d -o- -Isrc -Iimport -Hf$@ $<
@@ -627,11 +639,11 @@ endif
 
 $(OBJDIR)/%.$O : src/rt/%.c
 	@$(MKDIR) -p $(OBJDIR)
-	$(CC) -c $(CFLAGS) $< -o$@
+	$(CC) -c $(CFLAGS_O)$@ $<
 
 $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
 	@$(MKDIR) -p $(OBJDIR)
-	$(CC) -c $(CFLAGS) $< -o$@
+	$(CC) -c $(CFLAGS_O)$@ $<
 
 ################### Library generation #########################
 
@@ -652,8 +664,8 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
-ifeq (win,$(findstring win,$(OS)))
-	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+ifeq (windows,$(OS))
+	$(DMD) -v $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 	@$(RUN) $@
 else
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
@@ -667,7 +679,7 @@ endif
 
 $(OBJDIR)/emptymain.d :
 	@$(MKDIR) -p $(OBJDIR)
-ifeq (win,$(findstring win,$(OS)))
+ifeq (windows,$(OS))
 	@echo void main(){} >$@
 else
 	@echo 'void main(){}' >$@
