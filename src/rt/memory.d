@@ -18,7 +18,7 @@ private
 {
     extern (C) void gc_addRange( void* p, size_t sz );
     extern (C) void gc_removeRange( void* p );
-
+    extern (C) void gc_addRange_hp( void* p, size_t sz, bool tls ) nothrow;
 
     version( Windows )
     {
@@ -30,6 +30,8 @@ private
                 int _edata;  // &_edata is start of BSS segment
                 int _end;    // &_end is past end of BSS
             }
+            void[] _hparea();
+            void[] _tlshparea();
         }
     }
     else version( linux )
@@ -96,7 +98,15 @@ void initStaticDataGC()
 {
     version( Windows )
     {
-        gc_addRange( &_xi_a, cast(size_t) &_end - cast(size_t) &_xi_a );
+        version(all)
+            gc_addRange( &_xi_a, cast(size_t) &_end - cast(size_t) &_xi_a );
+        else
+        {
+            void[] hp = _hparea();
+            gc_addRange_hp(hp.ptr, hp.length, false);
+            void[] tlshp = _tlshparea();
+            gc_addRange_hp(tlshp.ptr, tlshp.length, true);
+        }
     }
     else version( linux )
     {

@@ -61,6 +61,26 @@ XOE     ends
 
 DGROUP         group   FMB,FM,FME
 
+; These segments bracket HP, which contains the "has pointer" data
+HPB     segment dword use32 public 'DATA'
+HPB     ends
+HP      segment dword use32 public 'DATA'
+HP      ends
+HPE     segment dword use32 public 'DATA'
+HPE     ends
+
+DGROUP         group   HPB,HP,HPE
+
+; These segments bracket HP, which contains the "has pointer" data
+HPTLSB  segment dword use32 public 'DATA'
+HPTLSB  ends
+HPTLS   segment dword use32 public 'DATA'
+HPTLS   ends
+HPTLSE  segment dword use32 public 'DATA'
+HPTLSE  ends
+
+DGROUP         group   HPTLSB,HPTLS,HPTLSE
+
     begcode minit
 
 ; extern (C) void _minit();
@@ -81,5 +101,37 @@ __minit proc    near
 __minit endp
 
     endcode minit
+
+    begcode hparea
+
+; extern (C) void[] _hparea();
+; returns the memory area containing "has pointer" info [address of data,TypeInfo]
+; so they can be accessed via D.
+
+    public  __hparea
+__hparea proc    near
+    mov EDX,offset DATAGRP:HPB
+    mov EAX,offset DATAGRP:HPE
+    sub EAX,EDX         ; size in bytes of FM segment
+    ret
+__hparea endp
+
+    endcode hparea
+
+    begcode tlshparea
+
+; extern (C) void[] _tlshparea();
+; returns the memory area containing "has pointer" info in TLS [tls offset of data,TypeInfo]
+; so they can be accessed via D.
+
+    public  __tlshparea
+__tlshparea proc    near
+    mov EDX,offset DATAGRP:HPTLSB
+    mov EAX,offset DATAGRP:HPTLSE
+    sub EAX,EDX         ; size in bytes of FM segment
+    ret
+__tlshparea endp
+
+    endcode tlshparea
 
     end

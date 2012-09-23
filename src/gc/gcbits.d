@@ -76,6 +76,11 @@ struct GCBits
             onOutOfMemoryError();
     }
 
+    static wordtype test(const(wordtype)* data, size_t i)
+    {
+        return data[1 + (i >> BITS_SHIFT)] & (BITS_1 << (i & BITS_MASK));
+    }
+
     wordtype test(size_t i)
     in
     {

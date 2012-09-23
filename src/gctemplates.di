@@ -143,7 +143,7 @@ void mkBitmap(T)(size_t* p, size_t offset)
     }
 }
 
-void gctemplates_setbit(size_t* a, size_t offset)
+void gctemplates_setbit()(size_t* a, size_t offset)
 {
     size_t ptroff = offset/bytesPerPtr;
     a[ptroff/ptrPerBitmapWord] |= 1 << (ptroff % ptrPerBitmapWord);

@@ -65,6 +65,9 @@ struct OffsetTypeInfo
     TypeInfo ti;
 }
 
+enum void* rtinfoNoPointers  = null;
+enum void* rtinfoHasPointers = cast(void*)1;
+
 class TypeInfo
 {
     hash_t   getHash(in void* p) @trusted nothrow const;

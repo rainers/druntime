@@ -1,3 +1,5 @@
+# patched to work under windows aswell
+#
 # This makefile is designed to be run by gnu make.
 # The default make program on FreeBSD 8.1 is not gnu make; to install gnu make:
 #    pkg_add -r gmake
@@ -19,23 +21,44 @@ ifeq (,$(OS))
         endif
     endif
 endif
+# make Windows_NT lowercase
+ifeq (Win,$(findstring Win,$(OS)))
+	OS:=win32
+endif
 
 DMD?=dmd
+
+MKDIR=mkdir
 
 DOCDIR=doc
 IMPDIR=import
 
 MODEL=32
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property -g
-UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property -g
+DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
+UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
 DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
-CFLAGS=-m$(MODEL) -O
+ifeq ($(BUILD),debug)
+	OPTFLAGS=-g
+	CFLAGS += -g
+else
+	OPTFLAGS=-O -release -inline
+endif
+
+ifeq (/,findstring /,$(DMD))
+	DMDDEP = $(shell which $(DMD))
+else
+	DMDDEP = $(DMD)
+endif
 
 OBJDIR=obj/$(MODEL)
 DRUNTIME_BASE=druntime-$(OS)$(MODEL)
-DRUNTIME=lib/lib$(DRUNTIME_BASE).a
+ifeq (win32,$(OS))
+	DRUNTIME=$(LIBDIR)/$(DRUNTIME_BASE).lib
+else
+	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
+endif
 
 DOCFMT=
 
@@ -287,19 +310,6 @@ SRC_D_MODULES = \
 	core/stdc/time \
 	core/stdc/wchar_ \
 	\
-	core/sys/freebsd/execinfo \
-	core/sys/freebsd/sys/event \
-	\
-	core/sys/posix/signal \
-	core/sys/posix/dirent \
-	core/sys/posix/sys/select \
-	core/sys/posix/sys/socket \
-	core/sys/posix/sys/stat \
-	core/sys/posix/sys/wait \
-	core/sys/posix/netdb \
-	core/sys/posix/sys/utsname \
-	core/sys/posix/netinet/in_ \
-	\
 	core/sync/barrier \
 	core/sync/condition \
 	core/sync/config \
@@ -314,7 +324,6 @@ SRC_D_MODULES = \
 	rt/aApply \
 	rt/aApplyR \
 	rt/adi \
-	rt/alloca \
 	rt/arrayassign \
 	rt/arraybyte \
 	rt/arraycast \
@@ -325,10 +334,8 @@ SRC_D_MODULES = \
 	rt/arrayreal \
 	rt/arrayshort \
 	rt/cast_ \
-	rt/cmath2 \
 	rt/cover \
 	rt/critical_ \
-	rt/deh2 \
 	rt/dmain2 \
 	rt/invariant \
 	rt/invariant_ \
@@ -386,12 +393,49 @@ SRC_D_MODULES = \
 	rt/typeinfo/ti_void \
 	rt/typeinfo/ti_wchar
 
+SRC_D_MODULES_POSIX = \
+	core/sys/freebsd/execinfo \
+	core/sys/freebsd/sys/event \
+	\
+	core/sys/posix/signal \
+	core/sys/posix/sys/select \
+	core/sys/posix/sys/socket \
+	core/sys/posix/sys/stat \
+	core/sys/posix/sys/wait \
+	core/sys/posix/netdb \
+	core/sys/posix/sys/utsname \
+	core/sys/posix/netinet/in_ \
+	\
+	rt/alloca \
+	rt/cmath2 \
+	rt/deh2 \
+
+SRC_D_MODULES_WIN = \
+	core/sys/windows/dll \
+	core/sys/windows/threadaux \
+	core/sys/windows/dbghelp \
+	core/sys/windows/stacktrace \
+	core/sys/windows/windows \
+	\
+	rt/deh \
+
 # NOTE: trace.d and cover.d are not necessary for a successful build
 #       as both are used for debugging features (profiling and coverage)
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
 
-OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/complex.o
+ifeq (win,$(findstring win,$(OS)))
+    SRC_D_MODULES += $(SRC_D_MODULES_WIN)
+    O = obj
+    DOTEXE = .exe
+    OBJS= $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj \
+          src\rt\minit.obj
+else
+    SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
+    DOTEXE =
+    O = o
+    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/complex.o
+endif
 
 DOCS=\
 	$(DOCDIR)/object.html \
@@ -590,12 +634,12 @@ endif
 
 ################### C/ASM Targets ############################
 
-$(OBJDIR)/%.o : src/rt/%.c
-	@mkdir -p $(OBJDIR)
+$(OBJDIR)/%.$O : src/rt/%.c
+	@$(MKDIR) -p $(OBJDIR)
 	$(CC) -c $(CFLAGS) $< -o$@
 
-$(OBJDIR)/errno_c.o : src/core/stdc/errno.c
-	@mkdir -p $(OBJDIR)
+$(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
+	@$(MKDIR) -p $(OBJDIR)
 	$(CC) -c $(CFLAGS) $< -o$@
 
 src\rt\minit.obj : src\rt\minit.asm
@@ -603,10 +647,10 @@ src\rt\minit.obj : src\rt\minit.asm
 
 ################### Library generation #########################
 
-$(DRUNTIME): $(OBJS) $(SRCS) win32.mak
-	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS) src/gctemplates.di
+$(DRUNTIME): $(OBJS) $(SRCS) posix.mak $(DMDDEP)
+	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
-unittest : $(addprefix $(OBJDIR)/,$(SRC_D_MODULES)) $(DRUNTIME) $(OBJDIR)/emptymain.d
+unittest : $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES))) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo done
 
 ifeq ($(OS),freebsd)
@@ -618,8 +662,12 @@ endif
 $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 	@echo $@ - disabled
 
-$(OBJDIR)/% : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
+$(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
+ifeq (win,$(findstring win,$(OS)))
+	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+	@$(RUN) $@
+else
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 # make the file very old so it builds and runs again if it fails
 	@touch -t 197001230123 $@
@@ -627,10 +675,15 @@ $(OBJDIR)/% : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@$(RUN) $@
 # succeeded, render the file new again
 	@touch $@
+endif	
 
 $(OBJDIR)/emptymain.d :
-	@mkdir -p $(OBJDIR)
+	@$(MKDIR) -p $(OBJDIR)
+ifeq (win,$(findstring win,$(OS)))
+	@echo void main(){} >$@
+else
 	@echo 'void main(){}' >$@
+endif
 
 detab:
 	detab $(MANIFEST)

@@ -37,7 +37,7 @@ TypeInfo unqualify(TypeInfo ti)
     if(auto tic = cast(TypeInfo_Const)ti)
         while(tic)
         {
-            ti = tic.next;
+            ti = tic.next; // means "base" if compiled with object._d
             tic = cast(TypeInfo_Const)ti;
         }
     return ti;

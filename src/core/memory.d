@@ -52,9 +52,11 @@ private
 
     extern (C) void gc_addRoot( in void* p ) nothrow;
     extern (C) void gc_addRange( in void* p, size_t sz ) nothrow;
+    extern (C) void gc_addRange_hp( in void* p, size_t sz, bool tls ) nothrow;
 
     extern (C) void gc_removeRoot( in void* p ) nothrow;
     extern (C) void gc_removeRange( in void* p ) nothrow;
+    extern (C) void gc_removeRange_hp( in void* p, size_t sz, bool tls ) nothrow;
 }
 
 

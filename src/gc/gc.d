@@ -313,6 +313,12 @@ extern (C) void gc_removeRange( void* p )
     return proxy.gc_removeRange( p );
 }
 
+extern (C) void gc_addRange_hp( void* p, size_t sz, bool tls )
+{
+    if( proxy is null )
+        return _gc.addRange_hp( p, sz, tls );
+}
+
 extern (C) Proxy* gc_getProxy()
 {
     return &pthis;
