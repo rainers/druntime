@@ -665,7 +665,7 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
 ifeq (windows,$(OS))
-	$(DMD) -v $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 	@$(RUN) $@
 else
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
