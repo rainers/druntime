@@ -17,7 +17,7 @@ module gc.gcx;
 
 /************** Debugging ***************************/
 
-debug = PRINTF;               // turn on printf's
+//debug = PRINTF;               // turn on printf's
 //debug = COLLECT_PRINTF;       // turn on printf's
 //debug = LOGGING;              // log allocations / frees
 //debug = MEMSTOMP;             // stomp on memory
@@ -140,6 +140,15 @@ private
     }
 }
 
+// standard assertion are pretty bad in GC code because they use allocations
+void _assert(T)(T cond)
+{
+    debug if(!cond)
+    {
+        asm { int 3; }
+        throw new AssertError("GC assertion failure"); // TODO: preallocate
+    }
+}
 
 alias GC gc_t;
 
@@ -184,11 +193,11 @@ debug (LOGGING)
 
         void reserve(size_t nentries)
         {
-            assert(dim <= allocdim);
+            _assert(dim <= allocdim);
             if (allocdim - dim < nentries)
             {
                 allocdim = (dim + nentries) * 2;
-                assert(dim + nentries <= allocdim);
+                _assert(dim + nentries <= allocdim);
                 if (!data)
                 {
                     data = cast(Log*)cstdlib.malloc(allocdim * Log.sizeof);
@@ -236,7 +245,7 @@ debug (LOGGING)
         void copy(LogArray *from)
         {
             reserve(from.dim - dim);
-            assert(from.dim <= allocdim);
+            _assert(from.dim <= allocdim);
             memcpy(data, from.data, from.dim * Log.sizeof);
             dim = from.dim;
         }
@@ -254,8 +263,9 @@ const uint GCVERSION = 1;       // increment every time we change interface
 final class GCMutex : Mutex {}
 
 // remove modifiers const/immutable/shared/inout from TypeInfo
-TypeInfo unqualify(TypeInfo ti)
+TypeInfo unqualify(const(TypeInfo) cti)
 {
+    auto ti = cast(TypeInfo)cti;
     if(auto tic = cast(TypeInfo_Const)ti)
         while(tic)
         {
@@ -329,7 +339,7 @@ class GC
     {
         gcLock.lock();
         scope(exit) gcLock.unlock();
-        assert(gcx.disabled > 0);
+        _assert(gcx.disabled > 0);
         gcx.disabled--;
     }
 
@@ -472,23 +482,24 @@ class GC
                     p = p + 16;
                     s -= 16;
                 }
-                valueti = unqualify(arrayti.value);
+                valueti = unqualify(arrayti.next);
 L_setarray:
                 TypeInfo_StaticArray sarrayti;
                 while ((sarrayti = cast(TypeInfo_StaticArray)valueti) !is null)
-                    valueti = unqualify(sarrayti.value);
+                    valueti = unqualify(sarrayti.next);
 
+                debug(PRINTF) string valuetypename = valueti.classinfo.name;
                 const(size_t)* bitmap = cast(const(size_t)*) 1;  // default is to set full range
                 if (valueti)
                     bitmap = cast(size_t*)valueti.rtInfo();
                 if(bitmap is rtinfoNoPointers)
                 {
-                    debug(PRINTF) printf("\tCompiler generated element rtInfo: no pointers\n");
+                    debug(PRINTF) printf("\tCompiler generated element %.*s rtInfo: no pointers\n", valuetypename.length, valuetypename.ptr);
                 }
                 else if(bitmap is rtinfoHasPointers)
                 {
                     pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
-                    debug(PRINTF) printf("\tCompiler generated element rtInfo: has pointers\n");
+                    debug(PRINTF) printf("\tCompiler generated element %.*s rtInfo: has pointers\n", valuetypename.length, valuetypename.ptr);
                 }
                 else if (auto ci = cast(TypeInfo_Class)valueti)
                 {
@@ -502,14 +513,14 @@ L_setarray:
                     bitmap++;
                     pool.is_pointer.copyRangeRepeating(offset/(void*).sizeof, s/(void*).sizeof, bitmap, element_size/(void*).sizeof);
                     debug(PRINTF) printf("\tSetting repeating bitmap "
-                                         "\n\t\tfor object at %p"
-                                         "\n\t\tcopying TypeInfo from %p\n", p, bitmap);
+                                         "\n\t\tfor object %.*s at %p"
+                                         "\n\t\tcopying TypeInfo from %p\n", valuetypename.length, valuetypename.ptr, p, bitmap);
                 }
             }
             else if (auto arrayti = cast(TypeInfo_StaticArray)ti)
             {
                 // there is no full type info for static arrays, repeat the elements
-                valueti = arrayti.value;
+                valueti = unqualify(arrayti.next);
                 goto L_setarray;
             }
             else if (rtInfo is rtinfoNoPointers) 
@@ -601,13 +612,13 @@ L_setarray:
 
     private void *mallocNoSync(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
-        assert(size != 0);
+        _assert(size != 0);
 
         void *p = null;
         Bins bin;
 
         //debug(PRINTF) printf("GC::malloc(size = %d, gcx = %p)\n", size, gcx);
-        assert(gcx);
+        _assert(gcx);
         //debug(PRINTF) printf("gcx.self = %x, pthread_self() = %x\n", gcx.self, pthread_self());
 
         if (gcx.running)
@@ -657,7 +668,7 @@ L_setarray:
                     state = 0;
                     continue;
                 default:
-                    assert(false);
+                    _assert(false);
                 }
             }
             p = gcx.bucket[bin];
@@ -939,7 +950,7 @@ L_setarray:
     private size_t extendNoSync(void* p, size_t minsize, size_t maxsize, const TypeInfo ti = null)
     in
     {
-        assert(minsize <= maxsize);
+        _assert(minsize <= maxsize);
     }
     body
     {
@@ -1028,8 +1039,8 @@ L_setarray:
     //
     private size_t reserveNoSync(size_t size)
     {
-        assert(size != 0);
-        assert(gcx);
+        _assert(size != 0);
+        _assert(gcx);
 
         if (gcx.running)
             onInvalidMemoryOperationError();
@@ -1060,7 +1071,7 @@ L_setarray:
     private void freeNoSync(void *p)
     {
         debug(PRINTF) printf("Freeing %p\n", cast(size_t) p);
-        assert (p);
+        _assert (p);
 
         if (gcx.running)
             onInvalidMemoryOperationError();
@@ -1082,7 +1093,7 @@ L_setarray:
         debug(PRINTF) if(pool.isLargeObject) printf("Block size = %d\n", pool.bPageOffsets[pagenum]);
         biti = cast(size_t)(p - pool.baseAddr) >> pool.shiftBy;
 
-        assert(!pool.freebits.test(biti));
+        _assert(!pool.freebits.test(biti));
         gcx.clrBits(pool, biti, BlkAttr.ALL_BITS);
 
         bin = cast(Bins)pool.pagetable[pagenum];
@@ -1165,7 +1176,7 @@ L_setarray:
     //
     private size_t sizeOfNoSync(void *p)
     {
-        assert (p);
+        _assert (p);
 
         version (SENTINEL)
         {
@@ -1218,7 +1229,7 @@ L_setarray:
     //
     BlkInfo queryNoSync(void *p)
     {
-        assert(p);
+        _assert(p);
 
         return gcx.getInfo(p);
     }
@@ -1248,7 +1259,7 @@ L_setarray:
     //
     private void checkNoSync(void *p)
     {
-        assert(p);
+        _assert(p);
 
         sentinel_Invariant(p);
         debug (PTRCHECK)
@@ -1260,12 +1271,12 @@ L_setarray:
 
             p = sentinel_sub(p);
             pool = gcx.findPool(p);
-            assert(pool);
+            _assert(pool);
             pagenum = cast(size_t)(p - pool.baseAddr) / PAGESIZE;
             bin = cast(Bins)pool.pagetable[pagenum];
-            assert(bin <= B_PAGE);
+            _assert(bin <= B_PAGE);
             size = binsize[bin];
-            assert((cast(size_t)p & (size - 1)) == 0);
+            _assert((cast(size_t)p & (size - 1)) == 0);
 
             debug (PTRCHECK2)
             {
@@ -1276,7 +1287,7 @@ L_setarray:
 
                     for (list = gcx.bucket[bin]; list; list = list.next)
                     {
-                        assert(cast(void*)list != p);
+                        _assert(cast(void*)list != p);
                     }
                 }
             }
@@ -1564,14 +1575,14 @@ struct Ranges
     {
         if (ranges)
         {
-            assert(rangedim != 0);
-            assert(nranges <= rangedim);
+            _assert(rangedim != 0);
+            _assert(nranges <= rangedim);
 
             for (size_t i = 0; i < nranges; i++)
             {
-                assert(ranges[i].pbot);
-                assert(ranges[i].ptop);
-                assert(ranges[i].pbot <= ranges[i].ptop);
+                _assert(ranges[i].pbot);
+                _assert(ranges[i].ptop);
+                _assert(ranges[i].pbot <= ranges[i].ptop);
             }
         }
     }
@@ -1620,7 +1631,7 @@ struct Ranges
         // This is a fatal error, but ignore it.
         // The problem is that we can get a Close() call on a thread
         // other than the one the range was allocated on.
-        //assert(zero);
+        //_assert(zero);
     }
 }
 
@@ -1725,22 +1736,22 @@ struct Gcx
                 pool.Invariant();
                 if (i == 0)
                 {
-                    assert(minAddr == pool.baseAddr);
+                    _assert(minAddr == pool.baseAddr);
                 }
                 if (i + 1 < npools)
                 {
-                    assert(pool.opCmp(pooltable[i + 1]) < 0);
+                    _assert(pool.opCmp(pooltable[i + 1]) < 0);
                 }
                 else if (i + 1 == npools)
                 {
-                    assert(maxAddr == pool.topAddr);
+                    _assert(maxAddr == pool.topAddr);
                 }
             }
 
             if (roots)
             {
-                assert(rootdim != 0);
-                assert(nroots <= rootdim);
+                _assert(rootdim != 0);
+                _assert(nroots <= rootdim);
             }
 
             ranges.Invariant();
@@ -1800,7 +1811,7 @@ struct Gcx
                 return;
             }
         }
-        assert(0);
+        _assert(0);
     }
 
 
@@ -2199,7 +2210,7 @@ struct Gcx
             foreach(i, ref pool; gcx.pooltable[0 .. gcx.npools])
                 pool.freepages = pool.npages;
             gcx.minimize();
-            assert(gcx.npools == 0);
+            _assert(gcx.npools == 0);
 
             if (gcx.pooltable is null)
                 gcx.pooltable = cast(Pool**)cstdlib.malloc(NPOOLS * (Pool*).sizeof);
@@ -2225,16 +2236,16 @@ struct Gcx
 
         // all pools are free
         reset();
-        assert(gcx.npools == NPOOLS);
+        _assert(gcx.npools == NPOOLS);
         gcx.minimize();
-        assert(gcx.npools == 0);
+        _assert(gcx.npools == 0);
 
         // all pools used
         reset();
         usePools();
-        assert(gcx.npools == NPOOLS);
+        _assert(gcx.npools == NPOOLS);
         gcx.minimize();
-        assert(gcx.npools == NPOOLS);
+        _assert(gcx.npools == NPOOLS);
 
         // preserves order of used pools
         reset();
@@ -2251,10 +2262,10 @@ struct Gcx
             gcx.pooltable[2].freepages = NPAGES;
 
             gcx.minimize();
-            assert(gcx.npools == NPOOLS - 1);
-            assert(gcx.pooltable[0] == opools[0]);
-            assert(gcx.pooltable[1] == opools[1]);
-            assert(gcx.pooltable[2] == opools[3]);
+            _assert(gcx.npools == NPOOLS - 1);
+            _assert(gcx.pooltable[0] == opools[0]);
+            _assert(gcx.pooltable[1] == opools[1]);
+            _assert(gcx.pooltable[2] == opools[3]);
         }
 
         // gcx reduces address span
@@ -2285,31 +2296,31 @@ struct Gcx
         }
 
         gcx.minimize();
-        assert(gcx.npools == NPOOLS);
-        assert(gcx.minAddr == base);
-        assert(gcx.maxAddr == top);
+        _assert(gcx.npools == NPOOLS);
+        _assert(gcx.minAddr == base);
+        _assert(gcx.maxAddr == top);
 
         gcx.pooltable[NPOOLS - 1].freepages = NPAGES;
         gcx.pooltable[NPOOLS - 2].freepages = NPAGES;
 
         gcx.minimize();
-        assert(gcx.npools == NPOOLS - 2);
-        assert(gcx.minAddr == base);
-        assert(gcx.maxAddr == gcx.pooltable[NPOOLS - 3].topAddr);
+        _assert(gcx.npools == NPOOLS - 2);
+        _assert(gcx.minAddr == base);
+        _assert(gcx.maxAddr == gcx.pooltable[NPOOLS - 3].topAddr);
 
         gcx.pooltable[0].freepages = NPAGES;
 
         gcx.minimize();
-        assert(gcx.npools == NPOOLS - 3);
-        assert(gcx.minAddr != base);
-        assert(gcx.minAddr == gcx.pooltable[0].baseAddr);
-        assert(gcx.maxAddr == gcx.pooltable[NPOOLS - 4].topAddr);
+        _assert(gcx.npools == NPOOLS - 3);
+        _assert(gcx.minAddr != base);
+        _assert(gcx.minAddr == gcx.pooltable[0].baseAddr);
+        _assert(gcx.maxAddr == gcx.pooltable[NPOOLS - 4].topAddr);
 
         // free all
         foreach(pool; gcx.pooltable[0 .. NPOOLS - 2])
             pool.freepages = NPAGES;
         gcx.minimize();
-        assert(gcx.npools == 0);
+        _assert(gcx.npools == 0);
         cstdlib.free(gcx.pooltable);
     }
 
@@ -2367,7 +2378,7 @@ struct Gcx
                     continue;
                 }
                 pn = pool.allocPages(npages);
-                assert(pn != OPFAIL);
+                _assert(pn != OPFAIL);
                 goto L1;
             case 1:
                 // Release empty pools to prevent bloat
@@ -2382,12 +2393,12 @@ struct Gcx
                     continue;
                 }
                 pn = pool.allocPages(npages);
-                assert(pn != OPFAIL);
+                _assert(pn != OPFAIL);
                 goto L1;
             case 2:
                 goto Lnomemory;
             default:
-                assert(false);
+                _assert(false);
             }
         }
 
@@ -2612,6 +2623,8 @@ struct Gcx
                     debug(PRINTF) printf("%.*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-hostBaseAddr)/(void*).sizeof, p1);
                 }
             }
+            else
+                debug(PRINTF) printf("%.*smarking %p, at %p\n", indent, "".ptr, p, p1);
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
             if (p >= minAddr && p < maxAddr)
             {
@@ -2713,10 +2726,10 @@ struct Gcx
     /**
     * Search an object with type info and mark any pointers into the GC pool.
     */
-    void mark(void *p, TypeInfo info, size_t repeat = 1)
+    void mark(void *p, const(TypeInfo) info, size_t repeat = 1)
     {
         TypeInfo ti = unqualify(info);
-        assert(ti);
+        _assert(ti);
 
         debug(PRINTF)
         {
@@ -2738,24 +2751,24 @@ struct Gcx
             if (auto arrayti = cast(TypeInfo_StaticArray)ti)
             {
                 debug(PRINTF) printf("static array\n");
-                mark(p, arrayti.value, repeat * arrayti.len);
+                mark(p, arrayti.next, repeat * arrayti.len);
             }
             else
             {
-                debug(PRINTF) printf("rtInfo: has pointers\n");
-                mark(p, p + ti.init().length, MAX_MARK_RECURSIONS);
+                debug(PRINTF) printf("rtInfo: has %d pointers\n", ti.tsize / (void*).sizeof);
+                mark(p, p + ti.tsize, MAX_MARK_RECURSIONS - 1); // -1 for indentation in debug output
             }
         }
         else if(cast(TypeInfo_Class)ti)
         {
             // class is not emplaced into data memory, must be a reference
             debug(PRINTF) printf("class reference\n");
-            mark(p, p + (void*).sizeof, MAX_MARK_RECURSIONS, null, null);
+            mark(p, p + (void*).sizeof, MAX_MARK_RECURSIONS-1, null, null);
         }
         else
         {
             debug(PRINTF) printf("mark with rtInfo\n");
-            mark(p, p + rtInfo[0], MAX_MARK_RECURSIONS, rtInfo, cast(byte*)p);
+            mark(p, p + rtInfo[0], MAX_MARK_RECURSIONS-1, rtInfo, cast(byte*)p);
         }
     }
 
@@ -2771,6 +2784,7 @@ struct Gcx
         {
             auto pbot = cast(hpInfo*) hp_ranges.ranges[i].pbot;
             auto ptop = cast(hpInfo*) hp_ranges.ranges[i].ptop;
+            debug(PRINTF) printf("marking hp range from %p to &p\n", pbot, ptop);
             for(auto p = pbot; p < ptop; p++)
                 mark(p.base, p.ti);
         }
@@ -2778,14 +2792,18 @@ struct Gcx
 
     void mark_tls(ScanType type, void* tlsbase, void* tlsend)
     {
-        if( 1 || type != ScanType.tls )
+        if( type != ScanType.tls )
+        {
+            debug(PRINTF) printf("marking tls range from %p to &p\n", tlsbase, tlsend);
             mark( tlsbase, tlsend );
+        }
         else
         {
-            for (size_t i = 0; i < hp_ranges.nranges; ++i)
+            for (size_t i = 0; i < hptls_ranges.nranges; ++i)
             {
-                auto pbot = cast(hpInfo*) hp_ranges.ranges[i].pbot;
-                auto ptop = cast(hpInfo*) hp_ranges.ranges[i].ptop;
+                auto pbot = cast(hpInfo*) hptls_ranges.ranges[i].pbot;
+                auto ptop = cast(hpInfo*) hptls_ranges.ranges[i].ptop;
+                debug(PRINTF) printf("marking tls hp range from %p to &p, base %p\n", pbot, ptop, tlsbase);
                 for(auto p = pbot; p < ptop; p++)
                     mark(tlsbase + cast(size_t)p.base, p.ti);
             }
@@ -2839,7 +2857,7 @@ struct Gcx
             for (List *list = bucket[n]; list; list = list.next)
             {
                 pool = list.pool;
-                assert(pool);
+                _assert(pool);
                 pool.freebits.set(cast(size_t)(cast(byte*)list - pool.baseAddr) / 16);
             }
         }
@@ -2879,7 +2897,7 @@ struct Gcx
         //log++;
         for (n = 0; n < ranges.nranges; n++)
         {
-            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
+            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges.ranges[n].pbot, ranges.ranges[n].ptop);
             mark(ranges.ranges[n].pbot, ranges.ranges[n].ptop);
         }
         //log--;
@@ -3057,7 +3075,7 @@ struct Gcx
                                 toClear |= GCBits.BITS_1 << clearIndex;
 
                                 List *list = cast(List *)p;
-                                debug(PRINTF) printf("\tcollecting %p\n", list);
+                                debug(COLLECT_PRINTF) printf("\tcollecting %p\n", list);
                                 log_free(sentinel_add(list));
 
                                 debug (MEMSTOMP) memset(p, 0xF3, size);
@@ -3193,7 +3211,7 @@ struct Gcx
     uint getBits(Pool* pool, size_t biti)
     in
     {
-        assert(pool);
+        _assert(pool);
     }
     body
     {
@@ -3221,7 +3239,7 @@ struct Gcx
     void setBits(Pool* pool, size_t biti, uint mask)
     in
     {
-        assert(pool);
+        _assert(pool);
     }
     body
     {
@@ -3267,7 +3285,7 @@ struct Gcx
     void clrBits(Pool* pool, size_t biti, uint mask)
     in
     {
-        assert(pool);
+        _assert(pool);
     }
     body
     {
@@ -3290,7 +3308,7 @@ struct Gcx
     void clrBitsSmallSweep(Pool* pool, size_t dataIndex, GCBits.wordtype toClear)
     in
     {
-        assert(pool);
+        _assert(pool);
     }
     body
     {
@@ -3404,7 +3422,7 @@ struct Gcx
                 debug(PRINTF) printf("parent'ing unallocated memory %p, parent = %p\n", p, parent);
                 Pool *pool;
                 pool = findPool(p);
-                assert(pool);
+                _assert(pool);
                 size_t offset = cast(size_t)(p - pool.baseAddr);
                 size_t biti;
                 size_t pn = offset / PAGESIZE;
@@ -3475,11 +3493,11 @@ struct Pool
 
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
-        assert(poolsize >= POOLSIZE);
+        _assert(poolsize >= POOLSIZE);
         baseAddr = cast(byte *)os_mem_map(poolsize);
 
         // Some of the code depends on page alignment of memory pools
-        assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
+        _assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
 
         if (!baseAddr)
         {
@@ -3489,7 +3507,7 @@ struct Pool
             npages = 0;
             poolsize = 0;
         }
-        //assert(baseAddr);
+        //_assert(baseAddr);
         topAddr = baseAddr + poolsize;
         auto div = this.divisor;
         auto nbits = cast(size_t)poolsize / div;
@@ -3536,14 +3554,14 @@ struct Pool
             if (ncommitted)
             {
                 result = os_mem_decommit(baseAddr, 0, ncommitted * PAGESIZE);
-                assert(result == 0);
+                _assert(result == 0);
                 ncommitted = 0;
             }
 
             if (npages)
             {
                 result = os_mem_unmap(baseAddr, npages * PAGESIZE);
-                assert(result == 0);
+                _assert(result == 0);
                 npages = 0;
             }
 
@@ -3590,14 +3608,14 @@ struct Pool
         {
             //if (baseAddr + npages * PAGESIZE != topAddr)
                 //printf("baseAddr = %p, npages = %d, topAddr = %p\n", baseAddr, npages, topAddr);
-            assert(baseAddr + npages * PAGESIZE == topAddr);
-            assert(ncommitted <= npages);
+            _assert(baseAddr + npages * PAGESIZE == topAddr);
+            _assert(ncommitted <= npages);
         }
 
         for (size_t i = 0; i < npages; i++)
         {
             Bins bin = cast(Bins)pagetable[i];
-            assert(bin < B_MAX);
+            _assert(bin < B_MAX);
         }
     }
 
@@ -3617,7 +3635,7 @@ struct Pool
 
     void updateOffsets(size_t fromWhere)
     {
-        assert(pagetable[fromWhere] == B_PAGE);
+        _assert(pagetable[fromWhere] == B_PAGE);
         size_t pn = fromWhere + 1;
         for(uint offset = 1; pn < ncommitted; pn++, offset++)
         {
@@ -3797,8 +3815,8 @@ version (SENTINEL)
 
     void sentinel_Invariant(const void *p)
     {
-        assert(*sentinel_pre(p) == SENTINEL_PRE);
-        assert(*sentinel_post(p) == SENTINEL_POST);
+        _assert(*sentinel_pre(p) == SENTINEL_PRE);
+        _assert(*sentinel_post(p) == SENTINEL_POST);
     }
 
 

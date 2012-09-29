@@ -98,7 +98,7 @@ void initStaticDataGC()
 {
     version( Windows )
     {
-        version(all)
+        version(none)
             gc_addRange( &_xi_a, cast(size_t) &_end - cast(size_t) &_xi_a );
         else
         {

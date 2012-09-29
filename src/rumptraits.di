@@ -34,7 +34,7 @@ bool isBasicType(T)()
                           float, double, real,
                           ifloat, idouble, ireal,
                           cfloat, cdouble, creal,
-                          char, wchar, dchar, bool, void))
+                          char, wchar, dchar, bool))
         static if(is(T == t))
             return true;
     return false;
