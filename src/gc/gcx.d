@@ -494,6 +494,7 @@ L_setarray:
                     bitmap = cast(size_t*)valueti.rtInfo();
                 if(bitmap is rtinfoNoPointers)
                 {
+                    pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, false);
                     debug(PRINTF) printf("\tCompiler generated element %.*s rtInfo: no pointers\n", valuetypename.length, valuetypename.ptr);
                 }
                 else if(bitmap is rtinfoHasPointers)
@@ -526,6 +527,7 @@ L_setarray:
             else if (rtInfo is rtinfoNoPointers) 
             {
                 debug(PRINTF) printf("\tCompiler generated rtInfo: no pointers\n");
+                pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, false);
             }
             else if (rtInfo is rtinfoHasPointers) 
             {
@@ -558,6 +560,11 @@ L_setarray:
         {
             debug(PRINTF) printf("Allocating a block without TypeInfo\n");
             pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof, true);
+        }
+        if(s < allocSize)
+        {
+            offset = (offset + s + (void*).sizeof - 1) & ~((void*).sizeof - 1);
+            pool.is_pointer.setRange(offset/(void*).sizeof, (allocSize - s)/(void*).sizeof, false);
         }
         //debug(PRINTF) printGCBits(&pool.is_pointer);    
     }
@@ -1104,7 +1111,7 @@ L_setarray:
             npages = pool.bPageOffsets[pagenum];
             debug (MEMSTOMP) memset(p, 0xF2, npages * PAGESIZE);
 
-            pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof,(npages* PAGESIZE)/(void*).sizeof, false); 
+            //pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof,(npages* PAGESIZE)/(void*).sizeof, false); 
             pool.freePages(pagenum, npages);
         }
         else
@@ -1113,7 +1120,7 @@ L_setarray:
 
             debug (MEMSTOMP) memset(p, 0xF2, binsize[bin]);
 
-            pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof, binsize[bin]/(void*).sizeof, false); 
+            //pool.is_pointer.setRange((p-pool.baseAddr)/(void*).sizeof, binsize[bin]/(void*).sizeof, false); 
             
             list.next = gcx.bucket[bin];
             list.pool = pool;
