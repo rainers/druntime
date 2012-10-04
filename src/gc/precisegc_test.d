@@ -37,7 +37,7 @@ TypeInfo unqualify(TypeInfo ti)
     if(auto tic = cast(TypeInfo_Const)ti)
         while(tic)
         {
-            ti = tic.next;
+            ti = tic.next; // means "base" if compiled with object._d
             tic = cast(TypeInfo_Const)ti;
         }
     return ti;
@@ -119,7 +119,8 @@ L_testNull:
             if(cast(size_t)pinfo == 1)
                 goto L_testOne;
 
-            size_t ebits = (ti.init.length + bytesPerPtr - 1) / bytesPerPtr;
+            size_t elen = ti.init.length;
+            size_t ebits = (elen + bytesPerPtr - 1) / bytesPerPtr;
             for(size_t i = 0; i < n; i++)
                 for(size_t j = 0; i < ebits; i++)
                     assert(testBit(pinfo + 1, j) == testBit(expected.ptr, i*ebits + j));
@@ -159,7 +160,7 @@ struct S(T, aliasTo = void)
     }
 
     size_t x;
-    T t;
+    T t = void;
     void* p;
 
 }
@@ -183,7 +184,7 @@ class C(T, aliasTo = void)
     }
 
     size_t x;
-    T t;
+    T t = void;
     void* p;
 
     enum tOff = t.offsetof / bytesPerPtr;
@@ -235,6 +236,7 @@ void testType(T)(size_t[] expected)
 }
 
 ///////////////////////////////////////
+alias void[2*size_t.sizeof] void2;
 alias size_t[3] int3;
 alias size_t*[3] pint3;
 alias string[3] sint3;
@@ -264,6 +266,7 @@ void testRTInfo()
     testType!(pint3)          ([ 0b111 ]);
     testType!(sint3)          ([ 0b101010 ]);
     testType!(sint3_2)        ([ 0b101010101010 ]);
+    testType!(void2)          ([ 0b11 ]);
 }
 
 unittest

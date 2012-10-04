@@ -65,6 +65,9 @@ struct OffsetTypeInfo
     TypeInfo ti;
 }
 
+enum void* rtinfoNoPointers  = null;
+enum void* rtinfoHasPointers = cast(void*)1;
+
 class TypeInfo
 {
     hash_t   getHash(in void* p) @trusted nothrow const;
@@ -139,11 +142,13 @@ class TypeInfo_AssociativeArray : TypeInfo
 class TypeInfo_Function : TypeInfo
 {
     TypeInfo next;
+    string deco;
 }
 
 class TypeInfo_Delegate : TypeInfo
 {
     TypeInfo next;
+    string deco;
 }
 
 class TypeInfo_Class : TypeInfo

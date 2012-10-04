@@ -92,6 +92,11 @@ void mkBitmap(T)(size_t* p, size_t offset)
         version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " reference");
         gctemplates_setbit(p, offset);
     }
+    else static if (is(T == void))
+    {
+        version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " untyped");
+        gctemplates_setbit(p, offset);
+    }
     else static if (isBasicType!(T)())
     {
         version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " basic type");
@@ -143,9 +148,12 @@ void mkBitmap(T)(size_t* p, size_t offset)
     }
 }
 
-void gctemplates_setbit(size_t* a, size_t offset)
+void gctemplates_setbit()(size_t* a, size_t offset)
 {
     size_t ptroff = offset/bytesPerPtr;
+    version(RTInfoPRINTF) 
+        if(offset % bytesPerPtr)
+            pragma(msg, "unaligned pointer offset"); // make this an error?
     a[ptroff/ptrPerBitmapWord] |= 1 << (ptroff % ptrPerBitmapWord);
 }
 
