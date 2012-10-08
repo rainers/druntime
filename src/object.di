@@ -85,6 +85,8 @@ class TypeInfo
     @property size_t talign() nothrow pure const @safe;
     version (X86_64) int argTypes(out TypeInfo arg1, out TypeInfo arg2) @safe nothrow;
     @property immutable(void)* rtInfo() nothrow pure const @safe;
+    @property const(TypeInfo) unqual() nothrow pure const @safe;
+	@property const(TypeInfo) element() nothrow pure const @safe;
 }
 
 class TypeInfo_Typedef : TypeInfo

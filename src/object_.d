@@ -352,6 +352,12 @@ class TypeInfo
     /** Return info used by the garbage collector to do precise collection.
      */
     @property immutable(void)* rtInfo() nothrow pure const @safe { return rtinfoHasPointers; } // better safe than sorry
+
+    /// Return the unqualified type (stripping const,immutable,shared)
+    @property const(TypeInfo) unqual() nothrow pure const @safe { return this; }
+
+    /// Return the unqualified value element of arrays
+    @property const(TypeInfo) element() nothrow pure const @safe { return this; }
 }
 
 class TypeInfo_Vector : TypeInfo
@@ -563,6 +569,8 @@ class TypeInfo_Array : TypeInfo
     }
 
     override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(void[]); }
+
+    override @property const(TypeInfo) element() nothrow pure const @safe { return value.element(); }
 }
 
 class TypeInfo_StaticArray : TypeInfo
@@ -682,6 +690,8 @@ class TypeInfo_StaticArray : TypeInfo
         arg1 = typeid(void*);
         return 0;
     }
+
+    override @property const(TypeInfo) element() nothrow pure const @safe { return value.element(); }
 }
 
 class TypeInfo_AssociativeArray : TypeInfo
@@ -1242,6 +1252,9 @@ class TypeInfo_Const : TypeInfo
     {
         return base.argTypes(arg1, arg2);
     }
+
+    override @property const(TypeInfo) unqual() nothrow pure const @safe { return base.unqual(); }
+    override @property const(TypeInfo) element() nothrow pure const @safe { return base.element(); }
 
     TypeInfo base;
 }
