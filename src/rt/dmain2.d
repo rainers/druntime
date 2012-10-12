@@ -1,16 +1,14 @@
 /**
  * Contains main program entry point and support routines.
  *
- * Copyright: Copyright Digital Mars 2000 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * Copyright: Copyright Digital Mars 2000 - 2012.
+ * License: Distributed under the
+ *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
+ *    (See accompanying file LICENSE)
  * Authors:   Walter Bright, Sean Kelly
+ * Source: $(DRUNTIMESRC src/rt/_dmain2.d)
  */
 
-/*          Copyright Digital Mars 2000 - 2010.
- * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE or copy at
- *          http://www.boost.org/LICENSE_1_0.txt)
- */
 module rt.dmain2;
 
 private
@@ -29,16 +27,19 @@ version (Windows)
     private import core.stdc.wchar_;
     private import rt.deh;
 
-    extern (Windows) alias int function() FARPROC;
-    extern (Windows) FARPROC    GetProcAddress(void*, in char*);
-    extern (Windows) void*      LoadLibraryW(in wchar_t*);
-    extern (Windows) int        FreeLibrary(void*);
-    extern (Windows) void*      LocalFree(void*);
-    extern (Windows) wchar_t*   GetCommandLineW();
-    extern (Windows) wchar_t**  CommandLineToArgvW(wchar_t*, int*);
-    extern (Windows) export int WideCharToMultiByte(uint, uint, wchar_t*, int, char*, int, char*, int*);
-    extern (Windows) export int MultiByteToWideChar(uint, uint, in char*, int, wchar_t*, int);
-    extern (Windows) int        IsDebuggerPresent();
+    extern (Windows)
+    {
+        alias int function() FARPROC;
+        FARPROC    GetProcAddress(void*, in char*);
+        void*      LoadLibraryW(in wchar_t*);
+        int        FreeLibrary(void*);
+        void*      LocalFree(void*);
+        wchar_t*   GetCommandLineW();
+        wchar_t**  CommandLineToArgvW(wchar_t*, int*);
+        export int WideCharToMultiByte(uint, uint, wchar_t*, int, char*, int, char*, int*);
+        export int MultiByteToWideChar(uint, uint, in char*, int, wchar_t*, int);
+        int        IsDebuggerPresent();
+    }
     pragma(lib, "shell32.lib"); // needed for CommandLineToArgvW
 }
 
@@ -340,9 +341,17 @@ int main(char[][] args);
 
 /***********************************
  * Substitutes for the C main() function.
- * It's purpose is to wrap the call to the D main()
+ * Its purpose is to wrap the call to the D main()
  * function and catch any unhandled exceptions.
  */
+
+version (Solaris) extern (C) int _main(int argc, char** argv)
+{
+    // This is apparently needed on Solaris because the
+    // C tool chain seems to expect the main function
+    // to be called _main.
+    return main(argc, argv);
+}
 
 extern (C) int main(int argc, char** argv)
 {
@@ -374,6 +383,14 @@ extern (C) int main(int argc, char** argv)
                                            // 111111: mask all FP exceptions
             fldcw   fpucw;
         }
+    }
+
+    version (Win64)
+    {
+        auto fp = __iob_func();
+        stdin = &fp[0];
+        stdout = &fp[1];
+        stderr = &fp[2];
     }
 
     _STI_monitor_staticctor();

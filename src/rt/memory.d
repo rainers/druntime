@@ -1,16 +1,15 @@
 /**
- * This module exposes functionality for inspecting and manipulating memory.
+ * This module tells the garbage collector about the static data and bss segments,
+ * so the GC can scan them for roots. It does not deal with thread local static data.
  *
- * Copyright: Copyright Digital Mars 2000 - 2010.
- * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
+ * Copyright: Copyright Digital Mars 2000 - 2012.
+ * License: Distributed under the
+ *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
+ *    (See accompanying file LICENSE)
  * Authors:   Walter Bright, Sean Kelly
+ * Source: $(DRUNTIMESRC src/rt/_memory.d)
  */
 
-/*          Copyright Digital Mars 2000 - 2010.
- * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE or copy at
- *          http://www.boost.org/LICENSE_1_0.txt)
- */
 module rt.memory;
 
 
@@ -20,7 +19,7 @@ private
     extern (C) void gc_removeRange( void* p );
 
 
-    version( Windows )
+    version( Win32 )
     {
         extern (C)
         {
@@ -31,6 +30,18 @@ private
                 int _end;    // &_end is past end of BSS
             }
 			void[] _noscanarea();
+        }
+    }
+    else version( Win64 )
+    {
+        extern (C)
+        {
+            extern __gshared
+            {
+                int __xc_a;      // &__xc_a just happens to be start of data segment
+                //int _edata;    // &_edata is start of BSS segment
+                void* _deh_beg;  // &_deh_beg is past end of BSS
+            }
         }
     }
     else version( linux )
@@ -85,7 +96,7 @@ private
         {
             extern __gshared
             {
-                int etext;
+                int __dso_handle;
                 int _end;
             }
         }
@@ -95,12 +106,16 @@ private
 
 void initStaticDataGC()
 {
-    version( Windows )
+    version( Win32 )
     {
 		void[] noscan = _noscanarea();
         gc_addRange( &_xi_a, cast(size_t) noscan.ptr - cast(size_t) &_xi_a );
 		void* noscan_end = noscan.ptr + noscan.length;
         gc_addRange( noscan_end, cast(size_t) &_end - cast(size_t) noscan_end );
+    }
+    else version( Win64 )
+    {
+        gc_addRange( &__xc_a, cast(size_t) &_deh_beg - cast(size_t) &__xc_a );
     }
     else version( linux )
     {
@@ -124,7 +139,7 @@ void initStaticDataGC()
     }
     else version( Solaris )
     {
-        gc_addRange( &etext, cast(size_t) &_end - cast(size_t) &etext );
+        gc_addRange(&__dso_handle, cast(size_t)&_end - cast(size_t)&__dso_handle);
     }
     else
     {

@@ -16,7 +16,19 @@ ifeq (,$(OS))
             ifeq (FreeBSD,$(OS))
                 OS:=freebsd
             else
-                $(error Unrecognized or unsupported OS for uname: $(OS))
+                ifeq (OpenBSD,$(OS))
+                    TARGET=OPENBSD
+                else
+                    ifeq (Solaris,$(OS))
+                        TARGET=SOLARIS
+                    else
+                        ifeq (SunOS,$(OS))
+                            TARGET=SOLARIS
+                        else
+                            $(error Unrecognized or unsupported OS for uname: $(OS))
+                        endif
+                    endif
+                endif
             endif
         endif
     endif
@@ -62,7 +74,7 @@ else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
 endif
 
-DOCFMT=
+DOCFMT=-version=CoreDdoc
 
 target : copydir import copy $(DRUNTIME) doc
 
@@ -126,6 +138,7 @@ MANIFEST= \
 	src/core/sys/freebsd/sys/event.d \
 	\
 	src/core/sys/linux/execinfo.d \
+	src/core/sys/linux/epoll.d \
 	src/core/sys/linux/sys/xattr.d \
 	\
 	src/core/sys/osx/execinfo.d \
@@ -517,6 +530,7 @@ COPY=\
 	$(IMPDIR)/core/sys/freebsd/sys/event.d \
 	\
 	$(IMPDIR)/core/sys/linux/execinfo.d \
+	$(IMPDIR)/core/sys/linux/epoll.d \
 	$(IMPDIR)/core/sys/linux/sys/xattr.d \
 	\
 	$(IMPDIR)/core/sys/osx/execinfo.d \

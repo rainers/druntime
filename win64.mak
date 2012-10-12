@@ -90,6 +90,7 @@ MANIFEST= \
 	src\core\sys\freebsd\sys\event.d \
 	\
 	src\core\sys\linux\execinfo.d \
+	src\core\sys\linux\epoll.d \
 	src\core\sys\linux\sys\xattr.d \
 	\
 	src\core\sys\osx\execinfo.d \
@@ -294,6 +295,7 @@ SRCS= \
 	src\rt\aApply.d \
 	src\rt\aApplyR.d \
 	src\rt\adi.d \
+	src\rt\alloca.d \
 	src\rt\arrayassign.d \
 	src\rt\arraybyte.d \
 	src\rt\arraycast.d \
@@ -304,6 +306,7 @@ SRCS= \
 	src\rt\arrayreal.d \
 	src\rt\arrayshort.d \
 	src\rt\cast_.d \
+	src\rt\cmath2.d \
 	src\rt\cover.d \
 	src\rt\critical_.d \
 	src\rt\deh2.d \

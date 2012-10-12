@@ -1,18 +1,14 @@
 ﻿/**
  * The thread module provides support for thread creation and management.
  *
- * Copyright: Copyright Sean Kelly 2005 - 2009.
- * License:   $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost License 1.0)
+ * Copyright: Copyright Sean Kelly 2005 - 2012.
+ * License: Distributed under the
+ *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
+ *    (See accompanying file LICENSE)
  * Authors:   Sean Kelly, Walter Bright, Alex Rønne Petersen
  * Source:    $(DRUNTIMESRC core/_thread.d)
  */
 
-/*          Copyright Sean Kelly 2005 - 2009.
- * Distributed under the Boost Software License, Version 1.0.
- *    (See accompanying file LICENSE or copy at
- *          http://www.boost.org/LICENSE_1_0.txt)
- * Source: $(LINK http://www.dsource.org/projects/druntime/browser/trunk/src/core/thread.d)
- */
 module core.thread;
 
 
@@ -130,13 +126,29 @@ version( Windows )
 
         version( DigitalMars )
         {
-            // NOTE: The memory between the addresses of _tlsstart and _tlsend
-            //       is the storage for thread-local data in D 2.0.  Both of
-            //       these are defined in dm\src\win32\tlsseg.asm by DMC.
-            extern (C)
+            version (Win32)
             {
-                extern int _tlsstart;
-                extern int _tlsend;
+                // NOTE: The memory between the addresses of _tlsstart and _tlsend
+                //       is the storage for thread-local data in D 2.0.  Both of
+                //       these are defined in dm\src\win32\tlsseg.asm by DMC.
+                extern (C)
+                {
+                    extern int _tlsstart;
+                    extern int _tlsend;
+                }
+            }
+            version (Win64)
+            {
+                // NOTE: The memory between the addresses of _tls_start and _tls_end
+                //       is the storage for thread-local data in D 2.0.  Both of
+                //       these are defined in LIBCMT:tlssub.obj
+                extern (C)
+                {
+                    extern int _tls_start;
+                    extern int _tls_end;
+                }
+                alias _tls_start _tlsstart;
+                alias _tls_end   _tlsend;
             }
         }
         else
@@ -684,7 +696,7 @@ class Thread
 
         version( Windows )
         {
-            // NOTE: If a thread is just executing DllMain() 
+            // NOTE: If a thread is just executing DllMain()
             //       while another thread is started here, it holds an OS internal
             //       lock that serializes DllMain with CreateThread. As the code
             //       might request a synchronization on slock (e.g. in thread_findByAddr()),
@@ -1725,6 +1737,8 @@ version (D_LP64)
         static assert(__traits(classInstanceSize, Thread) == 312);
     else version (OSX)
         static assert(__traits(classInstanceSize, Thread) == 320);
+    else version (Solaris)
+        static assert(__traits(classInstanceSize, Thread) == 176);
     else version (Posix)
         static assert(__traits(classInstanceSize, Thread) == 184);
     else
@@ -2275,7 +2289,7 @@ private void suspend( Thread t )
         else version( X86_64 )
         {
             if( !t.m_lock )
-                t.m_curr.tstack = cast(void*) context.Rsp;            
+                t.m_curr.tstack = cast(void*) context.Rsp;
             // rax,rbx,rcx,rdx,rdi,rsi,rbp,rsp
             t.m_reg[0] = context.Rax;
             t.m_reg[1] = context.Rbx;
@@ -2293,7 +2307,7 @@ private void suspend( Thread t )
             t.m_reg[12] = context.R12;
             t.m_reg[13] = context.R13;
             t.m_reg[14] = context.R14;
-            t.m_reg[15] = context.R15;                    
+            t.m_reg[15] = context.R15;
         }
         else
         {
@@ -2828,6 +2842,7 @@ extern (C)
 {
     version (linux) int pthread_getattr_np(pthread_t thread, pthread_attr_t* attr);
     version (FreeBSD) int pthread_attr_get_np(pthread_t thread, pthread_attr_t* attr);
+    version (Solaris) int thr_stksegment(stack_t* stk);
 }
 
 
@@ -2851,7 +2866,12 @@ private void* getStackBottom()
         version (D_InlineAsm_X86)
             asm { naked; mov EAX, FS:4; ret; }
         else version(D_InlineAsm_X86_64)
-            asm { naked; mov RAX, GS:4; ret; }
+            asm
+            {    naked;
+                 mov RAX, 8;
+                 mov RAX, GS:[RAX];
+                 ret;
+            }
         else
             static assert(false, "Architecture not supported.");
     }
@@ -2880,6 +2900,13 @@ private void* getStackBottom()
         pthread_attr_getstack(&attr, &addr, &size);
         pthread_attr_destroy(&attr);
         return addr + size;
+    }
+    else version (Solaris)
+    {
+        stack_t stk;
+
+        thr_stksegment(&stk);
+        return stk.ss_sp;
     }
     else
         static assert(false, "Platform not supported.");
@@ -3862,7 +3889,7 @@ private:
         }
         else
         {
-            import core.sys.posix.sys.mman; // mmap
+            version (Posix) import core.sys.posix.sys.mman; // mmap
 
             static if( __traits( compiles, mmap ) )
             {
@@ -3924,23 +3951,26 @@ private:
         //       global context list.
         Thread.remove( m_ctxt );
 
-        import core.sys.posix.sys.mman; // munmap
-
         static if( __traits( compiles, VirtualAlloc ) )
         {
             VirtualFree( m_pmem, 0, MEM_RELEASE );
         }
-        else static if( __traits( compiles, mmap ) )
+        else
         {
-            munmap( m_pmem, m_size );
-        }
-        else static if( __traits( compiles, valloc ) )
-        {
-            free( m_pmem );
-        }
-        else static if( __traits( compiles, malloc ) )
-        {
-            free( m_pmem );
+            import core.sys.posix.sys.mman; // munmap
+
+            static if( __traits( compiles, mmap ) )
+            {
+                munmap( m_pmem, m_size );
+            }
+            else static if( __traits( compiles, valloc ) )
+            {
+                free( m_pmem );
+            }
+            else static if( __traits( compiles, malloc ) )
+            {
+                free( m_pmem );
+            }
         }
         m_pmem = null;
         m_ctxt = null;
