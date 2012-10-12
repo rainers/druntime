@@ -472,10 +472,12 @@ class GC
                     name = si.name;
             }
             auto rtInfo = cast(const(size_t)*)ti.rtInfo();
-            const(TypeInfo) valueti = ti.element();
+            const(TypeInfo) dvalueti = ti.darray_value().unqual();
+            const(TypeInfo) svalueti = dvalueti.sarray_value();
 
             //does this TypeInfo have a repeating tail?
-            if (valueti !is ti)
+//            if (auto arrayti = cast(TypeInfo_Array)ti)
+            if (svalueti !is ti)
             {
                 // an array can be appended without notifying the GC, so we prefill the yet unused space with the pointer pattern
                 s = allocSize;
@@ -486,16 +488,16 @@ class GC
                     s -= 16;
                 }
 /*
-                valueti = unqualify(arrayti.next);
+                svalueti = unqualify(arrayti.next);
 L_setarray:
                 TypeInfo_StaticArray sarrayti;
-                while ((sarrayti = cast(TypeInfo_StaticArray)valueti) !is null)
-                    valueti = unqualify(sarrayti.next);
-*/
+                while ((sarrayti = cast(TypeInfo_StaticArray)svalueti) !is null)
+                    svalueti = unqualify(sarrayti.next);
+//*/
                 debug(PRINTF) string valuetypename = valueti.classinfo.name;
                 const(size_t)* bitmap = cast(const(size_t)*) 1;  // default is to set full range
-                if (valueti)
-                    bitmap = cast(size_t*)valueti.rtInfo();
+                if (svalueti)
+                    bitmap = cast(size_t*)svalueti.rtInfo();
                 if(bitmap is rtinfoNoPointers)
                 {
                     pool.is_pointer.clrRange(offset/(void*).sizeof, s/(void*).sizeof);
@@ -506,7 +508,7 @@ L_setarray:
                     pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof);
                     debug(PRINTF) printf("\tCompiler generated element %.*s rtInfo: has pointers\n", valuetypename.length, valuetypename.ptr);
                 }
-                else if (auto ci = cast(TypeInfo_Class)valueti)
+                else if (auto ci = svalueti.info)
                 {
                     pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof);
                     debug(PRINTF) printf("\tSetting array of class %d references (%s) at %p\n", s/(void*).sizeof, ci.name.ptr, p);
@@ -522,12 +524,13 @@ L_setarray:
                                          "\n\t\tcopying TypeInfo from %p\n", valuetypename.length, valuetypename.ptr, p, bitmap);
                 }
             }
-            /*else if (auto arrayti = cast(TypeInfo_StaticArray)ti)
+            /*
+            else if (auto arrayti = cast(TypeInfo_StaticArray)ti)
             {
                 // there is no full type info for static arrays, repeat the elements
                 valueti = unqualify(arrayti.next);
                 goto L_setarray;
-            }*/
+            }//*/
             else if (rtInfo is rtinfoNoPointers) 
             {
                 debug(PRINTF) printf("\tCompiler generated rtInfo: no pointers\n");

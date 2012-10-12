@@ -356,8 +356,12 @@ class TypeInfo
     /// Return the unqualified type (stripping const,immutable,shared)
     @property const(TypeInfo) unqual() nothrow pure const @safe { return this; }
 
-    /// Return the unqualified value element of arrays
-    @property const(TypeInfo) element() nothrow pure const @safe { return this; }
+    /// Return the unqualified value element of dynamic/static arrays
+    @property const(TypeInfo) darray_value() nothrow pure const { return this; }
+    @property const(TypeInfo) sarray_value() nothrow pure const { return this; }
+
+	/// Return the type info of a class, null for everything else (used for fast dynamic cast)
+    @property const(TypeInfo_Class) info() @safe nothrow pure const { return null; }
 }
 
 class TypeInfo_Vector : TypeInfo
@@ -570,7 +574,7 @@ class TypeInfo_Array : TypeInfo
 
     override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(void[]); }
 
-    override @property const(TypeInfo) element() nothrow pure const @safe { return value.element(); }
+    override @property const(TypeInfo) darray_value() nothrow pure const { return next(); }
 }
 
 class TypeInfo_StaticArray : TypeInfo
@@ -691,7 +695,7 @@ class TypeInfo_StaticArray : TypeInfo
         return 0;
     }
 
-    override @property const(TypeInfo) element() nothrow pure const @safe { return value.element(); }
+    override @property const(TypeInfo) sarray_value() nothrow pure const { return value.unqual().sarray_value(); }
 }
 
 class TypeInfo_AssociativeArray : TypeInfo
@@ -874,7 +878,7 @@ class TypeInfo_Class : TypeInfo
         return m_offTi;
     }
 
-    @property auto info() @safe nothrow pure const { return this; }
+    override @property const(TypeInfo_Class) info() @safe nothrow pure const { return this; }
     @property auto typeinfo() @safe nothrow pure const { return this; }
 
     byte[]      init;           /** class static initializer
@@ -1254,7 +1258,6 @@ class TypeInfo_Const : TypeInfo
     }
 
     override @property const(TypeInfo) unqual() nothrow pure const @safe { return base.unqual(); }
-    override @property const(TypeInfo) element() nothrow pure const @safe { return base.element(); }
 
     TypeInfo base;
 }

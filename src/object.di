@@ -86,7 +86,9 @@ class TypeInfo
     version (X86_64) int argTypes(out TypeInfo arg1, out TypeInfo arg2) @safe nothrow;
     @property immutable(void)* rtInfo() nothrow pure const @safe;
     @property const(TypeInfo) unqual() nothrow pure const @safe;
-	@property const(TypeInfo) element() nothrow pure const @safe;
+    @property const(TypeInfo) darray_value() nothrow pure const;
+    @property const(TypeInfo) sarray_value() nothrow pure const;
+    @property const(TypeInfo_Class) info() nothrow pure const @safe;
 }
 
 class TypeInfo_Typedef : TypeInfo
@@ -155,7 +157,7 @@ class TypeInfo_Delegate : TypeInfo
 
 class TypeInfo_Class : TypeInfo
 {
-    @property auto info() @safe nothrow pure const { return this; }
+    @property override const(TypeInfo_Class) info() @safe nothrow pure const { return this; }
     @property auto typeinfo() @safe nothrow pure const { return this; }
 
     byte[]      init;   // class static initializer
