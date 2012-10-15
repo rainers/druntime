@@ -337,6 +337,7 @@ SRC_D_MODULES = \
 	rt/aApply \
 	rt/aApplyR \
 	rt/adi \
+	rt/alloca \
 	rt/arrayassign \
 	rt/arraybyte \
 	rt/arraycast \
@@ -419,7 +420,6 @@ SRC_D_MODULES_POSIX = \
 	core/sys/posix/sys/utsname \
 	core/sys/posix/netinet/in_ \
 	\
-	rt/alloca \
 	rt/cmath2 \
 	rt/deh2 \
 
@@ -434,6 +434,7 @@ SRC_D_MODULES_WIN32 = \
 	rt/deh \
 
 SRC_D_MODULES_WIN64 = \
+	rt/cmath2 \
 	rt/deh2 \
 
 # NOTE: trace.d and cover.d are not necessary for a successful build

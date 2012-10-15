@@ -27,6 +27,7 @@ version (Windows)
     private import core.stdc.wchar_;
     private import rt.deh;
 
+	version(Win64) alias Throwable StackTracingThrowable;
     extern (Windows)
     {
         alias int function() FARPROC;
