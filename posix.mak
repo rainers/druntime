@@ -46,9 +46,10 @@ DOCDIR=doc
 IMPDIR=import
 
 MODEL=32
+override PIC:=$(if $(PIC),-fPIC,)
 
-DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
-UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property
+DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC)
+UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC)
 DMDDEP = # $(shell which $(DMD))
 DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
@@ -63,7 +64,7 @@ ifeq (windows64,$(OS)$(MODEL))
 	CFLAGS_O = $(subst -g,/Zi,$(CFLAGS)) -Fo
 	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
 else
-	CFLAGS_O = $(CFLAGS) -o
+	CFLAGS_O = $(CFLAGS) -o $(PIC)
 endif
 	
 OBJDIR=obj/$(MODEL)
