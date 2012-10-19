@@ -32,6 +32,8 @@ MANIFEST= \
 	\
 	src\object_.d \
 	src\object.di \
+	src\rumptraits.di \
+	src\gctemplates.di \
 	\
 	src\core\atomic.d \
 	src\core\bitop.d \
@@ -238,6 +240,7 @@ MANIFEST= \
 
 SRCS= \
 	src\object_.d \
+	src\gctemplates.di \
 	\
 	src\core\atomic.d \
 	src\core\bitop.d \
@@ -363,6 +366,7 @@ SRCS= \
 #       as both are used for debugging features (profiling and coverage)
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
+#
 
 OBJS= errno_c.obj complex.obj src\rt\minit.obj
 OBJS_TO_DELETE= errno_c.obj complex.obj
@@ -392,6 +396,8 @@ DOCS=\
 
 IMPORTS=\
 	$(IMPDIR)\core\sync\barrier.di \
+	$(IMPDIR)\gctemplates.di \
+	$(IMPDIR)\rumptraits.di \
 	$(IMPDIR)\core\sync\condition.di \
 	$(IMPDIR)\core\sync\config.di \
 	$(IMPDIR)\core\sync\exception.di \
@@ -401,6 +407,8 @@ IMPORTS=\
 
 COPY=\
 	$(IMPDIR)\object.di \
+	$(IMPDIR)\rumptraits.di \
+	$(IMPDIR)\gctemplates.di \
 	$(IMPDIR)\core\atomic.d \
 	$(IMPDIR)\core\bitop.d \
 	$(IMPDIR)\core\cpuid.d \
@@ -601,6 +609,12 @@ copydir: $(IMPDIR)
 copy: $(COPY)
 
 $(IMPDIR)\object.di : src\object.di
+	copy $** $@
+
+$(IMPDIR)\gctemplates.di : src\gctemplates.di
+	copy $** $@
+
+$(IMPDIR)\rumptraits.di : src\rumptraits.di
 	copy $** $@
 
 $(IMPDIR)\core\atomic.d : src\core\atomic.d

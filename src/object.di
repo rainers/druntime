@@ -12,6 +12,7 @@
  */
 module object;
 
+private import gctemplates;
 private
 {
     extern(C) void rt_finalize(void *ptr, bool det=true);
@@ -65,6 +66,9 @@ struct OffsetTypeInfo
     TypeInfo ti;
 }
 
+enum void* rtinfoNoPointers  = null;
+enum void* rtinfoHasPointers = cast(void*)1;
+
 class TypeInfo
 {
     size_t   getHash(in void* p) @trusted nothrow const;
@@ -82,6 +86,10 @@ class TypeInfo
     @property size_t talign() nothrow pure const @safe;
     version (X86_64) int argTypes(out TypeInfo arg1, out TypeInfo arg2) @safe nothrow;
     @property immutable(void)* rtInfo() nothrow pure const @safe;
+    @property const(TypeInfo) unqual() nothrow pure const @safe;
+    @property const(TypeInfo) darray_value() nothrow pure const;
+    @property const(TypeInfo) sarray_value() nothrow pure const;
+    @property const(TypeInfo_Class) info() nothrow pure const @safe;
 }
 
 class TypeInfo_Typedef : TypeInfo
@@ -150,7 +158,7 @@ class TypeInfo_Delegate : TypeInfo
 
 class TypeInfo_Class : TypeInfo
 {
-    @property auto info() @safe nothrow pure const { return this; }
+    @property override const(TypeInfo_Class) info() @safe nothrow pure const { return this; }
     @property auto typeinfo() @safe nothrow pure const { return this; }
 
     byte[]      init;   // class static initializer
@@ -648,7 +656,7 @@ void __ctfeWriteln(T...)(auto ref T values) { __ctfeWrite(values, "\n"); }
 
 template RTInfo(T)
 {
-    enum RTInfo = cast(void*)0x12345678;
+    enum RTInfo = gctemplates.RTInfoImpl!T;
 }
 
 version (unittest)

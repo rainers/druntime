@@ -90,11 +90,11 @@ private
     extern (C) uint gc_setAttr( void* p, uint a ) pure nothrow;
     extern (C) uint gc_clrAttr( void* p, uint a ) pure nothrow;
 
-    extern (C) void*    gc_malloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_calloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz ) pure nothrow;
+    extern (C) void*    gc_malloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_calloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz, const TypeInfo = null ) pure nothrow;
     extern (C) size_t   gc_reserve( size_t sz ) nothrow;
     extern (C) void     gc_free( void* p ) pure nothrow;
 
@@ -112,9 +112,11 @@ private
 
     extern (C) void gc_addRoot( in void* p ) nothrow;
     extern (C) void gc_addRange( in void* p, size_t sz ) nothrow;
+    extern (C) void gc_addRange_hp( in void* p, size_t sz, bool tls ) nothrow;
 
     extern (C) void gc_removeRoot( in void* p ) nothrow;
     extern (C) void gc_removeRange( in void* p ) nothrow;
+    extern (C) void gc_removeRange_hp( in void* p, size_t sz, bool tls ) nothrow;
 }
 
 
@@ -306,9 +308,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* malloc( size_t sz, uint ba = 0 ) pure nothrow
+    static void* malloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_malloc( sz, ba );
+        return gc_malloc( sz, ba, ti );
     }
 
 
@@ -330,9 +332,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static BlkInfo qalloc( size_t sz, uint ba = 0 ) pure nothrow
+    static BlkInfo qalloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_qalloc( sz, ba );
+        return gc_qalloc( sz, ba, ti );
     }
 
 
@@ -355,9 +357,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* calloc( size_t sz, uint ba = 0 ) pure nothrow
+    static void* calloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_calloc( sz, ba );
+        return gc_calloc( sz, ba, ti );
     }
 
 
@@ -393,9 +395,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow
+    static void* realloc( void* p, size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_realloc( p, sz, ba );
+        return gc_realloc( p, sz, ba, ti );
     }
 
 
@@ -414,9 +416,9 @@ struct GC
      *  The size in bytes of the extended memory block referenced by p or zero
      *  if no extension occurred.
      */
-    static size_t extend( void* p, size_t mx, size_t sz ) pure nothrow
+    static size_t extend( void* p, size_t mx, size_t sz, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_extend( p, mx, sz );
+        return gc_extend( p, mx, sz, ti );
     }
 
 

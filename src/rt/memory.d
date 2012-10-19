@@ -17,7 +17,7 @@ private
 {
     extern (C) void gc_addRange( void* p, size_t sz );
     extern (C) void gc_removeRange( void* p );
-
+    extern (C) void gc_addRange_hp( void* p, size_t sz, bool tls ) nothrow;
 
     version( Win32 )
     {
@@ -29,7 +29,8 @@ private
                 int _edata;  // &_edata is start of BSS segment
                 int _end;    // &_end is past end of BSS
             }
-			void[] _noscanarea();
+            void[] _hparea();
+            void[] _tlshparea();
         }
     }
     else version( Win64 )
@@ -108,10 +109,15 @@ void initStaticDataGC()
 {
     version( Win32 )
     {
-		void[] noscan = _noscanarea();
-        gc_addRange( &_xi_a, cast(size_t) noscan.ptr - cast(size_t) &_xi_a );
-		void* noscan_end = noscan.ptr + noscan.length;
-        gc_addRange( noscan_end, cast(size_t) &_end - cast(size_t) noscan_end );
+        version(none)
+            gc_addRange( &_xi_a, cast(size_t) &_end - cast(size_t) &_xi_a );
+        else
+        {
+            void[] hp = _hparea();
+            gc_addRange_hp(hp.ptr, hp.length, false);
+            void[] tlshp = _tlshparea();
+            gc_addRange_hp(tlshp.ptr, tlshp.length, true);
+        }
     }
     else version( Win64 )
     {

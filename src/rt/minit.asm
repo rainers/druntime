@@ -72,14 +72,14 @@ HPE     ends
 DGROUP         group   HPB,HP,HPE
 
 ; These segments bracket HP, which contains the "has pointer" data
-HPTLSB  segment dword use32 public 'tls'
+HPTLSB  segment dword use32 public 'DATA'
 HPTLSB  ends
-HPTLS   segment dword use32 public 'tls'
+HPTLS   segment dword use32 public 'DATA'
 HPTLS   ends
-HPTLSE  segment dword use32 public 'tls'
+HPTLSE  segment dword use32 public 'DATA'
 HPTLSE  ends
 
-DGROUP         group   HPTLSB,HTLSP,HPTLSE
+DGROUP         group   HPTLSB,HPTLS,HPTLSE
 
     begcode minit
 
@@ -116,7 +116,9 @@ __hparea proc    near
     ret
 __hparea endp
 
-    endcode tlshparea
+    endcode hparea
+
+    begcode tlshparea
 
 ; extern (C) void[] _tlshparea();
 ; returns the memory area containing "has pointer" info in TLS [tls offset of data,TypeInfo]

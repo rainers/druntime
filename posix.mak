@@ -67,6 +67,12 @@ else
 	CFLAGS_O = $(CFLAGS) -o $(PIC)
 endif
 	
+ifeq (/,findstring /,$(DMD))
+	DMDDEP = $(shell which $(DMD))
+else
+	DMDDEP = $(DMD)
+endif
+
 OBJDIR=obj/$(MODEL)
 DRUNTIME_BASE=druntime-$(OS)$(MODEL)
 ifeq (windows,$(OS))
@@ -88,6 +94,8 @@ MANIFEST= \
 	\
 	src/object_.d \
 	src/object.di \
+	src/gctemplates.di \
+	src/rumptraits.di \
 	\
 	src/core/atomic.d \
 	src/core/bitop.d \
@@ -340,7 +348,6 @@ SRC_D_MODULES = \
 	rt/aApply \
 	rt/aApplyR \
 	rt/adi \
-	rt/alloca \
 	rt/arrayassign \
 	rt/arraybyte \
 	rt/arraycast \
@@ -494,6 +501,8 @@ IMPORTS=\
 
 COPY=\
 	$(IMPDIR)/object.di \
+	$(IMPDIR)/gctemplates.di \
+	$(IMPDIR)/rumptraits.di \
 	$(IMPDIR)/core/atomic.d \
 	$(IMPDIR)/core/bitop.d \
 	$(IMPDIR)/core/cpuid.d \
@@ -664,6 +673,9 @@ $(OBJDIR)/%.$O : src/rt/%.c
 $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
 	@$(MKDIR) -p $(OBJDIR)
 	$(CC) -c $(CFLAGS_O)$@ $<
+
+src\rt\minit.obj : src\rt\minit.asm
+	ml -c /omf /D_WIN32 /Fo$@ src\rt\minit.asm
 
 ################### Library generation #########################
 

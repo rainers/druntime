@@ -975,6 +975,11 @@ void _d_localUnwindForGoto(DHandlerTable *handler_table,
     _d_local_unwind(handler_table, frame, stop_index, &searchCollisionExceptionHandler);
 }
 
+// in case this file is compiled without object_.d on the command line (e.g. in untitests)
+//  the declarations for is _d_monitorenter and _d_monitorexit are missing
+extern (C) void _d_monitorexit(Object h);
+extern (C) void _d_monitorenter(Object h);
+
 /***********************************
  * The frame handler, this is called for each frame that has been registered
  * in the OS except_list.

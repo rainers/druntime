@@ -30,7 +30,7 @@ private
         ALL_BITS    = 0b1111_1111
     }
 
-    extern (C) void* gc_malloc( size_t sz, uint ba = 0 );
+    extern (C) void* gc_malloc( size_t sz, uint ba = 0, const TypeInfo ti=null );
     extern (C) void  gc_free( void* p );
 
     // Convenience function to make sure the NO_INTERIOR gets set on the
@@ -273,7 +273,7 @@ body
     // Not found, create new elem
     //printf("create new one\n");
     size_t size = aaA.sizeof + aligntsize(keytitsize) + valuesize;
-    e = cast(aaA *) gc_malloc(size);
+    e = cast(aaA *) gc_malloc(size, 0, typeid(aaA)); // TODO: combined TypeInfo needed
     e.next = null;
     e.hash = key_hash;
     ubyte* ptail = cast(ubyte*)(e + 1);
@@ -439,7 +439,7 @@ ArrayRet_t _aaValues(AA aa, size_t keysize, size_t valuesize)
     {
         a.length = _aaLen(aa);
         a.ptr = cast(byte*) gc_malloc(a.length * valuesize,
-                                      valuesize < (void*).sizeof ? BlkAttr.NO_SCAN : 0);
+                                      valuesize < (void*).sizeof ? BlkAttr.NO_SCAN : 0, typeid(a));
         resi = 0;
         foreach (e; aa.a.b)
         {
@@ -710,8 +710,9 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(aaA *) cast(void*) new void[aaA.sizeof + keytsize + valuesize];
+                    e = cast(aaA *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(aaA)); // TODO: provide full type info
                     memcpy(e + 1, pkey, keysize);
+                    e.next = null;
                     e.hash = key_hash;
                     *pe = e;
                     result.nodes++;
@@ -780,8 +781,9 @@ BB* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] val
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(aaA *) cast(void*) new void[aaA.sizeof + keytsize + valuesize];
+                    e = cast(aaA *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(aaA)); // TODO: provide full type info
                     memcpy(e + 1, pkey, keysize);
+                    e.next = null;
                     e.hash = key_hash;
                     *pe = e;
                     result.nodes++;
