@@ -48,8 +48,8 @@ IMPDIR=import
 MODEL=32
 override PIC:=$(if $(PIC),-fPIC,)
 
-DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC)
-UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC)
+DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
+UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
 DMDDEP = # $(shell which $(DMD))
 DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
 
@@ -60,9 +60,9 @@ else
 	OPTFLAGS=-O -release -inline
 endif
 
-ifeq (windows64,$(OS)$(MODEL))
-	CFLAGS_O = $(subst -g,/Zi,$(CFLAGS)) -Fo
-	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
+ifeq (cl.exe,$(findstring cl.exe,$(CC)))
+	CFLAGS_O = $(subst -g,/Z7,$(CFLAGS)) -Fo
+#	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
 else
 	CFLAGS_O = $(CFLAGS) -o $(PIC)
 endif
@@ -430,6 +430,7 @@ SRC_D_MODULES_POSIX = \
 	core/sys/posix/sys/utsname \
 	core/sys/posix/netinet/in_ \
 	\
+	rt/alloca \
 	rt/cmath2 \
 	rt/deh2 \
 
@@ -444,6 +445,7 @@ SRC_D_MODULES_WIN32 = \
 	rt/deh \
 
 SRC_D_MODULES_WIN64 = \
+	rt/alloca \
 	rt/cmath2 \
 	rt/deh2 \
 
@@ -458,7 +460,12 @@ ifeq (windows,$(OS))
     DOTEXE = .exe
     OBJS = $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj
     ifeq ($(MODEL),32)
-          OBJS += src\rt\minit.obj
+	ifeq (-coff,$(findstring -coff,$(DMDEXTRAFLAGS)))
+	    SRC_D_MODULES += rt/alloca rt/cmath2
+	    OBJS += src\rt\minit_coff.obj
+	else
+	    OBJS += src\rt\minit.obj
+	endif
     endif
 else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
@@ -676,6 +683,9 @@ $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
 
 src\rt\minit.obj : src\rt\minit.asm
 	ml -c /omf /D_WIN32 /Fo$@ src\rt\minit.asm
+
+src\rt\minit_coff.obj : src\rt\minit.asm
+	ml -c /D_WIN32 /DCOFF /Fo$@ src\rt\minit.asm
 
 ################### Library generation #########################
 

@@ -74,7 +74,7 @@ private
 
 version( Windows )
 {
-    version (Win32)
+    version (dmcWin32)
         pragma(lib, "snn.lib");
 
     /******************************************

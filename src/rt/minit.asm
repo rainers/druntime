@@ -23,8 +23,6 @@ endif
 public __nullext
 __nullext   equ 0
 
-    extrn   __moduleinfo_array:near
-
 ; This bit of assembler is needed because, from C or D, one cannot
 ; specify the names of data segments. Why does this matter?
 ; All the ModuleInfo pointers are placed into a segment named 'FM'.
@@ -59,7 +57,9 @@ XO      ends
 XOE     segment dword use32 public 'BSS'
 XOE     ends
 
+ifndef COFF
 DGROUP         group   FMB,FM,FME
+endif
 
 ; These segments bracket HP, which contains the "has pointer" data
 HPB     segment dword use32 public 'DATA'
@@ -69,7 +69,9 @@ HP      ends
 HPE     segment dword use32 public 'DATA'
 HPE     ends
 
+ifndef COFF
 DGROUP         group   HPB,HP,HPE
+endif
 
 ; These segments bracket HP, which contains the "has pointer" data
 HPTLSB  segment dword use32 public 'DATA'
@@ -79,7 +81,12 @@ HPTLS   ends
 HPTLSE  segment dword use32 public 'DATA'
 HPTLSE  ends
 
+ifndef COFF
 DGROUP         group   HPTLSB,HPTLS,HPTLSE
+endif
+
+ifndef COFF
+    extrn   __moduleinfo_array:near
 
     begcode minit
 
@@ -101,6 +108,7 @@ __minit proc    near
 __minit endp
 
     endcode minit
+endif
 
     begcode hparea
 
@@ -133,5 +141,61 @@ __tlshparea proc    near
 __tlshparea endp
 
     endcode tlshparea
+
+ifdef COFF
+    extrn   __alldiv:near
+    extrn   __aulldiv:near
+    extrn   __allrem:near
+    extrn   __aullrem:near
+    
+    begcode __ms_alldiv
+    public  __ms_alldiv
+__ms_alldiv proc    near
+    push EBX
+    push ECX
+    push EDX
+    push EAX
+    call __alldiv
+    ret
+__ms_alldiv endp
+    endcode __ms_alldiv
+ 
+    begcode __ms_aulldiv
+    public  __ms_aulldiv
+__ms_aulldiv proc    near
+    push EBX
+    push ECX
+    push EDX
+    push EAX
+    call __aulldiv
+    ret
+__ms_aulldiv endp
+    endcode __ms_aulldiv
+ 
+    begcode __ms_allrem
+    public  __ms_allrem
+__ms_allrem proc    near
+    push EBX
+    push ECX
+    push EDX
+    push EAX
+    call __allrem
+    ret
+__ms_allrem endp
+    endcode __ms_allrem
+
+    begcode __ms_aallrem
+    public  __ms_aullrem
+__ms_aullrem proc    near
+    push EBX
+    push ECX
+    push EDX
+    push EAX
+    call __aullrem
+    ret
+__ms_aullrem endp
+    endcode __ms_aullrem
+
+endif
 
     end

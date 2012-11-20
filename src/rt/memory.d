@@ -12,6 +12,12 @@
 
 module rt.memory;
 
+version (Win64)
+    version = CRuntime_Microsoft;
+else version (COFF)
+    version = CRuntime_Microsoft;
+else version (Win32)
+    version = CRuntime_DigitalMars;
 
 private
 {
@@ -19,7 +25,7 @@ private
     extern (C) void gc_removeRange( void* p );
     extern (C) void gc_addRange_hp( void* p, size_t sz, bool tls ) nothrow;
 
-    version( Win32 )
+    version( CRuntime_DigitalMars )
     {
         extern (C)
         {
@@ -33,7 +39,7 @@ private
             void[] _tlshparea();
         }
     }
-    else version( Win64 )
+    else version( CRuntime_Microsoft )
     {
         extern (C)
         {
@@ -98,7 +104,7 @@ private
 
 void initStaticDataGC()
 {
-    version( Win32 )
+    version( CRuntime_DigitalMars )
     {
         version(none)
             gc_addRange( &_xi_a, cast(size_t) &_end - cast(size_t) &_xi_a );
@@ -110,7 +116,7 @@ void initStaticDataGC()
             gc_addRange_hp(tlshp.ptr, tlshp.length, true);
         }
     }
-    else version( Win64 )
+    else version( CRuntime_Microsoft )
     {
         gc_addRange( &__xc_a, cast(size_t) &_deh_beg - cast(size_t) &__xc_a );
     }

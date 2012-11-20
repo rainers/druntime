@@ -126,18 +126,11 @@ version( Windows )
 
         version( DigitalMars )
         {
-            version (Win32)
-            {
-                // NOTE: The memory between the addresses of _tlsstart and _tlsend
-                //       is the storage for thread-local data in D 2.0.  Both of
-                //       these are defined in dm\src\win32\tlsseg.asm by DMC.
-                extern (C)
-                {
-                    extern int _tlsstart;
-                    extern int _tlsend;
-                }
-            }
             version (Win64)
+                version = CRuntime_Microsoft;
+            version (COFF)
+                version = CRuntime_Microsoft;
+            version (CRuntime_Microsoft)
             {
                 // NOTE: The memory between the addresses of _tls_start and _tls_end
                 //       is the storage for thread-local data in D 2.0.  Both of
@@ -149,6 +142,17 @@ version( Windows )
                 }
                 alias _tls_start _tlsstart;
                 alias _tls_end   _tlsend;
+            }
+            else version (Win32) // DMC
+            {
+                // NOTE: The memory between the addresses of _tlsstart and _tlsend
+                //       is the storage for thread-local data in D 2.0.  Both of
+                //       these are defined in dm\src\win32\tlsseg.asm by DMC.
+                extern (C)
+                {
+                    extern int _tlsstart;
+                    extern int _tlsend;
+                }
             }
         }
         else

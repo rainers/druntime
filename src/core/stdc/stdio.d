@@ -31,7 +31,14 @@ extern (C):
 @system:
 nothrow:
 
-version( Win32 )
+version (Win64)
+	version = CRuntime_Microsoft;
+else version (COFF)
+	version = CRuntime_Microsoft;
+else version (Win32)
+	version = CRuntime_DigitalMars;
+
+version( CRuntime_DigitalMars )
 {
     enum
     {
@@ -48,7 +55,7 @@ version( Win32 )
     enum wstring _wP_tmpdir = "\\"; // non-standard
     enum int     L_tmpnam   = _P_tmpdir.length + 12;
 }
-else version( Win64 )
+else version( CRuntime_Microsoft )
 {
     enum
     {
@@ -157,7 +164,7 @@ enum
     SEEK_END
 }
 
-version( Win32 )
+version( CRuntime_DigitalMars )
 {
     struct _iobuf
     {
@@ -171,7 +178,7 @@ version( Win32 )
         char* __tmpnum;
     }
 }
-else version( Win64 )
+else version( CRuntime_Microsoft )
 {
     struct _iobuf
     {
@@ -319,7 +326,7 @@ enum
     _F_TERM = 0x0200, // non-standard
 }
 
-version( Win32 )
+version( CRuntime_DigitalMars )
 {
     enum
     {
@@ -347,7 +354,7 @@ version( Win32 )
     shared stdaux = &_iob[3];
     shared stdprn = &_iob[4];
 }
-else version( Win64 )
+else version( CRuntime_Microsoft )
 {
     enum
     {
@@ -519,7 +526,7 @@ size_t fwrite(in void* ptr, size_t size, size_t nmemb, FILE* stream);
     c_long ftell(FILE* stream);
 }
 
-version( Win32 )
+version( CRuntime_DigitalMars )
 {
   // No unsafe pointer manipulation.
   extern (D) @trusted
@@ -535,7 +542,7 @@ version( Win32 )
     int   _vsnprintf(char* s, size_t n, in char* format, va_list arg);
     alias _vsnprintf vsnprintf;
 }
-else version( Win64 )
+else version( CRuntime_Microsoft )
 {
   // No unsafe pointer manipulation.
   extern (D) @trusted

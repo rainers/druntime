@@ -17,6 +17,13 @@ import core.stdc.stdlib;  // alloca
 import core.stdc.string;  // memcpy
 import rt.util.console;   // console
 
+version (Win64)
+    version = CRuntime_Microsoft;
+else version (COFF)
+    version = CRuntime_Microsoft;
+else version (Win32)
+    version = CRuntime_DigitalMars;
+
 enum
 {
     MIctorstart  = 1,   // we've started constructing it
@@ -158,14 +165,14 @@ extern (C) void rt_moduleDtor()
  * Access compiler generated list of modules.
  */
 
-version (Win32)
+version (CRuntime_DigitalMars)
 {
     // Windows: this gets initialized by minit.asm
     // Posix: this gets initialized in _moduleCtor()
     extern(C) __gshared ModuleInfo*[] _moduleinfo_array;
     extern(C) void _minit();
 }
-else version (Win64)
+else version (CRuntime_Microsoft)
 {
     extern (C)
     {
@@ -241,13 +248,13 @@ body
             len++;
         }
     }
-    else version (Win32)
+    else version (CRuntime_DigitalMars)
     {
         // _minit directly alters the global _moduleinfo_array
         _minit();
         result = _moduleinfo_array;
     }
-    else version (Win64)
+    else version (CRuntime_Microsoft)
     {
         auto m = (cast(ModuleInfo**)&_minfo_beg)[1 .. &_minfo_end - &_minfo_beg];
         /* Because of alignment inserted by the linker, various null pointers
