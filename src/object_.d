@@ -714,7 +714,7 @@ class TypeInfo_AssociativeArray : TypeInfo
                     this.value == c.value;
     }
 
-    override hash_t getHash(in void* p) nothrow @trusted
+    override hash_t getHash(in void* p) nothrow @trusted const
     {
         return _aaGetHash(cast(void*)p, this);
     }
