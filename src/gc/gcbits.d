@@ -363,7 +363,7 @@ struct GCBits
 		assert(data[1] == ~0);
 		assert(data[2] == 0);
 		bits.clrRange(BITS_PER_WORD/2,BITS_PER_WORD);
-		assert(data[0] == (1 << (BITS_PER_WORD/2)) - 1);
+		assert(data[0] == (cast(size_t)1 << (BITS_PER_WORD/2)) - 1);
 		assert(data[1] == ~data[0]);
 		assert(data[2] == 0);
 

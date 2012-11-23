@@ -2622,7 +2622,7 @@ export HWND CreateWindowExA(
     LPVOID lpParam);
 
 
-HWND CreateWindowA(
+export HWND CreateWindowA(
     LPCSTR lpClassName,
     LPCSTR lpWindowName,
     DWORD dwStyle,
@@ -2633,10 +2633,10 @@ HWND CreateWindowA(
     HWND hWndParent ,
     HMENU hMenu,
     HINSTANCE hInstance,
-    LPVOID lpParam)
-{
-    return CreateWindowExA(0, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
-}
+    LPVOID lpParam);
+//{
+//    return CreateWindowExA(0, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
+//}
 
 /*
  * Message structure
