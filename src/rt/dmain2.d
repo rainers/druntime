@@ -612,8 +612,8 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
             tryExec(&runMain);
         else
             result = EXIT_FAILURE;
-        rt_moduleTlsDtor();
         thread_joinAll();
+        rt_moduleTlsDtor();
         rt_moduleDtor();
         gc_term();
     }

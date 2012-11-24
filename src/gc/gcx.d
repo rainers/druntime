@@ -1108,7 +1108,7 @@ L_setarray:
         debug(PRINTF) if(pool.isLargeObject) printf("Block size = %d\n", pool.bPageOffsets[pagenum]);
         biti = cast(size_t)(p - pool.baseAddr) >> pool.shiftBy;
 
-        _assert(!pool.freebits.test(biti));
+        _assert(pool.isLargeObject || !pool.freebits.test(biti));
         gcx.clrBits(pool, biti, BlkAttr.ALL_BITS);
 
         bin = cast(Bins)pool.pagetable[pagenum];
