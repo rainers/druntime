@@ -4311,6 +4311,9 @@ else
 }
 
 
+version(Win64) {}
+else {
+
 version( unittest )
 {
     class TestFiber : Fiber
@@ -4516,6 +4519,7 @@ unittest
     expect(fib, "delegate");
 }
 
+}
 
 version( AsmX86_64_Posix )
 {
