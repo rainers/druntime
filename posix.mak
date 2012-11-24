@@ -721,7 +721,7 @@ endif
 
 $(OBJDIR)/emptymain.d :
 	@$(MKDIR) -p $(OBJDIR)
-ifeq (windows,$(OS))
+ifeq (cmd.exe,$(findstring $(SHELL),cmd.exe))
 	@echo void main(){} >$@
 else
 	@echo 'void main(){}' >$@

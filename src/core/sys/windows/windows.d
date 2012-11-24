@@ -2634,9 +2634,6 @@ export HWND CreateWindowA(
     HMENU hMenu,
     HINSTANCE hInstance,
     LPVOID lpParam);
-//{
-//    return CreateWindowExA(0, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam);
-//}
 
 /*
  * Message structure
