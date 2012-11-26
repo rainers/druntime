@@ -692,7 +692,7 @@ src\rt\minit_coff.obj : src\rt\minit.asm
 $(DRUNTIME): $(OBJS) $(SRCS) posix.mak $(DMDDEP)
 	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
-unittest : $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES))) $(DRUNTIME) $(OBJDIR)/emptymain.d
+unittest : $(OBJDIR)/testall$(DOTEXE) $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES)))
 	@echo done
 
 ifeq ($(OS),freebsd)
@@ -707,7 +707,22 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
 ifeq (windows,$(OS))
-	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+	@$(RUN) $@
+else
+	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+# make the file very old so it builds and runs again if it fails
+	@touch -t 197001230123 $@
+# run unittest in its own directory
+	@$(RUN) $@
+# succeeded, render the file new again
+	@touch $@
+endif	
+
+$(OBJDIR)/testall$(DOTEXE) : $(SRCS) $(DRUNTIME) $(OBJDIR)/emptymain.d
+	@echo Testing $@
+ifeq (windows,$(OS))
+	@$(DMD) $(UDFLAGS) -v -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $(SRCS) -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 	@$(RUN) $@
 else
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)

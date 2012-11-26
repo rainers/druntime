@@ -59,7 +59,6 @@ ulong mach_absolute_time();
 
 }
 
-
 /++
     Represents a duration of time of weeks or less (kept internally as hnsecs).
     (e.g. 22 days or 700 seconds).
@@ -143,9 +142,39 @@ public:
     unittest
     {
         //To verify that an lvalue isn't required.
-        T copy(T)(T duration)
+        static T copy(T)(T duration)
         {
             return duration;
+        }
+
+        static void test(D, E)()
+        {
+            assert((cast(D)Duration(12)).opCmp(cast(E)Duration(12)) == 0);
+            assert((cast(D)Duration(-12)).opCmp(cast(E)Duration(-12)) == 0);
+
+            assert((cast(D)Duration(10)).opCmp(cast(E)Duration(12)) < 0);
+            assert((cast(D)Duration(-12)).opCmp(cast(E)Duration(12)) < 0);
+
+            assert((cast(D)Duration(12)).opCmp(cast(E)Duration(10)) > 0);
+            assert((cast(D)Duration(12)).opCmp(cast(E)Duration(-12)) > 0);
+
+            assert(copy(cast(D)Duration(12)).opCmp(cast(E)Duration(12)) == 0);
+            assert(copy(cast(D)Duration(-12)).opCmp(cast(E)Duration(-12)) == 0);
+
+            assert(copy(cast(D)Duration(10)).opCmp(cast(E)Duration(12)) < 0);
+            assert(copy(cast(D)Duration(-12)).opCmp(cast(E)Duration(12)) < 0);
+
+            assert(copy(cast(D)Duration(12)).opCmp(cast(E)Duration(10)) > 0);
+            assert(copy(cast(D)Duration(12)).opCmp(cast(E)Duration(-12)) > 0);
+
+            assert((cast(D)Duration(12)).opCmp(copy(cast(E)Duration(12))) == 0);
+            assert((cast(D)Duration(-12)).opCmp(copy(cast(E)Duration(-12))) == 0);
+
+            assert((cast(D)Duration(10)).opCmp(copy(cast(E)Duration(12))) < 0);
+            assert((cast(D)Duration(-12)).opCmp(copy(cast(E)Duration(12))) < 0);
+
+            assert((cast(D)Duration(12)).opCmp(copy(cast(E)Duration(10))) > 0);
+            assert((cast(D)Duration(12)).opCmp(copy(cast(E)Duration(-12))) > 0);
         }
 
         foreach(T; _TypeTuple!(Duration, const Duration, immutable Duration))
@@ -164,32 +193,7 @@ public:
         {
             foreach(E; _TypeTuple!(Duration, const Duration, immutable Duration))
             {
-                assert((cast(D)Duration(12)).opCmp(cast(E)Duration(12)) == 0);
-                assert((cast(D)Duration(-12)).opCmp(cast(E)Duration(-12)) == 0);
-
-                assert((cast(D)Duration(10)).opCmp(cast(E)Duration(12)) < 0);
-                assert((cast(D)Duration(-12)).opCmp(cast(E)Duration(12)) < 0);
-
-                assert((cast(D)Duration(12)).opCmp(cast(E)Duration(10)) > 0);
-                assert((cast(D)Duration(12)).opCmp(cast(E)Duration(-12)) > 0);
-
-                assert(copy(cast(D)Duration(12)).opCmp(cast(E)Duration(12)) == 0);
-                assert(copy(cast(D)Duration(-12)).opCmp(cast(E)Duration(-12)) == 0);
-
-                assert(copy(cast(D)Duration(10)).opCmp(cast(E)Duration(12)) < 0);
-                assert(copy(cast(D)Duration(-12)).opCmp(cast(E)Duration(12)) < 0);
-
-                assert(copy(cast(D)Duration(12)).opCmp(cast(E)Duration(10)) > 0);
-                assert(copy(cast(D)Duration(12)).opCmp(cast(E)Duration(-12)) > 0);
-
-                assert((cast(D)Duration(12)).opCmp(copy(cast(E)Duration(12))) == 0);
-                assert((cast(D)Duration(-12)).opCmp(copy(cast(E)Duration(-12))) == 0);
-
-                assert((cast(D)Duration(10)).opCmp(copy(cast(E)Duration(12))) < 0);
-                assert((cast(D)Duration(-12)).opCmp(copy(cast(E)Duration(12))) < 0);
-
-                assert((cast(D)Duration(12)).opCmp(copy(cast(E)Duration(10))) > 0);
-                assert((cast(D)Duration(12)).opCmp(copy(cast(E)Duration(-12))) > 0);
+                test!(D, E)();
             }
         }
     }
@@ -223,52 +227,68 @@ public:
 
     unittest
     {
+        static void test(D, E)()
+        {
+            assert((cast(D)Duration(5)) + (cast(E)Duration(7)) == Duration(12));
+            assert((cast(D)Duration(5)) - (cast(E)Duration(7)) == Duration(-2));
+            assert((cast(D)Duration(7)) + (cast(E)Duration(5)) == Duration(12));
+            assert((cast(D)Duration(7)) - (cast(E)Duration(5)) == Duration(2));
+
+            assert((cast(D)Duration(5)) + (cast(E)Duration(-7)) == Duration(-2));
+            assert((cast(D)Duration(5)) - (cast(E)Duration(-7)) == Duration(12));
+            assert((cast(D)Duration(7)) + (cast(E)Duration(-5)) == Duration(2));
+            assert((cast(D)Duration(7)) - (cast(E)Duration(-5)) == Duration(12));
+
+            assert((cast(D)Duration(-5)) + (cast(E)Duration(7)) == Duration(2));
+            assert((cast(D)Duration(-5)) - (cast(E)Duration(7)) == Duration(-12));
+            assert((cast(D)Duration(-7)) + (cast(E)Duration(5)) == Duration(-2));
+            assert((cast(D)Duration(-7)) - (cast(E)Duration(5)) == Duration(-12));
+
+            assert((cast(D)Duration(-5)) + (cast(E)Duration(-7)) == Duration(-12));
+            assert((cast(D)Duration(-5)) - (cast(E)Duration(-7)) == Duration(2));
+            assert((cast(D)Duration(-7)) + (cast(E)Duration(-5)) == Duration(-12));
+            assert((cast(D)Duration(-7)) - (cast(E)Duration(-5)) == Duration(-2));
+        }
+
         foreach(D; _TypeTuple!(Duration, const Duration, immutable Duration))
         {
             foreach(E; _TypeTuple!(Duration, const Duration, immutable Duration))
             {
-                assert((cast(D)Duration(5)) + (cast(E)Duration(7)) == Duration(12));
-                assert((cast(D)Duration(5)) - (cast(E)Duration(7)) == Duration(-2));
-                assert((cast(D)Duration(7)) + (cast(E)Duration(5)) == Duration(12));
-                assert((cast(D)Duration(7)) - (cast(E)Duration(5)) == Duration(2));
-
-                assert((cast(D)Duration(5)) + (cast(E)Duration(-7)) == Duration(-2));
-                assert((cast(D)Duration(5)) - (cast(E)Duration(-7)) == Duration(12));
-                assert((cast(D)Duration(7)) + (cast(E)Duration(-5)) == Duration(2));
-                assert((cast(D)Duration(7)) - (cast(E)Duration(-5)) == Duration(12));
-
-                assert((cast(D)Duration(-5)) + (cast(E)Duration(7)) == Duration(2));
-                assert((cast(D)Duration(-5)) - (cast(E)Duration(7)) == Duration(-12));
-                assert((cast(D)Duration(-7)) + (cast(E)Duration(5)) == Duration(-2));
-                assert((cast(D)Duration(-7)) - (cast(E)Duration(5)) == Duration(-12));
-
-                assert((cast(D)Duration(-5)) + (cast(E)Duration(-7)) == Duration(-12));
-                assert((cast(D)Duration(-5)) - (cast(E)Duration(-7)) == Duration(2));
-                assert((cast(D)Duration(-7)) + (cast(E)Duration(-5)) == Duration(-12));
-                assert((cast(D)Duration(-7)) - (cast(E)Duration(-5)) == Duration(-2));
+                test!(D, E)();
             }
+        }
+    }
 
+    unittest
+    {
+        static void test(D, T)()
+        {
+            assertApprox((cast(D)Duration(5)) + cast(T)TickDuration.from!"usecs"(7), Duration(70), Duration(80));
+            assertApprox((cast(D)Duration(5)) - cast(T)TickDuration.from!"usecs"(7), Duration(-70), Duration(-60));
+            assertApprox((cast(D)Duration(7)) + cast(T)TickDuration.from!"usecs"(5), Duration(52), Duration(62));
+            assertApprox((cast(D)Duration(7)) - cast(T)TickDuration.from!"usecs"(5), Duration(-48), Duration(-38));
+
+            assertApprox((cast(D)Duration(5)) + cast(T)TickDuration.from!"usecs"(-7), Duration(-70), Duration(-60));
+            assertApprox((cast(D)Duration(5)) - cast(T)TickDuration.from!"usecs"(-7), Duration(70), Duration(80));
+            assertApprox((cast(D)Duration(7)) + cast(T)TickDuration.from!"usecs"(-5), Duration(-48), Duration(-38));
+            assertApprox((cast(D)Duration(7)) - cast(T)TickDuration.from!"usecs"(-5), Duration(52), Duration(62));
+
+            assertApprox((cast(D)Duration(-5)) + cast(T)TickDuration.from!"usecs"(7), Duration(60), Duration(70));
+            assertApprox((cast(D)Duration(-5)) - cast(T)TickDuration.from!"usecs"(7), Duration(-80), Duration(-70));
+            assertApprox((cast(D)Duration(-7)) + cast(T)TickDuration.from!"usecs"(5), Duration(38), Duration(48));
+            assertApprox((cast(D)Duration(-7)) - cast(T)TickDuration.from!"usecs"(5), Duration(-62), Duration(-52));
+
+            assertApprox((cast(D)Duration(-5)) + cast(T)TickDuration.from!"usecs"(-7), Duration(-80), Duration(-70));
+            assertApprox((cast(D)Duration(-5)) - cast(T)TickDuration.from!"usecs"(-7), Duration(60), Duration(70));
+            assertApprox((cast(D)Duration(-7)) + cast(T)TickDuration.from!"usecs"(-5), Duration(-62), Duration(-52));
+            assertApprox((cast(D)Duration(-7)) - cast(T)TickDuration.from!"usecs"(-5), Duration(38), Duration(48));
+        }
+
+        foreach(D; _TypeTuple!(Duration, const Duration, immutable Duration))
+        {
             foreach(T; _TypeTuple!(TickDuration, const TickDuration, immutable TickDuration))
             {
-                assertApprox((cast(D)Duration(5)) + cast(T)TickDuration.from!"usecs"(7), Duration(70), Duration(80));
-                assertApprox((cast(D)Duration(5)) - cast(T)TickDuration.from!"usecs"(7), Duration(-70), Duration(-60));
-                assertApprox((cast(D)Duration(7)) + cast(T)TickDuration.from!"usecs"(5), Duration(52), Duration(62));
-                assertApprox((cast(D)Duration(7)) - cast(T)TickDuration.from!"usecs"(5), Duration(-48), Duration(-38));
-
-                assertApprox((cast(D)Duration(5)) + cast(T)TickDuration.from!"usecs"(-7), Duration(-70), Duration(-60));
-                assertApprox((cast(D)Duration(5)) - cast(T)TickDuration.from!"usecs"(-7), Duration(70), Duration(80));
-                assertApprox((cast(D)Duration(7)) + cast(T)TickDuration.from!"usecs"(-5), Duration(-48), Duration(-38));
-                assertApprox((cast(D)Duration(7)) - cast(T)TickDuration.from!"usecs"(-5), Duration(52), Duration(62));
-
-                assertApprox((cast(D)Duration(-5)) + cast(T)TickDuration.from!"usecs"(7), Duration(60), Duration(70));
-                assertApprox((cast(D)Duration(-5)) - cast(T)TickDuration.from!"usecs"(7), Duration(-80), Duration(-70));
-                assertApprox((cast(D)Duration(-7)) + cast(T)TickDuration.from!"usecs"(5), Duration(38), Duration(48));
-                assertApprox((cast(D)Duration(-7)) - cast(T)TickDuration.from!"usecs"(5), Duration(-62), Duration(-52));
-
-                assertApprox((cast(D)Duration(-5)) + cast(T)TickDuration.from!"usecs"(-7), Duration(-80), Duration(-70));
-                assertApprox((cast(D)Duration(-5)) - cast(T)TickDuration.from!"usecs"(-7), Duration(60), Duration(70));
-                assertApprox((cast(D)Duration(-7)) + cast(T)TickDuration.from!"usecs"(-5), Duration(-62), Duration(-52));
-                assertApprox((cast(D)Duration(-7)) - cast(T)TickDuration.from!"usecs"(-5), Duration(38), Duration(48));
+                test!(D, T)();
             }
         }
     }
@@ -297,29 +317,33 @@ public:
 
     unittest
     {
+        static void test(D, T)()
+        {
+            assertApprox((cast(T)TickDuration.from!"usecs"(7)) + cast(D)Duration(5), Duration(70), Duration(80));
+            assertApprox((cast(T)TickDuration.from!"usecs"(7)) - cast(D)Duration(5), Duration(60), Duration(70));
+            assertApprox((cast(T)TickDuration.from!"usecs"(5)) + cast(D)Duration(7), Duration(52), Duration(62));
+            assertApprox((cast(T)TickDuration.from!"usecs"(5)) - cast(D)Duration(7), Duration(38), Duration(48));
+
+            assertApprox((cast(T)TickDuration.from!"usecs"(-7)) + cast(D)Duration(5), Duration(-70), Duration(-60));
+            assertApprox((cast(T)TickDuration.from!"usecs"(-7)) - cast(D)Duration(5), Duration(-80), Duration(-70));
+            assertApprox((cast(T)TickDuration.from!"usecs"(-5)) + cast(D)Duration(7), Duration(-48), Duration(-38));
+            assertApprox((cast(T)TickDuration.from!"usecs"(-5)) - cast(D)Duration(7), Duration(-62), Duration(-52));
+
+            assertApprox((cast(T)TickDuration.from!"usecs"(7)) + (cast(D)Duration(-5)), Duration(60), Duration(70));
+            assertApprox((cast(T)TickDuration.from!"usecs"(7)) - (cast(D)Duration(-5)), Duration(70), Duration(80));
+            assertApprox((cast(T)TickDuration.from!"usecs"(5)) + (cast(D)Duration(-7)), Duration(38), Duration(48));
+            assertApprox((cast(T)TickDuration.from!"usecs"(5)) - (cast(D)Duration(-7)), Duration(52), Duration(62));
+
+            assertApprox((cast(T)TickDuration.from!"usecs"(-7)) + cast(D)Duration(-5), Duration(-80), Duration(-70));
+            assertApprox((cast(T)TickDuration.from!"usecs"(-7)) - cast(D)Duration(-5), Duration(-70), Duration(-60));
+            assertApprox((cast(T)TickDuration.from!"usecs"(-5)) + cast(D)Duration(-7), Duration(-62), Duration(-52));
+            assertApprox((cast(T)TickDuration.from!"usecs"(-5)) - cast(D)Duration(-7), Duration(-48), Duration(-38));
+        }
         foreach(D; _TypeTuple!(Duration, const Duration, immutable Duration))
         {
             foreach(T; _TypeTuple!(TickDuration, const TickDuration, immutable TickDuration))
             {
-                assertApprox((cast(T)TickDuration.from!"usecs"(7)) + cast(D)Duration(5), Duration(70), Duration(80));
-                assertApprox((cast(T)TickDuration.from!"usecs"(7)) - cast(D)Duration(5), Duration(60), Duration(70));
-                assertApprox((cast(T)TickDuration.from!"usecs"(5)) + cast(D)Duration(7), Duration(52), Duration(62));
-                assertApprox((cast(T)TickDuration.from!"usecs"(5)) - cast(D)Duration(7), Duration(38), Duration(48));
-
-                assertApprox((cast(T)TickDuration.from!"usecs"(-7)) + cast(D)Duration(5), Duration(-70), Duration(-60));
-                assertApprox((cast(T)TickDuration.from!"usecs"(-7)) - cast(D)Duration(5), Duration(-80), Duration(-70));
-                assertApprox((cast(T)TickDuration.from!"usecs"(-5)) + cast(D)Duration(7), Duration(-48), Duration(-38));
-                assertApprox((cast(T)TickDuration.from!"usecs"(-5)) - cast(D)Duration(7), Duration(-62), Duration(-52));
-
-                assertApprox((cast(T)TickDuration.from!"usecs"(7)) + (cast(D)Duration(-5)), Duration(60), Duration(70));
-                assertApprox((cast(T)TickDuration.from!"usecs"(7)) - (cast(D)Duration(-5)), Duration(70), Duration(80));
-                assertApprox((cast(T)TickDuration.from!"usecs"(5)) + (cast(D)Duration(-7)), Duration(38), Duration(48));
-                assertApprox((cast(T)TickDuration.from!"usecs"(5)) - (cast(D)Duration(-7)), Duration(52), Duration(62));
-
-                assertApprox((cast(T)TickDuration.from!"usecs"(-7)) + cast(D)Duration(-5), Duration(-80), Duration(-70));
-                assertApprox((cast(T)TickDuration.from!"usecs"(-7)) - cast(D)Duration(-5), Duration(-70), Duration(-60));
-                assertApprox((cast(T)TickDuration.from!"usecs"(-5)) + cast(D)Duration(-7), Duration(-62), Duration(-52));
-                assertApprox((cast(T)TickDuration.from!"usecs"(-5)) - cast(D)Duration(-7), Duration(-48), Duration(-38));
+                test!(D, T)();
             }
         }
     }
@@ -365,13 +389,6 @@ public:
                 throw new AssertError("op assign failed", __FILE__, line);
         }
 
-        static void test2(string op, E)
-                         (Duration actual, in E rhs, Duration lower, Duration upper, size_t line = __LINE__)
-        {
-            assertApprox(mixin("actual " ~ op ~ " rhs"), lower, upper, "op failed", line);
-            assertApprox(actual, lower, upper, "op assign failed", line);
-        }
-
         foreach(E; _TypeTuple!(Duration, const Duration, immutable Duration))
         {
             test1!"+="(Duration(5), (cast(E)Duration(7)), Duration(12));
@@ -393,6 +410,16 @@ public:
             test1!"-="(Duration(-5), (cast(E)Duration(-7)), Duration(2));
             test1!"+="(Duration(-7), (cast(E)Duration(-5)), Duration(-12));
             test1!"-="(Duration(-7), (cast(E)Duration(-5)), Duration(-2));
+        }
+    }
+
+    unittest
+    {
+        static void test2(string op, E)
+                         (Duration actual, in E rhs, Duration lower, Duration upper, size_t line = __LINE__)
+        {
+            assertApprox(mixin("actual " ~ op ~ " rhs"), lower, upper, "op failed", line);
+            assertApprox(actual, lower, upper, "op assign failed", line);
         }
 
         foreach(T; _TypeTuple!(TickDuration, const TickDuration, immutable TickDuration))
@@ -706,30 +733,35 @@ public:
 
     unittest
     {
+        static void test(D, string units)()
+        {
+            enum unitsPerSec = convert!("seconds", units)(1);
+
+            if(TickDuration.ticksPerSec >= unitsPerSec)
+            {
+                foreach(T; _TypeTuple!(TickDuration, const TickDuration, immutable TickDuration))
+                {
+                    auto t = TickDuration.from!units(1);
+                    assert(cast(T)cast(D)dur!units(1) == t, units);
+                    t = TickDuration.from!units(2);
+                    assert(cast(T)cast(D)dur!units(2) == t, units);
+                }
+            }
+            else
+            {
+                auto t = TickDuration.from!units(1);
+                assert(t.to!(units, long)() == 0, units);
+                t = TickDuration.from!units(1_000_000);
+                assert(t.to!(units, long)() >= 900_000, units);
+                assert(t.to!(units, long)() <= 1_100_000, units);
+            }
+        }
+
         foreach(D; _TypeTuple!(Duration, const Duration, immutable Duration))
         {
             foreach(units; _TypeTuple!("seconds", "msecs", "usecs", "hnsecs"))
             {
-                enum unitsPerSec = convert!("seconds", units)(1);
-
-                if(TickDuration.ticksPerSec >= unitsPerSec)
-                {
-                    foreach(T; _TypeTuple!(TickDuration, const TickDuration, immutable TickDuration))
-                    {
-                        auto t = TickDuration.from!units(1);
-                        assert(cast(T)cast(D)dur!units(1) == t, units);
-                        t = TickDuration.from!units(2);
-                        assert(cast(T)cast(D)dur!units(2) == t, units);
-                    }
-                }
-                else
-                {
-                    auto t = TickDuration.from!units(1);
-                    assert(t.to!(units, long)() == 0, units);
-                    t = TickDuration.from!units(1_000_000);
-                    assert(t.to!(units, long)() >= 900_000, units);
-                    assert(t.to!(units, long)() <= 1_100_000, units);
-                }
+                test!(D, units)();
             }
         }
     }
