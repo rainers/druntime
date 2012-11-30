@@ -17,13 +17,6 @@ import core.stdc.stdlib;  // alloca
 import core.stdc.string;  // memcpy
 import rt.util.console;   // console
 
-version (Win64)
-    version = CRuntime_Microsoft;
-else version (COFF)
-    version = CRuntime_Microsoft;
-else version (Win32)
-    version = CRuntime_DigitalMars;
-
 enum
 {
     MIctorstart  = 1,   // we've started constructing it

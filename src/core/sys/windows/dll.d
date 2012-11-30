@@ -24,8 +24,27 @@ version( Windows )
 
     extern (C)
     {
-        version (Win32)
+        version (CRuntime_Microsoft)
         {
+            // NOTE: The memory between the addresses of _tls_start and _tls_end
+            //       is the storage for thread-local data in D 2.0.  Both of
+            //       these are defined in LIBCMT:tlssub.obj
+            extern (C)
+            {
+                extern __gshared int _tls_start;
+                extern __gshared int _tls_end;
+                extern __gshared int _tls_index;
+                extern __gshared size_t __xl_a;
+            }
+            alias __xl_a     _tls_callbacks_a; // TODO: should be *&(__xl_a+1)
+            alias _tls_start _tlsstart;
+            alias _tls_end   _tlsend;
+        }
+        else version (CRuntime_DigitalMars)
+        {
+            // NOTE: The memory between the addresses of _tlsstart and _tlsend
+            //       is the storage for thread-local data in D 2.0.  Both of
+            //       these are defined in dm\src\win32\tlsseg.asm by DMC.
             extern __gshared void* _tlsstart;
             extern __gshared void* _tlsend;
             extern __gshared void* _tls_callbacks_a;

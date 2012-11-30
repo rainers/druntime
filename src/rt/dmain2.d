@@ -379,12 +379,6 @@ version (Solaris) extern (C) int _main(int argc, char** argv)
     return main(argc, argv);
 }
 
-version (Win64)
-    version = CRuntime_Microsoft;
-else version (COFF)
-    version = CRuntime_Microsoft;
-
-
 /***********************************
  * Run the given main function.
  * Its purpose is to wrap the D main()

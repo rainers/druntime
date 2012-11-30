@@ -62,13 +62,6 @@ extern (D) @trusted
     wint_t putwc(wchar_t c, FILE* stream) { return fputwc(c, stream); }
 }
 
-version (Win64)
-    version = CRuntime_Microsoft;
-else version (COFF)
-    version = CRuntime_Microsoft;
-else version (Win32)
-    version = CRuntime_DigitalMars;
-
 // No unsafe pointer manipulation.
 @trusted
 {

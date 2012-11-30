@@ -60,11 +60,6 @@ long    strtoll(in char* nptr, char** endptr, int base);
 c_ulong strtoul(in char* nptr, char** endptr, int base);
 ulong   strtoull(in char* nptr, char** endptr, int base);
 
-version (Win64)
-    version = CRuntime_Microsoft;
-version (COFF)
-    version = CRuntime_Microsoft;
-
 version (CRuntime_Microsoft)
 {
     real strtold(in char* nptr, char** endptr)

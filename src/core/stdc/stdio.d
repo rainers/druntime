@@ -31,13 +31,6 @@ extern (C):
 @system:
 nothrow:
 
-version (Win64)
-	version = CRuntime_Microsoft;
-else version (COFF)
-	version = CRuntime_Microsoft;
-else version (Win32)
-	version = CRuntime_DigitalMars;
-
 version( CRuntime_DigitalMars )
 {
     enum

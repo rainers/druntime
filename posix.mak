@@ -41,6 +41,7 @@ endif
 DMD?=dmd
 
 MKDIR=mkdir
+GREP=grep
 
 DOCDIR=doc
 IMPDIR=import
@@ -444,6 +445,11 @@ SRC_D_MODULES_WIN = \
 SRC_D_MODULES_WIN32 = \
 	rt/deh \
 
+SRC_D_MODULES_WIN32ms = \
+	rt/alloca \
+	rt/cmath2 \
+	rt/deh \
+
 SRC_D_MODULES_WIN64 = \
 	rt/alloca \
 	rt/cmath2 \
@@ -460,12 +466,10 @@ ifeq (windows,$(OS))
     DOTEXE = .exe
     OBJS = $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj
     ifeq ($(MODEL),32)
-	ifeq (-coff,$(findstring -coff,$(DMDEXTRAFLAGS)))
-	    SRC_D_MODULES += rt/alloca rt/cmath2
-	    OBJS += src\rt\minit_coff.obj
-	else
 	    OBJS += src\rt\minit.obj
 	endif
+    ifeq ($(MODEL),32ms)
+	    OBJS += src\rt\minit_coff.obj
     endif
 else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
@@ -692,7 +696,7 @@ src\rt\minit_coff.obj : src\rt\minit.asm
 $(DRUNTIME): $(OBJS) $(SRCS) posix.mak $(DMDDEP)
 	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
-unittest : $(OBJDIR)/testall$(DOTEXE) $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES)))
+unittest : $(addsuffix $(DOTEXE),$(addprefix $(OBJDIR)/,$(SRC_D_MODULES))) $(OBJDIR)/testall$(DOTEXE) 
 	@echo done
 
 ifeq ($(OS),freebsd)
@@ -705,10 +709,13 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 	@echo $@ - disabled
 
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
-	@echo Testing $@
 ifeq (windows,$(OS))
-	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
-	@$(RUN) $@
+	@if $(GREP) -q unittest $< ; then \
+	echo Testing $@ && \
+	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE) && \
+	$(RUN) $@ ; \
+	else echo Skipping $< ; \
+	fi
 else
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 # make the file very old so it builds and runs again if it fails
@@ -722,7 +729,7 @@ endif
 $(OBJDIR)/testall$(DOTEXE) : $(SRCS) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
 ifeq (windows,$(OS))
-	@$(DMD) $(UDFLAGS) -v -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $(SRCS) -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
+	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $(SRCS) -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 	@$(RUN) $@
 else
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ $(OBJDIR)/emptymain.d $< -L-Llib -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)

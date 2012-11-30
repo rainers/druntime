@@ -12,13 +12,6 @@
 
 module rt.memory;
 
-version (Win64)
-    version = CRuntime_Microsoft;
-else version (COFF)
-    version = CRuntime_Microsoft;
-else version (Win32)
-    version = CRuntime_DigitalMars;
-
 private
 {
     extern (C) void gc_addRange( void* p, size_t sz );

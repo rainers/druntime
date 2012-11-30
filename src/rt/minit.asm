@@ -151,8 +151,8 @@ ifdef COFF
     begcode __ms_alldiv
     public  __ms_alldiv
 __ms_alldiv proc    near
-    push EBX
     push ECX
+    push EBX
     push EDX
     push EAX
     call __alldiv
@@ -163,8 +163,8 @@ __ms_alldiv endp
     begcode __ms_aulldiv
     public  __ms_aulldiv
 __ms_aulldiv proc    near
-    push EBX
     push ECX
+    push EBX
     push EDX
     push EAX
     call __aulldiv
@@ -175,8 +175,8 @@ __ms_aulldiv endp
     begcode __ms_allrem
     public  __ms_allrem
 __ms_allrem proc    near
-    push EBX
     push ECX
+    push EBX
     push EDX
     push EAX
     call __allrem
@@ -187,8 +187,8 @@ __ms_allrem endp
     begcode __ms_aallrem
     public  __ms_aullrem
 __ms_aullrem proc    near
-    push EBX
     push ECX
+    push EBX
     push EDX
     push EAX
     call __aullrem
