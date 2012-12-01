@@ -65,7 +65,7 @@ ifeq (cl.exe,$(findstring cl.exe,$(CC)))
 	CFLAGS_O = $(subst -g,/Z7,$(CFLAGS)) -Fo
 #	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
 else
-	CFLAGS_O = $(CFLAGS) -o $(PIC)
+	CFLAGS_O = $(CFLAGS) $(PIC) -o
 endif
 	
 ifeq (/,findstring /,$(DMD))
