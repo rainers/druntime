@@ -475,6 +475,7 @@ class GC
                 {
                     p = p + 16;
                     s -= 16;
+                    offset += 16/(void*).sizeof;
                 }
 /*
                 valueti = unqualify(arrayti.next);
