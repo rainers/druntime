@@ -466,11 +466,13 @@ class GC
         {
             debug(PRINTF)
             {
-                string name = "unknown";
+                string name;
                 if(auto ci = cast(TypeInfo_Class)ti)
                     name = ci.name;
                 else if(auto si = cast(TypeInfo_Struct)ti)
                     name = si.name;
+                else
+                    name = ti.classinfo.name;
             }
             auto rtInfo = cast(const(size_t)*)ti.rtInfo();
             const(TypeInfo) dvalueti = ti.darray_value().unqual();
@@ -487,6 +489,7 @@ class GC
                 {
                     p = p + 16;
                     s -= 16;
+                    offset += 16/(void*).sizeof;
                 }
 /*
                 svalueti = unqualify(arrayti.next);
@@ -495,7 +498,16 @@ L_setarray:
                 while ((sarrayti = cast(TypeInfo_StaticArray)svalueti) !is null)
                     svalueti = unqualify(sarrayti.next);
 //*/
-                debug(PRINTF) string valuetypename = valueti.classinfo.name;
+                debug(PRINTF)
+                {
+                    string valuetypename;
+                    if(auto ci = cast(TypeInfo_Class)svalueti)
+                        valuetypename = ci.name;
+                    else if(auto si = cast(TypeInfo_Struct)svalueti)
+                        valuetypename = si.name;
+                    else
+                        valuetypename = svalueti.classinfo.name;
+                }
                 const(size_t)* bitmap = cast(const(size_t)*) 1;  // default is to set full range
                 if (svalueti)
                     bitmap = cast(size_t*)svalueti.rtInfo();
@@ -522,7 +534,11 @@ L_setarray:
                     pool.is_pointer.copyRangeRepeating(offset/(void*).sizeof, s/(void*).sizeof, bitmap, element_size/(void*).sizeof);
                     debug(PRINTF) printf("\tSetting repeating bitmap "
                                          "\n\t\tfor object %.*s at %p"
-                                         "\n\t\tcopying TypeInfo from %p\n", valuetypename.length, valuetypename.ptr, p, bitmap);
+                                         "\n\t\tcopying TypeInfo from %p: ", valuetypename.length, valuetypename.ptr, p, bitmap);
+                    debug(PRINTF) 
+                        for(size_t i = 0; i < element_size/((void*).sizeof); i++) 
+                            printf("%d", (bitmap[i/(8*size_t.sizeof)] >> (i%(8*size_t.sizeof))) & 1);
+                    debug(PRINTF) printf("\n");
                 }
             }
             /*
@@ -711,6 +727,8 @@ L_setarray:
         }
         if (!(bits & BlkAttr.NO_SCAN))
             setPointerBitmap(p, pool, size, *alloc_size, ti);
+        else
+            debug(PRINTF) printf("\tmalloc => %p\n", p);
         return p;
     }
 
