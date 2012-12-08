@@ -34,8 +34,11 @@ ifeq (,$(OS))
     endif
 endif
 # normalize windows names, e.g. Windows_NT
+ifeq (win,$(findstring win,$(OS)))
+	OS:=win32
+endif
 ifeq (Win,$(findstring Win,$(OS)))
-	OS:=windows
+	OS:=win32
 endif
 
 DMD?=dmd
@@ -76,7 +79,7 @@ endif
 
 OBJDIR=obj/$(MODEL)
 DRUNTIME_BASE=druntime-$(OS)$(MODEL)
-ifeq (windows,$(OS))
+ifeq (win32,$(OS))
 	DRUNTIME=$(LIBDIR)/$(DRUNTIME_BASE).lib
 else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
@@ -464,7 +467,7 @@ SRC_D_MODULES_WIN64 = \
 # NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
 #       minit.asm is not used by dmd for Linux
 
-ifeq (windows,$(OS))
+ifeq (win32,$(OS))
     SRC_D_MODULES += $(SRC_D_MODULES_WIN) $(SRC_D_MODULES_WIN$(MODEL))
     O = obj
     DOTEXE = .exe
@@ -657,16 +660,16 @@ $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
 ######################## Header .di file copy ##############################
 
 copydir:
-	-mkdir -p $(IMPDIR)/core/stdc
-	-mkdir -p $(IMPDIR)/core/sys/windows
-	-mkdir -p $(IMPDIR)/core/sys/posix/arpa
-	-mkdir -p $(IMPDIR)/core/sys/posix/sys
-	-mkdir -p $(IMPDIR)/core/sys/posix/net
-	-mkdir -p $(IMPDIR)/core/sys/posix/netinet
-	-mkdir -p $(IMPDIR)/core/sys/osx/mach
-	-mkdir -p $(IMPDIR)/core/sys/freebsd/sys
-	-mkdir -p $(IMPDIR)/core/sys/linux/sys
-	-mkdir -p $(IMPDIR)/etc/linux
+	@mkdir -p $(IMPDIR)/core/stdc
+	@mkdir -p $(IMPDIR)/core/sys/windows
+	@mkdir -p $(IMPDIR)/core/sys/posix/arpa
+	@mkdir -p $(IMPDIR)/core/sys/posix/sys
+	@mkdir -p $(IMPDIR)/core/sys/posix/net
+	@mkdir -p $(IMPDIR)/core/sys/posix/netinet
+	@mkdir -p $(IMPDIR)/core/sys/osx/mach
+	@mkdir -p $(IMPDIR)/core/sys/freebsd/sys
+	@mkdir -p $(IMPDIR)/core/sys/linux/sys
+	@mkdir -p $(IMPDIR)/etc/linux
 
 copy: $(COPY)
 
@@ -676,7 +679,7 @@ $(IMPDIR)/%.di : src/%.di
 $(IMPDIR)/%.d : src/%.d
 	cp $< $@
 
-ifeq (windows,$(OS))
+ifeq (win32,$(OS))
 # building on windows fails, but file is still generated
 $(IMPDIR)/core/sys/freebsd/%.di : src/core/sys/freebsd/%.di
 	-$(DMD) -m$(MODEL) -c -d -o- -Isrc -Iimport -Hf$@ $<
@@ -716,7 +719,7 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 	@echo $@ - disabled
 
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
-ifeq (windows,$(OS))
+ifeq (win32,$(OS))
 	@if $(GREP) -q unittest $< ; then \
 	echo Testing $@ && \
 	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $< -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE) && \
@@ -735,7 +738,7 @@ endif
 
 $(OBJDIR)/testall$(DOTEXE) : $(SRCS) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@
-ifeq (windows,$(OS))
+ifeq (win32,$(OS))
 	@$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest $(subst /,\,-of$@ -map $@.map $(OBJDIR)/emptymain.d) $(SRCS) -debuglib=$(DRUNTIME_BASE) -defaultlib=$(DRUNTIME_BASE)
 	@$(RUN) $@
 else
