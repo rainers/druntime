@@ -2827,7 +2827,7 @@ struct Gcx
 
     void mark_tls(ScanType type, void* tlsbase, void* tlsend)
     {
-        if( type != ScanType.tls )
+        if( type != ScanType.tls || hptls_ranges.nranges == 0 )
         {
             debug(PRINTF) printf("marking tls range from %p to &p\n", tlsbase, tlsend);
             mark( tlsbase, tlsend );

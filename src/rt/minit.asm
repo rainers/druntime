@@ -147,6 +147,8 @@ ifdef COFF
     extrn   __aulldiv:near
     extrn   __allrem:near
     extrn   __aullrem:near
+    extrn   ___DBLULNG:near
+    extrn   ___DBLULLNG:near
     
     begcode __ms_alldiv
     public  __ms_alldiv
@@ -180,11 +182,13 @@ __ms_allrem proc    near
     push EDX
     push EAX
     call __allrem
+    mov EBX,EAX
+    mov ECX,EDX
     ret
 __ms_allrem endp
     endcode __ms_allrem
 
-    begcode __ms_aallrem
+    begcode __ms_aullrem
     public  __ms_aullrem
 __ms_aullrem proc    near
     push ECX
@@ -192,9 +196,29 @@ __ms_aullrem proc    near
     push EDX
     push EAX
     call __aullrem
+    mov EBX,EAX
+    mov ECX,EDX
     ret
 __ms_aullrem endp
     endcode __ms_aullrem
+
+    begcode __DBLULNG@
+    public  __DBLULNG@
+__DBLULNG@ proc    near
+    push edx
+    push eax
+    fld qword ptr[esp]
+    add esp,8
+    jmp ___DBLULNG
+__DBLULNG@ endp
+    endcode __DBLULNG@
+
+    begcode __DBLULLNG@
+    public  __DBLULLNG@
+__DBLULLNG@ proc    near
+    jmp ___DBLULLNG
+__DBLULLNG@ endp
+    endcode __DBLULLNG@
 
 endif
 
