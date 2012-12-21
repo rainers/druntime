@@ -409,6 +409,9 @@ private:
         size_t hash;
         Key key;
         Value value;
+
+        // Stop creating built-in opAssign
+        @disable void opAssign(Slot);
     }
 
     struct Hashtable
