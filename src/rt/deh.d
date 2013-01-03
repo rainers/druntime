@@ -606,7 +606,7 @@ int _d_exception_filter(EXCEPTION_POINTERS *eptrs,
 /***********************************
  * Throw a D object.
  */
-version(none)
+version(all)
 extern(C)
 void _d_throwc(Object h)
 {
@@ -645,7 +645,7 @@ void _d_throwc(Object h)
         pop EBP;
     }
 }
-
+else {
 /***********************************
  * Throw a D object.
  */
@@ -685,6 +685,7 @@ extern(C) void _d_throwc(Object h)
     {
         throwImpl(h);
     }
+}
 }
 
 /***********************************
