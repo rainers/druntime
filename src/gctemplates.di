@@ -55,23 +55,35 @@ void bitmapImpl(T)(size_t* p)
         mkBitmap!(Unqual!T)(p, 0);
 }
 
+version(RTInfoPRINTF) string totext(size_t x)
+{
+	string s;
+	while(x > 9)
+	{
+		s = ('0' + (x % 10)) ~ s;
+		x /= 10;
+	}
+	s = ('0' + (x % 10)) ~ s;
+	return s;
+}
+
 ////////////////////////////////////////////////////////
 // Scan any type that allMembers works on
 void mkBitmapComposite(T)(size_t* p, size_t offset)
 {
     version(RTInfoPRINTF) pragma(msg,"mkBitmapComposite " ~ T.stringof);
-    foreach(i, fieldName; (__traits(allMembers, T)))
+    static if (is(T P == super))
+        static if(P.length > 0)
+            mkBitmapComposite!(P[0])(p, offset);
+
+    alias typeof(T.tupleof) TTypes;
+    foreach(i, _; TTypes)
     {
-        // the +1 is a hack to make empty Tuple! made with std/typecons not fail
-        static if (__traits(compiles, mixin("((T." ~ fieldName ~").offsetof)+1")))
-        {
-            size_t cur_offset = mixin("(T." ~ fieldName ~").offsetof");
-            alias Unqual!(typeof(mixin("T." ~ fieldName))) U;
+        enum cur_offset = T.tupleof[i].offsetof;
+        alias Unqual!(TTypes[i]) U;
 
-            version(RTInfoPRINTF) pragma(msg,"  field " ~ fieldName ~ " : " ~ U.stringof);
-
-            mkBitmap!U(p, offset + cur_offset);
-        }
+        version(RTInfoPRINTF) pragma(msg,"  field " ~ T.tupleof[i].stringof ~ " : " ~ U.stringof ~ " @ " ~ totext(cur_offset));
+        mkBitmap!U(p, offset + cur_offset);
     }
 }
 
