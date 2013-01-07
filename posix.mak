@@ -87,11 +87,9 @@ endif
 
 DOCFMT=-version=CoreDdoc
 
-target : copydir import copy $(DRUNTIME) doc
-
 MANIFEST= \
-	LICENSE_1_0.txt \
-	README.txt \
+	LICENSE \
+	README \
 	posix.mak \
 	win32.mak \
 	win64.mak \
@@ -172,6 +170,7 @@ MANIFEST= \
 	src/core/sys/posix/dirent.d \
 	src/core/sys/posix/dlfcn.d \
 	src/core/sys/posix/fcntl.d \
+	src/core/sys/posix/grp.d \
 	src/core/sys/posix/inttypes.d \
 	src/core/sys/posix/netdb.d \
 	src/core/sys/posix/poll.d \
@@ -253,7 +252,6 @@ MANIFEST= \
 	src/rt/invariant_.d \
 	src/rt/lifetime.d \
 	src/rt/llmath.d \
-	src/rt/mars.h \
 	src/rt/memory.d \
 	src/rt/memory_osx.d \
 	src/rt/memset.d \
@@ -468,7 +466,7 @@ SRC_D_MODULES_WIN64 = \
 
 # NOTE: trace.d and cover.d are not necessary for a successful build
 #       as both are used for debugging features (profiling and coverage)
-# NOTE: a pre-compiled minit.obj has been provided in dmd for Win32 and
+# NOTE: a pre-compiled minit.obj has been provided in dmd for Win32	 and
 #       minit.asm is not used by dmd for Linux
 
 ifeq (win32,$(OS))
@@ -581,6 +579,7 @@ COPY=\
 	$(IMPDIR)/core/sys/posix/dirent.d \
 	$(IMPDIR)/core/sys/posix/dlfcn.d \
 	$(IMPDIR)/core/sys/posix/fcntl.d \
+	$(IMPDIR)/core/sys/posix/grp.d \
 	$(IMPDIR)/core/sys/posix/inttypes.d \
 	$(IMPDIR)/core/sys/posix/netdb.d \
 	$(IMPDIR)/core/sys/posix/poll.d \
@@ -628,15 +627,9 @@ COPY=\
 
 SRCS=$(addprefix src/,$(addsuffix .d,$(SRC_D_MODULES)))
 
-COPYDIRS=\
-	$(IMPDIR)/core/stdc \
-	$(IMPDIR)/core/sys/freebsd/sys \
-	$(IMPDIR)/core/sys/osx/mach \
-	$(IMPDIR)/core/sys/posix/arpa \
-	$(IMPDIR)/core/sys/posix/net \
-	$(IMPDIR)/core/sys/posix/netinet \
-	$(IMPDIR)/core/sys/posix/sys \
-	$(IMPDIR)/core/sys/windows \
+######################## All of'em ##############################
+
+target : import copy $(DRUNTIME) doc
 
 ######################## Doc .html file generation ##############################
 
@@ -645,7 +638,7 @@ doc: $(DOCS)
 $(DOCDIR)/object.html : src/object_.d
 	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $<
 
-$(DOCDIR)/core_%.html : $(IMPDIR)/core/%.di
+$(DOCDIR)/core_%.html : src/core/%.di
 	$(DMD) $(DDOCFLAGS) -Df$@ $(DOCFMT) $<
 
 $(DOCDIR)/core_%.html : src/core/%.d
@@ -659,28 +652,19 @@ $(DOCDIR)/core_sync_%.html : src/core/sync/%.d
 import: $(IMPORTS)
 
 $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
+	@mkdir -p `dirname $@`
 	$(DMD) -m$(MODEL) -c -o- -Isrc -Iimport -Hf$@ $<
 
 ######################## Header .di file copy ##############################
 
-copydir:
-	@mkdir -p $(IMPDIR)/core/stdc
-	@mkdir -p $(IMPDIR)/core/sys/windows
-	@mkdir -p $(IMPDIR)/core/sys/posix/arpa
-	@mkdir -p $(IMPDIR)/core/sys/posix/sys
-	@mkdir -p $(IMPDIR)/core/sys/posix/net
-	@mkdir -p $(IMPDIR)/core/sys/posix/netinet
-	@mkdir -p $(IMPDIR)/core/sys/osx/mach
-	@mkdir -p $(IMPDIR)/core/sys/freebsd/sys
-	@mkdir -p $(IMPDIR)/core/sys/linux/sys
-	@mkdir -p $(IMPDIR)/etc/linux
-
 copy: $(COPY)
 
 $(IMPDIR)/%.di : src/%.di
+	@mkdir -p `dirname $@`
 	cp $< $@
 
 $(IMPDIR)/%.d : src/%.d
+	@mkdir -p `dirname $@`
 	cp $< $@
 
 ifeq (win32,$(OS))
@@ -767,14 +751,14 @@ detab:
 	detab $(MANIFEST)
 	tolf $(MANIFEST)
 
-zip:
-	zip druntime.zip $(MANIFEST) $(DOCS) $(IMPORTS) minit.o
+zip: druntime.zip
 
-druntime.zip:
-	zip $@ $(MANIFEST) $(DOCS) $(IMPORTS) minit.o
+druntime.zip: $(MANIFEST) $(DOCS) $(IMPORTS)
+	rm -rf $@
+	zip $@ $^
 
 install: druntime.zip
 	unzip -o druntime.zip -d /dmd2/src/druntime
 
 clean:
-	rm -rf obj lib $(IMPDIR) $(DOCDIR)
+	rm -rf obj lib $(IMPDIR) $(DOCDIR) druntime.zip
