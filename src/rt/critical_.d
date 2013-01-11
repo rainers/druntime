@@ -74,7 +74,7 @@ private
 
 version( Windows )
 {
-    version (dmcWin32)
+    version (CRuntime_DigitalMars)
         pragma(lib, "snn.lib");
 
     /******************************************
