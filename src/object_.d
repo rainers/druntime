@@ -582,7 +582,7 @@ class TypeInfo_StaticArray : TypeInfo
     override string toString() const
     {
         char[20] tmp = void;
-        return cast(string)(value.toString() ~ "[" ~ tmp.intToString(len) ~ "]");
+        return cast(string)(value.toString() ~ "[" ~ tmp.uintToString(len) ~ "]");
     }
 
     override bool opEquals(Object o)
@@ -1405,7 +1405,7 @@ class Throwable : Object
 
         if (file)
         {
-           buf ~= this.classinfo.name ~ "@" ~ file ~ "(" ~ tmp.intToString(line) ~ ")";
+           buf ~= this.classinfo.name ~ "@" ~ file ~ "(" ~ tmp.uintToString(line) ~ ")";
         }
         else
         {
