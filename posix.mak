@@ -59,6 +59,12 @@ else
 	OPTFLAGS=-O -release -inline
 endif
 
+ifeq (osx,$(OS))
+    ASMFLAGS =
+else
+    ASMFLAGS = -Wa,--noexecstack
+endif
+
 ifeq (cl.exe,$(findstring cl.exe,$(CC)))
 	CFLAGS_O = $(subst -g,/Z7,$(CFLAGS)) -Fo
 #	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
@@ -105,6 +111,7 @@ MANIFEST= \
 	src/core/simd.d \
 	src/core/thread.d \
 	src/core/thread.di \
+	src/core/threadasm.S \
 	src/core/time.d \
 	src/core/vararg.d \
 	\
@@ -479,7 +486,7 @@ else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
     DOTEXE =
     O = o
-    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/complex.o
+    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o $(OBJDIR)/complex.o
 endif
 
 DOCS=\
@@ -677,6 +684,10 @@ $(OBJDIR)/%.$O : src/rt/%.c
 $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
 	@$(MKDIR) -p $(OBJDIR)
 	$(CC) -c $(CFLAGS_O)$@ $<
+
+$(OBJDIR)/threadasm.o : src/core/threadasm.S
+	@mkdir -p $(OBJDIR)
+	$(CC) $(ASMFLAGS) -c $(CFLAGS) $< -o$@
 
 src\rt\minit.obj : src\rt\minit.asm
 	ml -c /omf /D_WIN32 /Fo$@ src\rt\minit.asm
