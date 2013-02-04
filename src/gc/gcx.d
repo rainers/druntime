@@ -489,7 +489,8 @@ class GC
                 {
                     p = p + 16;
                     s -= 16;
-                    offset += 16/(void*).sizeof;
+                    allocSize = s;
+                    offset += 16;
                 }
 /*
                 svalueti = unqualify(arrayti.next);
@@ -2819,7 +2820,7 @@ struct Gcx
         {
             auto pbot = cast(hpInfo*) hp_ranges.ranges[i].pbot;
             auto ptop = cast(hpInfo*) hp_ranges.ranges[i].ptop;
-            debug(PRINTF) printf("marking hp range from %p to &p\n", pbot, ptop);
+            debug(PRINTF) printf("marking hp range from %p to %p\n", pbot, ptop);
             for(auto p = pbot; p < ptop; p++)
                 mark(p.base, p.ti);
         }
@@ -2829,7 +2830,7 @@ struct Gcx
     {
         if( type != ScanType.tls || hptls_ranges.nranges == 0 )
         {
-            debug(PRINTF) printf("marking tls range from %p to &p\n", tlsbase, tlsend);
+            debug(PRINTF) printf("marking tls range from %p to %p\n", tlsbase, tlsend);
             mark( tlsbase, tlsend );
         }
         else
@@ -2838,7 +2839,7 @@ struct Gcx
             {
                 auto pbot = cast(hpInfo*) hptls_ranges.ranges[i].pbot;
                 auto ptop = cast(hpInfo*) hptls_ranges.ranges[i].ptop;
-                debug(PRINTF) printf("marking tls hp range from %p to &p, base %p\n", pbot, ptop, tlsbase);
+                debug(PRINTF) printf("marking tls hp range from %p to %p, base %p\n", pbot, ptop, tlsbase);
                 for(auto p = pbot; p < ptop; p++)
                     mark(tlsbase + cast(size_t)p.base, p.ti);
             }
