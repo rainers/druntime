@@ -1,5 +1,7 @@
 COPY=\
 	$(IMPDIR)\object.di \
+	$(IMPDIR)\gctemplates.di \
+	$(IMPDIR)\rumptraits.di \
 	$(IMPDIR)\core\atomic.d \
 	$(IMPDIR)\core\bitop.d \
 	$(IMPDIR)\core\cpuid.d \

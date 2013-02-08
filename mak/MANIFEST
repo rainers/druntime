@@ -8,6 +8,8 @@ MANIFEST=\
 	\
 	src\object_.d \
 	src\object.di \
+	src\gctemplates.di \
+	src\rumptraits.di \
 	\
 	src\core\atomic.d \
 	src\core\bitop.d \
