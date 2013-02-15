@@ -17,14 +17,13 @@ module core.sys.windows.threadaux;
 version( Windows )
 {
     import core.sys.windows.windows;
+    import core.sys.windows.tls;
     import core.stdc.stdlib;
 
     public import core.thread;
 
     extern(Windows)
     HANDLE OpenThread(DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwThreadId) nothrow;
-
-    extern (C) extern __gshared int _tls_index;
 
     extern (C) // rt.minfo
     {
@@ -295,25 +294,34 @@ public:
     alias thread_aux.getThreadStackBottom getThreadStackBottom;
     alias thread_aux.OpenThreadHandle OpenThreadHandle;
     alias thread_aux.enumProcessThreads enumProcessThreads;
+    alias thread_aux.impersonate_thread impersonate_thread;
 
     // get the start of the TLS memory of the thread with the given handle
-    void* GetTlsDataAddress( HANDLE hnd ) nothrow
+    void* GetTlsDataAddress( HANDLE hnd, int tls_index ) nothrow
     {
         if( void** teb = getTEB( hnd ) )
             if( void** tlsarray = cast(void**) teb[11] )
-                return tlsarray[_tls_index];
+                return tlsarray[tls_index];
         return null;
+    }
+    void* GetTlsDataAddress( HANDLE hnd ) nothrow
+    {
+        return GetTlsDataAddress( hnd, _tls_index );
     }
 
     // get the start of the TLS memory of the thread with the given identifier
-    void* GetTlsDataAddress( uint id ) nothrow
+    void* GetTlsDataAddress( uint id, int thls_index ) nothrow
     {
         HANDLE hnd = OpenThread( thread_aux.THREAD_QUERY_INFORMATION, FALSE, id );
         assert( hnd, "OpenThread failed" );
 
-        void* tls = GetTlsDataAddress( hnd );
+        void* tls = GetTlsDataAddress( hnd, thls_index );
         CloseHandle( hnd );
         return tls;
+    }
+    void* GetTlsDataAddress( uint id ) nothrow
+    {
+        return GetTlsDataAddress( id, _tls_index );
     }
 
     ///////////////////////////////////////////////////////////////////

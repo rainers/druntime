@@ -337,15 +337,39 @@ version( Win32 )
         _IOAPP   = 0x200, // non-standard
     }
 
-    extern shared void function() _fcloseallp;
+    version( druntime_shared )
+    {
+        // symbols _iob and _fcloseallp not exported by sccrt70.dll
+        shared FILE* stdin;
+        shared FILE* stdout;
+        shared FILE* stderr;
+        shared FILE* stdaux;
+        shared FILE* stdprn;
 
-    private extern shared FILE[_NFILE] _iob;
+        private FILE* _p_iob();
 
-    shared stdin  = &_iob[0];
-    shared stdout = &_iob[1];
-    shared stderr = &_iob[2];
-    shared stdaux = &_iob[3];
-    shared stdprn = &_iob[4];
+        shared static this()
+        {
+            stdin  = _p_iob() + 0;
+            stdout = _p_iob() + 1;
+            stderr = _p_iob() + 2;
+            stdaux = _p_iob() + 3;
+            stdprn = _p_iob() + 4;
+        }
+    }
+    else
+    {
+        extern shared void function() _fcloseallp;
+
+        private extern shared FILE[_NFILE] _iob;
+
+        shared stdin  = &_iob[0];
+        shared stdout = &_iob[1];
+        shared stderr = &_iob[2];
+        shared stdaux = &_iob[3];
+        shared stdprn = &_iob[4];
+    }
+
 }
 else version( Win64 )
 {

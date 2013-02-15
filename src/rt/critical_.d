@@ -75,7 +75,16 @@ private
 version( Windows )
 {
     version (Win32)
-        pragma(lib, "snn.lib");
+    {
+        version(druntime_shared)
+        {
+            pragma(lib, "snd.lib");
+        }
+        else
+        {
+            pragma(lib, "snn.lib");
+        }
+    }
 
     /******************************************
      * Enter/exit critical section.

@@ -14,6 +14,8 @@ module core.sys.windows.dll;
 version( Windows )
 {
     import core.sys.windows.windows;
+    import core.sys.windows.tls;
+    import core.sys.windows.dllshared;
     import core.stdc.string;
     import core.runtime;
 
@@ -21,17 +23,6 @@ version( Windows )
 
     ///////////////////////////////////////////////////////////////////
     // support fixing implicit TLS for dynamically loaded DLLs on Windows XP
-
-    extern (C)
-    {
-        version (Win32)
-        {
-            extern __gshared void* _tlsstart;
-            extern __gshared void* _tlsend;
-            extern __gshared void* _tls_callbacks_a;
-            extern __gshared int   _tls_index;
-        }
-    }
 
     extern (C) // rt.minfo
     {
@@ -425,7 +416,11 @@ public:
             if( attach_thread )
                 thread_attachThis();
             if( initTls && !tlsCtorRun ) // avoid duplicate calls
+            {
                 rt_moduleTlsCtor();
+                version( druntime_shared )
+                    dll_moduleTlsCtor();
+            }
         }
         return true;
     }
@@ -439,7 +434,11 @@ public:
         if( thread_findByAddr( GetCurrentThreadId() ) )
         {
             if( exitTls && tlsCtorRun ) // avoid dtors to be run twice
+            {
+                version( druntime_shared )
+                    dll_moduleTlsCtor();
                 rt_moduleTlsDtor();
+            }
             if( detach_thread )
                 thread_detachThis();
         }

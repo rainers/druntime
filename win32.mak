@@ -9,7 +9,8 @@ CC=dmc
 DOCDIR=doc
 IMPDIR=import
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property
+# DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property
+DFLAGS=-m$(MODEL) -g -w -Isrc -Iimport -property
 UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property
 DDOCFLAGS=-c -w -o- -Isrc -Iimport
 
@@ -28,6 +29,36 @@ $(mak\DOCS)
 $(mak\IMPORTS)
 $(mak\MANIFEST)
 $(mak\SRCS)
+
+# modules used by the static library
+SRCS_STATIC = \
+#	src\core\dll_helper.d \
+	src\rt\dmain2.d \
+	src\rt\trace.d \
+	src\rt\memory.d \
+#	src\rt\cmain.d \
+	src\rt\minfo.d
+
+# modules used to build the shared library (symbols not exported, compiled with version=druntime_shared)
+SRCS_SHARED = \
+	src\rt\dllmain.d \
+	src\rt\memory.d \
+	src\rt\minfo.d
+
+# modules needed to link against the shared library (compiled with version=druntime_sharedrtl)
+SRCS_SHAREDRTL = \
+	src\core\sys\windows\dllclient.d \
+	src\rt\dmain2.d \
+	src\rt\memory.d \
+#	src\rt\cmain.d \
+	src\rt\minfo.d
+
+SRCS = $(SRCS_ANY) $(SRCS_STATIC)
+
+OBJS_SHAREDRTL = \
+#	lib\dll_helper.obj \
+	lib\memory.obj \
+	lib\cmain.obj \
 
 # NOTE: trace.d and cover.d are not necessary for a successful build
 #       as both are used for debugging features (profiling and coverage)
@@ -418,10 +449,19 @@ $(IMPDIR)\core\sys\windows\dbghelp.d : src\core\sys\windows\dbghelp.d
 $(IMPDIR)\core\sys\windows\dll.d : src\core\sys\windows\dll.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\windows\dllclient.d : src\core\sys\windows\dllclient.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\dllshared.d : src\core\sys\windows\dllshared.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\windows\stacktrace.d : src\core\sys\windows\stacktrace.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\threadaux.d : src\core\sys\windows\threadaux.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\tls.d : src\core\sys\windows\tls.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\windows.d : src\core\sys\windows\windows.d
@@ -438,6 +478,12 @@ errno_c.obj : src\core\stdc\errno.c
 complex.obj : src\rt\complex.c
 	$(CC) -c $(CFLAGS) src\rt\complex.c
 
+errno_c_shared.obj : src\core\stdc\errno.c
+	$(CC) -c -NL $(CFLAGS) src\core\stdc\errno.c -o$@
+
+complex_shared.obj : src\rt\complex.c
+	$(CC) -c -NL $(CFLAGS) src\rt\complex.c -o$@
+
 src\rt\minit.obj : src\rt\minit.asm
 	$(CC) -c $(CFLAGS) src\rt\minit.asm
 
@@ -450,6 +496,80 @@ $(GCSTUB) : src\gcstub\gc.d win$(MODEL).mak
 
 $(DRUNTIME): $(OBJS) $(SRCS) win$(MODEL).mak
 	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
+
+################### shared Library modules #####################
+
+IMPLIB = c:\l\dmc\bin\implib
+DMLIB = c:\l\dmc\bin\lib
+SHARED_DEF = src\shared\druntime_shared.def
+# where to find snn.lib
+SNN_LIB = ..\lib\snn.lib
+SND_LIB = ..\lib\snd.lib
+# (relative to subfolder snn)
+SNN_LIB2 = ..\$(SNN_LIB)
+SND_LIB2 = ..\$(SND_LIB)
+
+OBJS_SHARED = errno_c_shared.obj complex_shared.obj src\rt\minit.obj snn\tlsseg.obj
+
+GENEXP = ..\windows\bin\genexp
+
+SHARED_DFLAGS    = -g -version=druntime_shared $(DFLAGS) -defaultlib=$(SND_LIB) -debuglib=$(SND_LIB) -L/DELEXE
+SHAREDRTL_DFLAGS = -g -version=druntime_sharedrtl $(DFLAGS)
+
+druntime_dll: lib\druntime.obj lib\druntime_dynamic.lib $(OBJS_SHAREDRTL)
+
+lib\druntime_export.obj lib\druntime_export.symbols: $(SRCS_ANY) win32.mak
+	$(DMD) -c -of$@ -exportall=lib\druntime_export.symbols $(SHARED_DFLAGS) $(SRCS_ANY)
+
+lib\druntime_export_symbols.d : lib\druntime_export.symbols
+	+$(GENEXP) $** > $@
+
+lib\druntime_export_symbols.obj : lib\druntime_export_symbols.d
+	$(DMD) -c -of$@ $**
+
+lib\druntime_shared.dll: lib\druntime_export.obj $(SRCS_SHARED) $(SHARED_DEF) $(OBJS_SHARED) win32.mak
+	$(DMD) -of$@ $(SHARED_DFLAGS) $(SRCS_SHARED) -map -L/MAP:FULL -L/XREF lib\druntime_export.obj $(SHARED_DEF) $(OBJS_SHARED)
+	
+lib\druntime_import.lib: lib\druntime_shared.dll
+	$(IMPLIB) $@ $**
+
+# these objs should not export symbols, and are used for each binary using druntime_shared.dll
+lib\druntime_shared.lib: lib\druntime_import.lib $(SRCS_SHAREDRTL) lib\druntime_export_symbols.obj win32.mak
+	$(DMD) -lib -of$@ $(SHAREDRTL_DFLAGS) $(SRCS_SHAREDRTL) lib\druntime_export_symbols.obj lib\druntime_import.lib
+
+OBJS_SNN = \
+#	ehinit \
+	tlsseg
+
+OBJS_SND = \
+	cinit \
+	clearbss \
+	constart \
+	dllstart \
+	excptlst \
+	exit \
+	setargv \
+	tlsdata \
+	winstart
+
+lib\snn_shared.lib: $(SNN_LIB) win32.mak
+	if not exist snn\nul mkdir snn
+	cd snn
+	$(DMLIB) -x $(SNN_LIB2) $(OBJS_SNN)
+	$(DMLIB) -x $(SND_LIB2) $(OBJS_SND)
+	$(DMLIB) -c ..\lib\snn_shared.lib $(OBJS_SNN) $(OBJS_SND)
+	cd ..
+
+druntime_dll:
+	+cd $(DRUNTIME) && $(MAKE) -f win32.mak target druntime_dll
+	
+dll: lib\druntime_shared.lib 
+# lib\snn_shared.lib
+
+
+DLL_FILES_TO_CLEAN = $(OBJS_SHAREDRTL) lib\druntime.obj lib\druntime_dynamic.lib
+
+################### shared Library modules #####################
 
 unittest : $(SRCS) $(DRUNTIME) src\unittest.d
 	$(DMD) $(UDFLAGS) -L/co -version=druntime_unittest -unittest src\unittest.d $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME)

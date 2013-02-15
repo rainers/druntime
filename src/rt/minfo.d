@@ -83,6 +83,15 @@ struct ModuleGroup
             m.flags = m.flags & ~MIctordone;
     }
 
+    // is the module info imported from some other shared library
+    bool isExternalModule(ModuleInfo* mi)
+    {
+        foreach (m; _modules)
+            if (m is mi)
+                return false;
+        return true;
+    }
+
     void free()
     {
         .free(_ctors.ptr);
@@ -375,6 +384,11 @@ private void sortCtorsImpl(ref ModuleGroup mgroup, StackRec[] stack)
         while (idx < mods.length)
         {
             auto m = mods[idx];
+            if (mgroup.isExternalModule(m)) // skip modules from other binaries
+            {
+                idx++;
+                continue;
+            }
             auto fl = m.flags;
             if (fl & MIctorstart)
             {
