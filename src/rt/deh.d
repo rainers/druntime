@@ -212,7 +212,7 @@ extern __gshared DWORD _except_list; // This is just FS:[0]
 extern(C)
 {
 void _d_setUnhandled(Object);
-void _d_createTrace(Object);
+void _d_createTrace(Object, void*);
 int _d_isbaseof(ClassInfo b, ClassInfo c);
 }
 
@@ -534,7 +534,7 @@ EXCEPTION_DISPOSITION _d_framehandler(
 
                         for(;;)
                         {
-                            Throwable w = _d_translate_se_to_d_exception(z, pcb.type !is pcb_type);
+                            Throwable w = _d_translate_se_to_d_exception(z,context,  pcb.type !is pcb_type);
                             if (z == master && (z.ExceptionFlags & EXCEPTION_COLLATERAL))
                             {   // if it is a short-circuit master, save it
                                 masterError = cast(Error)w;
@@ -599,7 +599,7 @@ int _d_exception_filter(EXCEPTION_POINTERS *eptrs,
                         int retval,
                         Object *exceptionObject)
 {
-    *exceptionObject = _d_translate_se_to_d_exception(eptrs.ExceptionRecord, true);
+    *exceptionObject = _d_translate_se_to_d_exception(eptrs.ExceptionRecord, eptrs.ContextRecord, true);
     return retval;
 }
 
@@ -655,7 +655,7 @@ private void throwImpl(Object h)
     // @@@ TODO @@@ Signature should change: h will always be a Throwable.
     //printf("_d_throw(h = %p, &h = %p)\n", h, &h);
     //printf("\tvptr = %p\n", *(void **)h);
-    //_d_createTrace(h);
+    //_d_createTrace(h, null);
     //_d_setUnhandled(h);
     RaiseException(STATUS_DIGITAL_MARS_D_EXCEPTION,
                    EXCEPTION_NONCONTINUABLE,
@@ -692,7 +692,7 @@ extern(C) void _d_throwc(Object h)
  * Converts a Windows Structured Exception code to a D Throwable Object.
  */
 
-Throwable _d_translate_se_to_d_exception(EXCEPTION_RECORD *exceptionRecord, bool createTrace)
+Throwable _d_translate_se_to_d_exception(EXCEPTION_RECORD *exceptionRecord, CONTEXT* context, bool createTrace)
 {
     Throwable pti;
    // BUG: what if _d_newclass() throws an out of memory exception?
@@ -789,7 +789,7 @@ Throwable _d_translate_se_to_d_exception(EXCEPTION_RECORD *exceptionRecord, bool
             break;
     }
     if(createTrace)
-        _d_createTrace(pti);
+        _d_createTrace(pti, context);
     return pti;
 }
 
