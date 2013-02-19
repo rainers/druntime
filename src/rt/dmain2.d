@@ -40,6 +40,14 @@ version (Windows)
         int        IsDebuggerPresent();
     }
     pragma(lib, "shell32.lib"); // needed for CommandLineToArgvW
+	// generating druntime.lib causes this module to be split into an
+	// object file containing the module info and the "includelib" declaration
+	// and an object file containing the _d_run_main method without any
+	// reference back into the other module. This causes link errors
+	// because shell32.lib does not get dragged in automatically
+	//
+	// workaround: read referToShell32 inside _d_run_main to drag in the other object file
+	__gshared int referToShell32;
 }
 
 /***********************************
@@ -136,7 +144,7 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     {
         const wchar_t* wCommandLine = GetCommandLineW();
         immutable size_t wCommandLineLength = wcslen(wCommandLine);
-        int wargc;
+        int wargc = referToShell32; // drag in shell32.lib, see above
         wchar_t** wargs = CommandLineToArgvW(wCommandLine, &wargc);
         assert(wargc == argc);
 

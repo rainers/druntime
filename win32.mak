@@ -9,12 +9,12 @@ CC=dmc
 DOCDIR=doc
 IMPDIR=import
 
-# DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property
-DFLAGS=-m$(MODEL) -g -w -Isrc -Iimport -property
+DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport -property
+# DFLAGS=-m$(MODEL) -g -w -Isrc -Iimport -property
 UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property
 DDOCFLAGS=-c -w -o- -Isrc -Iimport
 
-CFLAGS=
+CFLAGS=-NL
 
 DRUNTIME_BASE=druntime
 DRUNTIME=lib\$(DRUNTIME_BASE).lib
@@ -478,12 +478,6 @@ errno_c.obj : src\core\stdc\errno.c
 complex.obj : src\rt\complex.c
 	$(CC) -c $(CFLAGS) src\rt\complex.c
 
-errno_c_shared.obj : src\core\stdc\errno.c
-	$(CC) -c -NL $(CFLAGS) src\core\stdc\errno.c -o$@
-
-complex_shared.obj : src\rt\complex.c
-	$(CC) -c -NL $(CFLAGS) src\rt\complex.c -o$@
-
 src\rt\minit.obj : src\rt\minit.asm
 	$(CC) -c $(CFLAGS) src\rt\minit.asm
 
@@ -509,7 +503,7 @@ SND_LIB = ..\lib\snd.lib
 SNN_LIB2 = ..\$(SNN_LIB)
 SND_LIB2 = ..\$(SND_LIB)
 
-OBJS_SHARED = errno_c_shared.obj complex_shared.obj src\rt\minit.obj snn\tlsseg.obj
+OBJS_SHARED = errno_c.obj complex.obj src\rt\minit.obj snn\tlsseg.obj
 
 GENEXP = ..\windows\bin\genexp
 
