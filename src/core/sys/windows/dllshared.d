@@ -1,10 +1,20 @@
+/**
+* This module provides OS specific helper function for DLL support
+*
+* Copyright: Copyright Digital Mars 2010 - 2012.
+* License: Distributed under the
+*      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
+*    (See accompanying file LICENSE)
+* Authors:   Rainer Schuetze
+* Source: $(DRUNTIMESRC src/core/sys/windows/_dll.d)
+*/
+
 module core.sys.windows.dllshared;
 
 version(Windows):
 import core.sys.windows.windows;
 import core.sys.windows.dll;
 import core.sys.windows.threadaux;
-//import core.sys.windows.tls;
 
 import core.runtime;
 import rt.minfo;

@@ -89,7 +89,7 @@ void shared_dll_thread_detach()
 
 void shared_dll_add_tlsdata()
 {
-    dll_add_tlsdata(_tls_index, _tlsend - _tlsstart, &_moduleGroup);
+    dll_add_tlsdata(_tls_index, &_tlsend - &_tlsstart, &_moduleGroup);
 }
 
 void shared_dll_remove_tlsdata()
