@@ -17,7 +17,7 @@ private
 {
     import core.stdc.string;
     import rt.util.string;
-    debug import core.stdc.stdio;
+    debug(PRINTF) import core.stdc.stdio;
 }
 
 extern (C) @trusted nothrow:
@@ -25,7 +25,7 @@ extern (C) @trusted nothrow:
 byte[] _d_arraycopy(size_t size, byte[] from, byte[] to)
 {
     debug(PRINTF) printf("f = %p,%d, t = %p,%d, size = %d\n",
-                         from.ptr, from.length, to.ptr, to.length, size);
+                 from.ptr, from.length, to.ptr, to.length, size);
 
     if (to.length != from.length)
     {
