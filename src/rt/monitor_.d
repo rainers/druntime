@@ -44,7 +44,14 @@ private
     version( Windows )
     {
         version (CRuntime_DigitalMars)
+        {
             pragma(lib, "snn.lib");
+        }
+        else version (CRuntime_Microsoft)
+        {
+            pragma(lib, "libcmt.lib");
+            pragma(lib, "oldnames.lib");
+        }
         import core.sys.windows.windows;
 
         struct Monitor
