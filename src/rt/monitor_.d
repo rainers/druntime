@@ -54,6 +54,17 @@ private
                 pragma(lib, "snn.lib");
             }
         }
+        else
+        {
+            version(druntime_shared)
+            {
+                pragma(lib, "msvcrt.lib");
+            }
+            else
+            {
+                pragma(lib, "libcmt.lib");
+            }
+		}
         import core.sys.windows.windows;
 
         struct Monitor

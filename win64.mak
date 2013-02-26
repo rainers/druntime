@@ -20,7 +20,7 @@ UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property
 DDOCFLAGS=-c -w -o- -Isrc -Iimport
 
 #CFLAGS=/O2 /I$(VCDIR)\INCLUDE /I$(SDKDIR)\Include
-CFLAGS=/Zi /I$(VCDIR)\INCLUDE /I$(SDKDIR)\Include
+CFLAGS=/Zi /Zl /I$(VCDIR)\INCLUDE /I$(SDKDIR)\Include
 
 DRUNTIME_BASE=druntime64
 DRUNTIME=lib\$(DRUNTIME_BASE).lib
@@ -35,6 +35,33 @@ $(mak\DOCS)
 $(mak\IMPORTS)
 $(mak\MANIFEST)
 $(mak\SRCS)
+
+MAK_DEPS = win64.mak mak\COPY mak\DOCS mak\COPY mak\IMPORTS mak\MANIFEST mak\SRCS
+
+# DM make is so lousy, the poor men's includes above only read the first variable in mak\SRCS
+# so we repeat the other fere:
+
+# modules used by the static library
+SRCS_STATIC=\
+	src\rt\dmain2.d \
+	src\rt\trace.d \
+	src\rt\memory.d \
+	src\rt\minfo.d
+
+# modules used to build the shared library (symbols not exported, compiled with version=druntime_shared)
+SRCS_SHARED=\
+	src\rt\dllmain.d \
+	src\rt\memory.d \
+	src\rt\minfo.d
+
+# modules needed to link against the shared library (compiled with version=druntime_sharedrtl)
+SRCS_SHAREDRTL=\
+	src\core\sys\windows\dllclient.d \
+	src\rt\dmain2.d \
+	src\rt\memory.d \
+	src\rt\minfo.d
+
+SRCS = $(SRCS_ANY) $(SRCS_STATIC)
 
 # NOTE: trace.d and cover.d are not necessary for a successful build
 #       as both are used for debugging features (profiling and coverage)
@@ -457,6 +484,37 @@ $(GCSTUB) : src\gcstub\gc.d win$(MODEL).mak
 
 $(DRUNTIME): $(OBJS) $(SRCS) win$(MODEL).mak
 	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
+
+################### shared Library modules #####################
+
+IMPLIB = c:\l\dmc\bin\implib
+SHARED_DEF = src\shared\druntime_shared.def
+
+OBJS_SHARED = errno_c.obj complex.obj 
+# src\rt\minit.obj src\rt\tlssup.obj
+
+GENEXP = ..\windows\bin\genexp
+
+SHARED_DFLAGS    = -version=druntime_shared $(DFLAGS) -defaultlib=msvcrt.lib,oldnames.lib
+SHAREDRTL_DFLAGS = -g -version=druntime_sharedrtl $(DFLAGS)
+
+lib\druntime$(MODEL)_export.obj: $(SRCS_ANY) $(MAK_DEPS)
+	$(DMD) -c -of$@ -exportall $(SHARED_DFLAGS) $(SRCS_ANY)
+
+lib\druntime$(MODEL)_shared.dll lib\druntime$(MODEL)_import.lib: $(SRCS_SHARED) $(OBJS_SHARED) lib\druntime$(MODEL)_export.obj $(MAK_DEPS)
+	$(DMD) -oflib\druntime$(MODEL)_shared.dll -L/DLL $(SHARED_DFLAGS) -map user32.lib \
+		lib\druntime$(MODEL)_export.obj $(SRCS_SHARED) $(OBJS_SHARED) -L/IMPLIB:lib\druntime$(MODEL)_import.lib 
+
+lib\druntime$(MODEL)_shared.lib: lib\druntime$(MODEL)_import.lib $(SRCS_SHAREDRTL) $(OBJS_SHARED) $(MAK_DEPS)
+	$(DMD) -lib -of$@ $(SHAREDRTL_DFLAGS) $(SRCS_SHAREDRTL) $(OBJS_SHARED) lib\druntime_import.lib 
+
+dll: lib\druntime$(MODEL)_shared.lib
+# lib\snn_shared.lib
+
+
+DLL_FILES_TO_CLEAN = $(OBJS_SHARED) lib\druntime.obj lib\druntime_shared.lib
+
+################### shared Library modules #####################
 
 unittest : $(SRCS) $(DRUNTIME) src\unittest.d
 	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest src\unittest.d $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME) user32.lib

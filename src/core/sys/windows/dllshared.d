@@ -192,7 +192,7 @@ private struct dll_helper_aux2
 
     static ubyte* getImportAdress(ubyte*[] iat, ubyte**ptr)
     {
-        uint idx = ptr - iat.ptr;
+        size_t idx = ptr - iat.ptr;
         if(idx < iat.length)
             return iat[idx];
         return null;
@@ -253,9 +253,6 @@ private struct dll_helper_aux2
 }
 
 // version = PRINTF;
-
-extern(Windows)
-BOOL VirtualProtect(LPVOID lpAddress, DWORD dwSize, DWORD flNewProtect, PDWORD lpflOldProtect);
 
 public void dll_patchImportRelocations(HINSTANCE hInstance)
 {
