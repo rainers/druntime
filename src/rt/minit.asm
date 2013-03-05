@@ -202,6 +202,7 @@ __ms_aullrem proc    near
 __ms_aullrem endp
     endcode __ms_aullrem
 
+ifdef needsDBLLNG
     begcode __DBLULNG@
     public  __DBLULNG@
 __DBLULNG@ proc    near
@@ -219,6 +220,8 @@ __DBLULLNG@ proc    near
     jmp ___DBLULLNG
 __DBLULLNG@ endp
     endcode __DBLULLNG@
+
+endif
 
 endif
 

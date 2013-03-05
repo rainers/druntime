@@ -20,11 +20,11 @@ UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport -property
 DDOCFLAGS=-c -w -o- -Isrc -Iimport
 
 #CFLAGS=/O2 /I$(VCDIR)\INCLUDE /I$(SDKDIR)\Include
-CFLAGS=/Zi /I$(VCDIR)\INCLUDE /I$(SDKDIR)\Include
+CFLAGS=/Zi /Zl /I$(VCDIR)\INCLUDE /I$(SDKDIR)\Include
 
-DRUNTIME_BASE=druntime64
+DRUNTIME_BASE=druntime$(MODEL)
 DRUNTIME=lib\$(DRUNTIME_BASE).lib
-GCSTUB=lib\gcstub64.obj
+GCSTUB=lib\gcstub$(MODEL).obj
 
 DOCFMT=-version=CoreDdoc
 
@@ -450,16 +450,31 @@ src\rt\minit.obj : src\rt\minit.asm
 
 ################### gcstub generation #########################
 
-$(GCSTUB) : src\gcstub\gc.d win$(MODEL).mak
+$(GCSTUB) : src\gcstub\gc.d win64.mak
 	$(DMD) -c -of$(GCSTUB) src\gcstub\gc.d $(DFLAGS)
 
 ################### Library generation #########################
 
-$(DRUNTIME): $(OBJS) $(SRCS) win$(MODEL).mak
+$(DRUNTIME): $(OBJS) $(SRCS) win64.mak
 	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
+
+################### DLL generation #########################
+
+dll: lib\$(DRUNTIME_BASE).dll
+
+DLLFLAGS = -version=druntime_shared -exportall -defaultlib=msvcrt -L/DLL \
+-m$(MODEL) -g -w -Isrc -Iimport -property
+# -O -release -inline 
+
+lib\$(DRUNTIME_BASE).dll : $(OBJS) $(SRCS) win64.mak
+	$(DMD) $(DLLFLAGS) -of$@ src\rt\dllmain.d $(SRCS) $(OBJS) src\shared\dummy.def
+
+################### unittest #########################
 
 unittest : $(SRCS) $(DRUNTIME) src\unittest.d
 	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest src\unittest.d $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME) user32.lib
+
+################### install/cleanup #########################
 
 zip: druntime.zip
 

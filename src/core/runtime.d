@@ -287,7 +287,7 @@ private:
  *  true if execution should continue after testing is complete and false if
  *  not.  Default behavior is to return true.
  */
-extern (C) bool runModuleUnitTests()
+extern (C) bool runModuleUnitTests(ModuleInfo*[] modules)
 {
     static if( __traits( compiles, backtrace ) )
     {
@@ -343,7 +343,7 @@ extern (C) bool runModuleUnitTests()
     if( Runtime.sm_moduleUnitTester is null )
     {
         size_t failed = 0;
-        foreach( m; ModuleInfo )
+        foreach( m; modules )
         {
             if( m )
             {

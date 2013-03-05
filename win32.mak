@@ -451,8 +451,19 @@ $(GCSTUB) : src\gcstub\gc.d win$(MODEL).mak
 $(DRUNTIME): $(OBJS) $(SRCS) win$(MODEL).mak
 	$(DMD) -lib -of$(DRUNTIME) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
+################### unittest #########################
+
 unittest : $(SRCS) $(DRUNTIME) src\unittest.d
 	$(DMD) $(UDFLAGS) -L/co -version=druntime_unittest -unittest src\unittest.d $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME)
+
+################### DLL generation #########################
+
+dll: lib\$(DRUNTIME_BASE).dll
+
+lib\$(DRUNTIME_BASE).dll : $(OBJS) $(SRCS)
+	$(DMD) $(DFLAGS) -exportall -of$@ -L/DLL src\rt\dllmain.d $(SRCS) $(OBJS)
+
+################### install/cleanup #########################
 
 zip: druntime.zip
 

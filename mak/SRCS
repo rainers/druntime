@@ -52,7 +52,9 @@ SRCS=\
 	\
 	src\core\sys\windows\dbghelp.d \
 	src\core\sys\windows\dll.d \
+	src\core\sys\windows\dllshared.d \
 	src\core\sys\windows\stacktrace.d \
+	src\core\sys\windows\tls.d \
 	src\core\sys\windows\threadaux.d \
 	src\core\sys\windows\windows.d \
 	\
@@ -94,7 +96,9 @@ SRCS=\
 	src\rt\minfo.d \
 	src\rt\monitor_.d \
 	src\rt\obj.d \
+	src\rt\onerror.d \
 	src\rt\qsort.d \
+	src\rt\rtinit.d \
 	src\rt\switch_.d \
 	src\rt\tlsgc.d \
 	src\rt\trace.d \

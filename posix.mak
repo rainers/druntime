@@ -68,7 +68,7 @@ else
 endif
 
 ifeq (cl.exe,$(findstring cl.exe,$(CC)))
-	CFLAGS_O = $(subst -g,/Z7,$(CFLAGS)) -Fo
+	CFLAGS_O = $(subst -g,/Z7,$(CFLAGS)) /Zl -Fo
 #	OPTFLAGS := $(subst -g,,$(OPTFLAGS))  # no debug info yet
 else
 	CFLAGS_O = $(CFLAGS) $(PIC) -o
@@ -119,7 +119,7 @@ ifeq (win32,$(OS))
 	    OBJS += src\rt\minit.obj
 	endif
     ifeq ($(MODEL),32ms)
-	    OBJS += src\rt\minit_coff.obj
+#	    OBJS += src\rt\minit_coff.obj
     endif
 else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
@@ -198,6 +198,20 @@ src\rt\minit_coff.obj : src\rt\minit.asm
 
 $(DRUNTIME): $(OBJS) $(SRCS) posix.mak $(DMDDEP)
 	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
+
+################### shared Library generation ##################
+
+shared: $(LIBDIR)/$(DRUNTIME_BASE)_shared.dll
+
+SDFLAGS = $(DFLAGS) -version=druntime_shared 
+ifeq (win32,$(OS))
+SDFLAGS += -exportall -defaultlib=msvcrt -L/DLL
+endif
+
+$(LIBDIR)/$(DRUNTIME_BASE)_shared.dll : $(OBJS) $(SRCS) win64.mak
+	$(DMD) $(SDFLAGS) -of$@ src\rt\dllmain.d $(SRCS) $(OBJS) src\shared\dummy.def
+
+################### unittests #########################
 
 UT_MODULES:=$(patsubst src/%.d,$(OBJDIR)/%,$(SRCS))
 

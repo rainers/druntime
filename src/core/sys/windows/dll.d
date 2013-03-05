@@ -14,6 +14,8 @@ module core.sys.windows.dll;
 version( Windows )
 {
     import core.sys.windows.windows;
+    import core.sys.windows.tls;
+    import core.sys.windows.dllshared;
     import core.stdc.string;
     import core.runtime;
 
@@ -21,36 +23,6 @@ version( Windows )
 
     ///////////////////////////////////////////////////////////////////
     // support fixing implicit TLS for dynamically loaded DLLs on Windows XP
-
-    extern (C)
-    {
-        version (CRuntime_Microsoft)
-        {
-            // NOTE: The memory between the addresses of _tls_start and _tls_end
-            //       is the storage for thread-local data in D 2.0.  Both of
-            //       these are defined in LIBCMT:tlssub.obj
-            extern (C)
-            {
-                extern __gshared int _tls_start;
-                extern __gshared int _tls_end;
-                extern __gshared int _tls_index;
-                extern __gshared size_t __xl_a;
-            }
-            alias __xl_a     _tls_callbacks_a; // TODO: should be *&(__xl_a+1)
-            alias _tls_start _tlsstart;
-            alias _tls_end   _tlsend;
-        }
-        else version (CRuntime_DigitalMars)
-        {
-            // NOTE: The memory between the addresses of _tlsstart and _tlsend
-            //       is the storage for thread-local data in D 2.0.  Both of
-            //       these are defined in dm\src\win32\tlsseg.asm by DMC.
-            extern __gshared void* _tlsstart;
-            extern __gshared void* _tlsend;
-            extern __gshared void* _tls_callbacks_a;
-            extern __gshared int   _tls_index;
-        }
-    }
 
     extern (C) // rt.minfo
     {
@@ -444,7 +416,11 @@ public:
             if( attach_thread )
                 thread_attachThis();
             if( initTls && !tlsCtorRun ) // avoid duplicate calls
+            {
                 rt_moduleTlsCtor();
+                version( druntime_shared )
+                    dll_moduleTlsCtor();
+            }
         }
         return true;
     }
@@ -458,7 +434,11 @@ public:
         if( thread_findByAddr( GetCurrentThreadId() ) )
         {
             if( exitTls && tlsCtorRun ) // avoid dtors to be run twice
+            {
+                version( druntime_shared )
+                    dll_moduleTlsDtor();
                 rt_moduleTlsDtor();
+            }
             if( detach_thread )
                 thread_detachThis();
         }

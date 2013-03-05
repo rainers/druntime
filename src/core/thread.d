@@ -117,43 +117,15 @@ version( Windows )
         import core.stdc.stdlib;             // for malloc, atexit
         import core.sys.windows.windows;
         import core.sys.windows.threadaux;   // for OpenThreadHandle
+        import core.sys.windows.tls;
+        version( druntime_shared )
+            import core.sys.windows.dllshared;
 
         const DWORD TLS_OUT_OF_INDEXES  = 0xFFFFFFFF;
         const CREATE_SUSPENDED = 0x00000004;
 
         extern (Windows) alias uint function(void*) btex_fptr;
         extern (C) uintptr_t _beginthreadex(void*, uint, btex_fptr, void*, uint, uint*);
-
-        version (CRuntime_Microsoft)
-        {
-            // NOTE: The memory between the addresses of _tls_start and _tls_end
-            //       is the storage for thread-local data in D 2.0.  Both of
-            //       these are defined in LIBCMT:tlssub.obj
-            extern (C)
-            {
-                extern int _tls_start;
-                extern int _tls_end;
-            }
-            alias _tls_start _tlsstart;
-            alias _tls_end   _tlsend;
-        }
-        else version (CRuntime_DigitalMars)
-        {
-            // NOTE: The memory between the addresses of _tlsstart and _tlsend
-            //       is the storage for thread-local data in D 2.0.  Both of
-            //       these are defined in dm\src\win32\tlsseg.asm by DMC.
-            extern (C)
-            {
-                extern int _tlsstart;
-                extern int _tlsend;
-            }
-        }
-        else
-        {
-            __gshared int   _tlsstart;
-            alias _tlsstart _tlsend;
-        }
-
 
         //
         // Entry point for Windows threads
@@ -211,6 +183,8 @@ version( Windows )
             try
             {
                 rt_moduleTlsCtor();
+                version( druntime_shared )
+                    dll_moduleTlsCtor();
                 try
                 {
                     obj.run();
@@ -219,6 +193,8 @@ version( Windows )
                 {
                     append( t );
                 }
+                version( druntime_shared )
+                    dll_moduleTlsDtor();
                 rt_moduleTlsDtor();
             }
             catch( Throwable t )
@@ -2697,6 +2673,9 @@ private void scanAllTypeImpl( scope ScanAllThreadsTypeFn scan, void* curStackTop
         }
 
         rt.tlsgc.scan(t.m_tlsgcdata, (p1, p2) => scan(ScanType.tls, p1, p2));
+
+        version( druntime_shared )
+            dll_scan_tls( t.m_hndl, ( p1, p2 ) => scan( ScanType.tls, p1, p2 ) );
     }
 }
 
