@@ -345,7 +345,7 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         rt_moduleCtor();
         rt_moduleTlsCtor();
 
-        if (runModuleUnitTests(getModuleInfos()))
+        if (runModuleUnitTests())
             tryExec(&runMain);
         else
             result = EXIT_FAILURE;

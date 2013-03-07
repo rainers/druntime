@@ -14,7 +14,6 @@ module rt.memory;
 
 import gc.gc;
 import rt.sections;
-    extern (C) void gc_addRange_hp( void* p, size_t sz, bool tls ) nothrow;
 
 void initStaticDataGC()
 {
@@ -22,5 +21,13 @@ void initStaticDataGC()
     {
         foreach (rng; sg.gcRanges)
             gc_addRange(rng.ptr, rng.length);
+
+        static if(__traits(compiles,sg.gcRanges_hp))
+            foreach (rng; sg.gcRanges_hp)
+                gc_addRange_hp(rng.ptr, rng.length, false);
+
+        static if(__traits(compiles,sg.gcRanges_hptls))
+            foreach (rng; sg.gcRanges_hptls)
+                gc_addRange_hp(rng.ptr, rng.length, true);
     }
 }

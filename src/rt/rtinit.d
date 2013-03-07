@@ -15,6 +15,7 @@ import rt.monitor_;
 import rt.critical_;
 import rt.memory;
 import rt.minfo;
+import rt.sections;
 
 import core.runtime;
 import core.stdc.stdlib;
@@ -53,7 +54,7 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
         initStaticDataGC();
         rt_moduleCtor();
         rt_moduleTlsCtor();
-        runModuleUnitTests(getModuleInfos());
+        runModuleUnitTests();
         return true;
     }
     catch (Throwable e)
@@ -215,5 +216,13 @@ __gshared string[] _d_args = null;
 extern (C) string[] rt_args()
 {
     return _d_args;
+}
+
+bool runModuleUnitTests()
+{
+    foreach (ref sg; SectionGroup)
+		if(!core.runtime.runModuleUnitTests(sg.modules))
+			return false;
+	return true;
 }
 
