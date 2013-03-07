@@ -319,7 +319,7 @@ class TypeInfo
 
     /// Get TypeInfo for 'next' type, as defined by what kind of type this is,
     /// null if none.
-    @property const(TypeInfo) next() nothrow pure const { return null; }
+    @property inout(TypeInfo) next() nothrow pure inout { return null; }
 
     /// Return default initializer.  If the type should be initialized to all zeros,
     /// an array with a null ptr and a length equal to the type size will be returned.
@@ -364,38 +364,6 @@ class TypeInfo
     @property const(TypeInfo_Class) info() @safe nothrow pure const { return null; }
 }
 
-class TypeInfo_Vector : TypeInfo
-{
-    override string toString() const { return "__vector(" ~ base.toString() ~ ")"; }
-
-    override bool opEquals(Object o)
-    {
-        if (this is o)
-            return true;
-        auto c = cast(const TypeInfo_Vector)o;
-        return c && this.base == c.base;
-    }
-
-    override size_t getHash(in void* p) const { return base.getHash(p); }
-    override bool equals(in void* p1, in void* p2) const { return base.equals(p1, p2); }
-    override int compare(in void* p1, in void* p2) const { return base.compare(p1, p2); }
-    override @property size_t tsize() nothrow pure const { return base.tsize; }
-    override void swap(void* p1, void* p2) const { return base.swap(p1, p2); }
-
-    override @property const(TypeInfo) next() nothrow pure const { return base.next; }
-    override @property uint flags() nothrow pure const { return base.flags; }
-    override const(void)[] init() nothrow pure const { return base.init(); }
-
-    override @property size_t talign() nothrow pure const { return 16; }
-
-    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
-    {
-        return base.argTypes(arg1, arg2);
-    }
-
-    TypeInfo base;
-}
-
 class TypeInfo_Typedef : TypeInfo
 {
     override string toString() const { return name; }
@@ -415,7 +383,7 @@ class TypeInfo_Typedef : TypeInfo
     override @property size_t tsize() nothrow pure const { return base.tsize; }
     override void swap(void* p1, void* p2) const { return base.swap(p1, p2); }
 
-    override @property const(TypeInfo) next() nothrow pure const { return base.next; }
+    override @property inout(TypeInfo) next() nothrow pure inout { return base.next; }
     override @property uint flags() nothrow pure const { return base.flags; }
     override const(void)[] init() nothrow pure const @safe { return m_init.length ? m_init : base.init(); }
 
@@ -482,7 +450,7 @@ class TypeInfo_Pointer : TypeInfo
         *cast(void**)p2 = tmp;
     }
 
-    override @property const(TypeInfo) next() nothrow pure const { return m_next; }
+    override @property inout(TypeInfo) next() nothrow pure inout { return m_next; }
     override @property uint flags() nothrow pure const { return 1; }
 
     TypeInfo m_next;
@@ -553,7 +521,7 @@ class TypeInfo_Array : TypeInfo
 
     TypeInfo value;
 
-    override @property const(TypeInfo) next() nothrow pure const
+    override @property inout(TypeInfo) next() nothrow pure inout
     {
         return value;
     }
@@ -657,7 +625,7 @@ class TypeInfo_StaticArray : TypeInfo
     }
 
     override const(void)[] init() nothrow pure const { return value.init(); }
-    override @property const(TypeInfo) next() nothrow pure const { return value; }
+    override @property inout(TypeInfo) next() nothrow pure inout { return value; }
     override @property uint flags() nothrow pure const { return value.flags; }
 
     override void destroy(void* p) const
@@ -726,7 +694,7 @@ class TypeInfo_AssociativeArray : TypeInfo
         return (char[int]).sizeof;
     }
 
-    override @property const(TypeInfo) next() nothrow pure const { return value; }
+    override @property inout(TypeInfo) next() nothrow pure inout { return value; }
     override @property uint flags() nothrow pure const { return 1; }
 
     TypeInfo value;
@@ -744,6 +712,38 @@ class TypeInfo_AssociativeArray : TypeInfo
         arg1 = typeid(void*);
         return 0;
     }
+}
+
+class TypeInfo_Vector : TypeInfo
+{
+    override string toString() const { return "__vector(" ~ base.toString() ~ ")"; }
+
+    override bool opEquals(Object o)
+    {
+        if (this is o)
+            return true;
+        auto c = cast(const TypeInfo_Vector)o;
+        return c && this.base == c.base;
+    }
+
+    override size_t getHash(in void* p) const { return base.getHash(p); }
+    override bool equals(in void* p1, in void* p2) const { return base.equals(p1, p2); }
+    override int compare(in void* p1, in void* p2) const { return base.compare(p1, p2); }
+    override @property size_t tsize() nothrow pure const { return base.tsize; }
+    override void swap(void* p1, void* p2) const { return base.swap(p1, p2); }
+
+    override @property inout(TypeInfo) next() nothrow pure inout { return base.next; }
+    override @property uint flags() nothrow pure const { return base.flags; }
+    override const(void)[] init() nothrow pure const { return base.init(); }
+
+    override @property size_t talign() nothrow pure const { return 16; }
+
+    version (X86_64) override int argTypes(out TypeInfo arg1, out TypeInfo arg2)
+    {
+        return base.argTypes(arg1, arg2);
+    }
+
+    TypeInfo base;
 }
 
 class TypeInfo_Function : TypeInfo
@@ -1249,7 +1249,7 @@ class TypeInfo_Const : TypeInfo
     override @property size_t tsize() nothrow pure const { return base.tsize; }
     override void swap(void *p1, void *p2) const { return base.swap(p1, p2); }
 
-    override @property const(TypeInfo) next() nothrow pure const { return base.next; }
+    override @property inout(TypeInfo) next() nothrow pure inout { return base.next; }
     override @property uint flags() nothrow pure const { return base.flags; }
     override const(void)[] init() nothrow pure const { return base.init(); }
 

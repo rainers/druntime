@@ -17,6 +17,7 @@ version(build_main):
 private
 {
     import rt.memory;
+    import rt.sections;
     import rt.minfo;
     import rt.rtinit;
     import rt.util.console;
@@ -335,6 +336,7 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
 
     void runAll()
     {
+        initSections();
         version(druntime_sharedrtl) { }	else
         {
             gc_init();
@@ -354,6 +356,7 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         {
             gc_term();
         }
+        finiSections();
     }
 
     tryExec(&runAll);

@@ -87,6 +87,7 @@ ifeq (win32,$(OS))
 else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
 endif
+DRUNTIMESO=lib/lib$(DRUNTIME_BASE).so
 
 DOCFMT=-version=CoreDdoc
 
@@ -193,6 +194,14 @@ src\rt\minit.obj : src\rt\minit.asm
 
 src\rt\minit_coff.obj : src\rt\minit.asm
 	ml -c /D_WIN32 /DCOFF /Fo$@ src\rt\minit.asm
+
+######################## Create a shared library ##############################
+
+dll: override PIC:=-fPIC
+dll: $(DRUNTIMESO)
+
+$(DRUNTIMESO): $(OBJS) $(SRCS)
+	$(DMD) -shared -of$(DRUNTIMESO) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
 ################### Library generation #########################
 

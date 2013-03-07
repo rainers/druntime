@@ -1,47 +1,27 @@
 /**
- * Runtime support for dynamic libraries.
+ * Written in the D programming language.
+ * This module provides linux-specific support for sections.
  *
  * Copyright: Copyright Martin Nowak 2012-2013.
  * License:   <a href="http://www.boost.org/LICENSE_1_0.txt">Boost License 1.0</a>.
  * Authors:   Martin Nowak
- * Source: $(DRUNTIMESRC src/rt/_dso.d)
+ * Source: $(DRUNTIMESRC src/rt/_sections_linux.d)
  */
-module rt.dso;
 
-version (Windows)
-{
-    // missing integration with the existing DLL mechanism
-    enum USE_DSO = false;
-}
-else version (linux)
-{
-    enum USE_DSO = true;
-    import core.sys.linux.elf;
-    import core.sys.linux.link;
-}
-else version (OSX)
-{
-    // missing integration with rt.memory_osx.onAddImage
-    enum USE_DSO = false;
-}
-else version (FreeBSD)
-{
-    // missing elf and link headers
-    enum USE_DSO = false;
-}
-else
-{
-    static assert(0, "Unsupported platform");
-}
+module rt.sections_linux;
 
-static if (USE_DSO) // '{}' instead of ':' => Bugzilla 8898
-{
+version (linux):
 
+// debug = PRINTF;
+debug(PRINTF) import core.stdc.stdio;
+import core.stdc.stdlib : calloc, malloc, free;
+import core.sys.linux.elf;
+import core.sys.linux.link;
 import rt.minfo;
 import rt.deh2;
 import rt.util.container;
-import core.stdc.stdlib;
 
+alias DSO SectionGroup;
 struct DSO
 {
     static int opApply(scope int delegate(ref DSO) dg)
@@ -74,9 +54,9 @@ struct DSO
         return _moduleGroup;
     }
 
-    @property inout(FuncTable)[] ehtables() inout
+    @property immutable(FuncTable)[] ehTables() const
     {
-        return _ehtables[];
+        return _ehTables[];
     }
 
     @property inout(void[])[] gcRanges() inout
@@ -97,14 +77,29 @@ private:
         assert(_tlsMod || !_tlsSize);
     }
 
-    FuncTable[]     _ehtables;
-    ModuleGroup  _moduleGroup;
+    immutable(FuncTable)[] _ehTables;
+    ModuleGroup _moduleGroup;
     Array!(void[]) _gcRanges;
     size_t _tlsMod;
     size_t _tlsSize;
 }
 
+// drag in _d_dso_registry ref to support weak linkage
+private __gshared void* _dummy_ref;
+void initSections()
+{
+    _dummy_ref = &_d_dso_registry;
+}
+
+void finiSections()
+{
+}
+
 private:
+
+// start of linked list for ModuleInfo references
+deprecated extern (C) __gshared void* _Dmodule_ref;
+
 /*
  * Static DSOs loaded by the runtime linker. This includes the
  * executable. These can't be unloaded.
@@ -125,7 +120,7 @@ struct CompilerDSOData
     size_t _version;
     void** _slot; // can be used to store runtime data
     object.ModuleInfo** _minfo_beg, _minfo_end;
-    rt.deh2.FuncTable* _deh_beg, _deh_end;
+    immutable(rt.deh2.FuncTable)* _deh_beg, _deh_end;
 }
 
 T[] toRange(T)(T* beg, T* end) { return beg[0 .. end - beg]; }
@@ -144,7 +139,7 @@ extern(C) void _d_dso_registry(CompilerDSOData* data)
         *data._slot = pdso; // store backlink in library record
 
         pdso._moduleGroup = ModuleGroup(toRange(data._minfo_beg, data._minfo_end));
-        pdso._ehtables = toRange(data._deh_beg, data._deh_end);
+        pdso._ehTables = toRange(data._deh_beg, data._deh_end);
 
         dl_phdr_info info = void;
         findDSOInfoForAddr(data._slot, &info) || assert(0);
@@ -161,6 +156,8 @@ extern(C) void _d_dso_registry(CompilerDSOData* data)
         _static_dsos.popBack();
 
         *data._slot = null;
+
+        pdso._gcRanges.reset();
         .free(pdso);
     }
 }
@@ -254,6 +251,4 @@ void[] getTLSRange(size_t mod, size_t sz)
     // base offset
     auto ti = tls_index(mod, 0);
     return __tls_get_addr(&ti)[0 .. sz];
-}
-
 }
