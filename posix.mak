@@ -162,11 +162,11 @@ $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
 copy: $(COPY)
 
 $(IMPDIR)/%.di : src/%.di
-	@mkdir -p `dirname $@`
+	@mkdir -p $(dir $@)
 	cp $< $@
 
 $(IMPDIR)/%.d : src/%.d
-	@mkdir -p `dirname $@`
+	@mkdir -p $(dir $@)
 	cp $< $@
 
 ifeq (win32,$(OS))
@@ -178,7 +178,7 @@ endif
 ################### C/ASM Targets ############################
 
 $(OBJDIR)/%.$O : src/rt/%.c
-	@$(MKDIR) -p $(OBJDIR)
+	@$(MKDIR) -p $(dir $@)
 	$(CC) -c $(CFLAGS_O)$@ $<
 
 $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
@@ -222,7 +222,7 @@ $(LIBDIR)/$(DRUNTIME_BASE)_shared.dll : $(OBJS) $(SRCS) win64.mak
 
 ################### unittests #########################
 
-UT_MODULES:=$(patsubst src/%.d,$(OBJDIR)/%,$(SRCS))
+UT_MODULES:=$(patsubst src/%.d,$(OBJDIR)/%$(DOTEXE),$(SRCS))
 
 unittest : $(UT_MODULES) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo done
