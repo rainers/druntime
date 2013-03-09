@@ -1430,7 +1430,7 @@ private struct Demangle
     }
 
 
-    char[] opCall()
+    char[] doDemangle(alias FUNC)()
     {
         if( (buf.length < 4 || buf[0] != '_' || buf[1] != '_' || buf[2] != 'D' || !isDigit(buf[3])) &&
             (buf.length < 3 || buf[0] != '_' || buf[1] != 'D' || !isDigit(buf[2])) &&
@@ -1442,7 +1442,7 @@ private struct Demangle
             try
             {
                 debug(info) printf( "demangle(%.*s)\n", cast(int) buf.length, buf.ptr );
-                parseMangledName();
+                FUNC();
                 return dst[0 .. len];
             }
             catch( OverflowException e )
@@ -1472,6 +1472,16 @@ Lerror:
         dst[0 .. buf.length] = buf[];
         return dst[0 .. buf.length];
     }
+
+    char[] demangleName()
+    {
+        return doDemangle!parseMangledName();
+    }
+
+    char[] demangleType()
+    {
+        return doDemangle!parseType();
+    }
 }
 
 
@@ -1491,7 +1501,25 @@ char[] demangle( const(char)[] buf, char[] dst = null )
 {
     //return Demangle(buf, dst)();
     auto d = Demangle(buf, dst);
-    return d();
+    return d.demangleName();
+}
+
+
+/**
+ * Demangles a D mangled type.
+ *
+ * Params:
+ *  buf = The string to demangle.
+ *  dst = An optional destination buffer.
+ *
+ * Returns:
+ *  The demangled type name or the original string if the name is not a
+ *  mangled D type.
+*/
+char[] demangleType( const(char)[] buf, char[] dst = null )
+{
+    auto d = Demangle(buf, dst);
+    return d.demangleType();
 }
 
 char[] demangle( const(char)[] buf, bool addType_, char[] dst = null )
