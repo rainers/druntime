@@ -154,7 +154,7 @@ $(DOCDIR)/core_sync_%.html : src/core/sync/%.d
 import: $(IMPORTS)
 
 $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
-	@mkdir -p `dirname $@`
+	$(MKDIR) -p $(dir $@)
 	$(DMD) -m$(MODEL) -c -o- -Isrc -Iimport -Hf$@ $<
 
 ######################## Header .di file copy ##############################
@@ -162,11 +162,11 @@ $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
 copy: $(COPY)
 
 $(IMPDIR)/%.di : src/%.di
-	@mkdir -p $(dir $@)
+	$(MKDIR) -p $(dir $@)
 	cp $< $@
 
 $(IMPDIR)/%.d : src/%.d
-	@mkdir -p $(dir $@)
+	$(MKDIR) -p $(dir $@)
 	cp $< $@
 
 ifeq (win32,$(OS))
