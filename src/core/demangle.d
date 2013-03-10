@@ -1525,7 +1525,7 @@ char[] demangleType( const(char)[] buf, char[] dst = null )
 char[] demangle( const(char)[] buf, bool addType_, char[] dst = null )
 {
     auto d = Demangle(buf, addType_ ? Demangle.AddType.yes : Demangle.AddType.no, dst);
-    return d();
+    return d.demangleName();
 } 
 
 version(unittest)
