@@ -12,7 +12,7 @@
  */
 module object;
 
-private import gctemplates;
+private import gc.gctemplates;
 private
 {
     extern(C) void rt_finalize(void *ptr, bool det=true);
@@ -663,7 +663,7 @@ void __ctfeWriteln(T...)(auto ref T values) { __ctfeWrite(values, "\n"); }
 
 template RTInfo(T)
 {
-    enum RTInfo = gctemplates.RTInfoImpl!T;
+    enum RTInfo = gc.gctemplates.RTInfoImpl!T;
 }
 
 version (unittest)

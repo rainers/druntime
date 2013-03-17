@@ -101,8 +101,11 @@ COPY=\
 	\
 	$(IMPDIR)\core\sys\windows\dbghelp.d \
 	$(IMPDIR)\core\sys\windows\dll.d \
+	$(IMPDIR)\core\sys\windows\dllclient.d \
+	$(IMPDIR)\core\sys\windows\dllshared.d \
 	$(IMPDIR)\core\sys\windows\stacktrace.d \
 	$(IMPDIR)\core\sys\windows\threadaux.d \
+	$(IMPDIR)\core\sys\windows\tls.d \
 	$(IMPDIR)\core\sys\windows\windows.d \
 	\
 	$(IMPDIR)\etc\linux\memoryerror.d

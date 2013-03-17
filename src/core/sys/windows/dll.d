@@ -15,7 +15,8 @@ version( Windows )
 {
     import core.sys.windows.windows;
     import core.sys.windows.tls;
-    import core.sys.windows.dllshared;
+    version( druntime_shared )
+        import core.sys.windows.dllshared;
     import core.stdc.string;
     import core.runtime;
 
