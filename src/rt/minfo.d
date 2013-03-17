@@ -116,8 +116,6 @@ __gshared ModuleGroup _moduleGroup;
 
 int moduleinfos_apply(scope int delegate(ref ModuleInfo*) dg)
 {
-    int ret = 0;
-
     foreach (ref sg; SectionGroup)
     {
         foreach (m; sg.modules)
@@ -125,13 +123,12 @@ int moduleinfos_apply(scope int delegate(ref ModuleInfo*) dg)
             // TODO: Should null ModuleInfo be allowed?
             if (m !is null)
             {
-                ret = dg(m);
-                if (ret)
-                    break;
+                if (auto res = dg(m))
+                    return res;
             }
         }
     }
-    return ret;
+    return 0;
 }
 
 /********************************************
@@ -508,4 +505,10 @@ unittest
     m1 = mockMI(MIstandalone | MIctor, &m2);
     m2 = mockMI(MIstandalone | MIctor, &m0);
     checkExp([&m1, &m2, &m0], []);
+}
+
+version (Win64)
+{
+    // Dummy so Win32 code can still call it
+    extern(C) void _minit() { }
 }

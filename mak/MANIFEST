@@ -16,6 +16,9 @@ MANIFEST=\
 	src\gctemplates.di \
 	src\rumptraits.di \
 	\
+	src\test_runner.d \
+	src\unittest.d \
+	\
 	src\core\atomic.d \
 	src\core\bitop.d \
 	src\core\cpuid.d \
@@ -120,6 +123,7 @@ MANIFEST=\
 	src\core\sys\posix\sys\ioctl.d \
 	src\core\sys\posix\sys\ipc.d \
 	src\core\sys\posix\sys\mman.d \
+	src\core\sys\posix\sys\resource.d \
 	src\core\sys\posix\sys\select.d \
 	src\core\sys\posix\sys\shm.d \
 	src\core\sys\posix\sys\socket.d \
@@ -171,7 +175,6 @@ MANIFEST=\
 	src\rt\dylib_fixes.c \
 	src\rt\image.d \
 	src\rt\invariant.d \
-	src\rt\invariant_.d \
 	src\rt\lifetime.d \
 	src\rt\llmath.d \
 	src\rt\memory.d \

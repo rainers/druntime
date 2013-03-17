@@ -2476,7 +2476,7 @@ version(unittest) unittest
 
 void destroy(T : U[n], U, size_t n)(ref T obj)
 {
-    obj = T.init;
+    obj[] = U.init;
 }
 
 version(unittest) unittest

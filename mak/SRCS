@@ -41,6 +41,7 @@ SRCS=\
 	\
 	src\core\sys\posix\signal.d \
 	src\core\sys\posix\dirent.d \
+	src\core\sys\posix\sys\resource.d \
 	src\core\sys\posix\sys\select.d \
 	src\core\sys\posix\sys\socket.d \
 	src\core\sys\posix\sys\stat.d \
@@ -86,7 +87,6 @@ SRCS=\
 	src\rt\deh2.d \
 	src\rt\dmain2.d \
 	src\rt\invariant.d \
-	src\rt\invariant_.d \
 	src\rt\lifetime.d \
 	src\rt\llmath.d \
 	src\rt\memory.d \

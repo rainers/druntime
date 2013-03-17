@@ -47,7 +47,21 @@ DOCDIR=doc
 IMPDIR=import
 
 MODEL=32
-override PIC:=$(if $(PIC),-fPIC,)
+# default to SHARED on some platforms
+ifeq (linux,$(OS))
+	ifeq (64,$(MODEL))
+		SHARED:=1
+	endif
+endif
+override PIC:=$(if $(or $(PIC), $(SHARED)),-fPIC,)
+
+ifeq (osx,$(OS))
+	DOTDLL:=.dylib
+	DOTLIB:=.a
+else
+	DOTDLL:=.so
+	DOTLIB:=.a
+endif
 
 DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
 UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
@@ -236,6 +250,28 @@ endif
 $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 	@echo $@ - disabled
 
+ifeq (,$(SHARED))
+
+$(OBJDIR)/test_runner: $(OBJS) $(SRCS) src/test_runner.d
+	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ src/test_runner.d $(SRCS) $(OBJS) -debuglib= -defaultlib=
+
+else
+
+UT_DRUNTIME:=$(OBJDIR)/lib$(DRUNTIME_BASE)-ut$(DOTDLL)
+
+$(UT_DRUNTIME): $(OBJS) $(SRCS)
+	$(DMD) $(UDFLAGS) -shared -version=druntime_unittest -unittest -of$@ $(SRCS) $(OBJS) -debuglib= -defaultlib=
+
+$(OBJDIR)/test_runner: $(UT_DRUNTIME) src/test_runner.d
+	$(DMD) $(UDFLAGS) -of$@ src/test_runner.d -L-L$(OBJDIR) -L-rpath=$(OBJDIR) -debuglib=$(DRUNTIME_BASE)-ut -defaultlib=$(DRUNTIME_BASE)-ut
+
+endif
+
+# macro that returns the module name given the src path
+moduleName=$(subst rt.invariant,invariant,$(subst object_,object,$(subst /,.,$(1))))
+
+$(OBJDIR)/% : $(OBJDIR)/test_runner
+	@mkdir -p $(dir $@)
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 ifeq (win32,$(OS))
 	@if $(GREP) -q unittest $< ; then \
@@ -264,7 +300,7 @@ else
 # make the file very old so it builds and runs again if it fails
 	@touch -t 197001230123 $@
 # run unittest in its own directory
-	$(QUIET)$(RUN) $@
+	$(QUIET)$(RUN) $(OBJDIR)/test_runner $(call moduleName,$*)
 # succeeded, render the file new again
 	@touch $@
 endif	

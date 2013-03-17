@@ -39,12 +39,16 @@ version (Windows)
     }
 }
 
+void _d_criticalInit()
+{
+    _STI_monitor_staticctor();
+    _STI_critical_init();
+}
+
 alias void delegate(Throwable) ExceptionHandler;
 
 extern (C) bool rt_init(ExceptionHandler dg = null)
 {
-    version (OSX)
-        _d_osx_image_init2();
     _d_criticalInit();
 
     try
@@ -66,12 +70,6 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
     }
     _d_criticalTerm();
     return false;
-}
-
-void _d_criticalInit()
-{
-	_STI_monitor_staticctor();
-	_STI_critical_init();
 }
 
 void _d_criticalTerm()
@@ -136,8 +134,7 @@ extern (C) void* rt_loadLibrary(in char[] name)
         scope (exit)
             free(buf);
 
-        len = MultiByteToWideChar(
-								  CP_UTF8, 0, name.ptr, cast(int)name.length, buf, len);
+        len = MultiByteToWideChar(CP_UTF8, 0, name.ptr, cast(int)name.length, buf, len);
         if (len == 0)
             return null;
 

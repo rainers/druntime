@@ -266,9 +266,14 @@ private:
         alias extern(C) void function() externCVoidFunc;
         static void impersonate_thread( uint id, externCVoidFunc fn )
         {
+            impersonate_thread(id, () => fn());
+        }
+
+        static void impersonate_thread( uint id, scope void delegate() dg)
+        {
             if( id == GetCurrentThreadId() )
             {
-                fn();
+                dg();
                 return;
             }
 
@@ -283,7 +288,7 @@ private:
                 return;
 
             curteb[11] = tlsarray;
-            fn();
+            dg();
             curteb[11] = curtlsarray;
         }
     }
