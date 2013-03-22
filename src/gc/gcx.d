@@ -3234,11 +3234,13 @@ struct Gcx
             {
                 biti = (offset & notbinsize[bins]) >> pool.shiftBy;
             }
-            else
+            else if(bins == B_PAGEPLUS)
             {
                 pn -= pool.bPageOffsets[pn];
                 biti = pn * (PAGESIZE >> pool.shiftBy);
             }
+            else
+                return IsMarked.no; // free or uncommitted
             return pool.mark.test(biti) ? IsMarked.yes : IsMarked.no;
         }
         return IsMarked.unknown;
