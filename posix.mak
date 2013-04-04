@@ -140,7 +140,7 @@ else
     SRC_D_MODULES += $(SRC_D_MODULES_POSIX)
     DOTEXE =
     O = o
-    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o $(OBJDIR)/complex.o
+    OBJS= $(OBJDIR)/errno_c.o $(OBJDIR)/threadasm.o
 endif
 
 ######################## All of'em ##############################
