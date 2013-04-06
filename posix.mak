@@ -129,7 +129,7 @@ ifeq (win32,$(OS))
     SRC_D_MODULES += $(SRC_D_MODULES_WIN) $(SRC_D_MODULES_WIN$(MODEL))
     O = obj
     DOTEXE = .exe
-    OBJS = $(OBJDIR)/errno_c.obj $(OBJDIR)/complex.obj
+    OBJS = $(OBJDIR)/errno_c.obj
     ifeq ($(MODEL),32)
 	    OBJS += src\rt\minit.obj
 	endif
