@@ -102,6 +102,8 @@ else
 	DRUNTIME=$(LIBDIR)/lib$(DRUNTIME_BASE).a
 endif
 DRUNTIMESO=lib/lib$(DRUNTIME_BASE).so
+DRUNTIMESOOBJ=lib/lib$(DRUNTIME_BASE)so.o
+DRUNTIMESOLIB=lib/lib$(DRUNTIME_BASE)so.a
 
 DOCFMT=-version=CoreDdoc
 
@@ -145,7 +147,11 @@ endif
 
 ######################## All of'em ##############################
 
+ifeq (linux,$(OS))
+target : import copy dll $(DRUNTIME) doc
+else
 target : import copy $(DRUNTIME) doc
+endif
 
 ######################## Doc .html file generation ##############################
 
@@ -212,10 +218,14 @@ src\rt\minit_coff.obj : src\rt\minit.asm
 ######################## Create a shared library ##############################
 
 dll: override PIC:=-fPIC
-dll: $(DRUNTIMESO)
+dll: $(DRUNTIMESOLIB)
 
 $(DRUNTIMESO): $(OBJS) $(SRCS)
-	$(DMD) -shared -debuglib= -defaultlib= -of$(DRUNTIMESO) -Xfdruntime.json $(DFLAGS) $(SRCS) $(OBJS)
+	$(DMD) -shared -debuglib= -defaultlib= -of$(DRUNTIMESO) $(DFLAGS) $(SRCS) $(OBJS)
+
+$(DRUNTIMESOLIB): $(OBJS) $(SRCS)
+	$(DMD) -c -fPIC -of$(DRUNTIMESOOBJ) $(DFLAGS) $(SRCS)
+	$(DMD) -lib -of$(DRUNTIMESOLIB) $(DRUNTIMESOOBJ) $(OBJS)
 
 ################### Library generation #########################
 
