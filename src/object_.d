@@ -318,10 +318,6 @@ class TypeInfo
     /// Return the unqualified type (stripping const,immutable,shared)
     @property const(TypeInfo) unqual() nothrow pure const @safe { return this; }
 
-    /// Return the unqualified value element of dynamic/static arrays
-    @property const(TypeInfo) darray_value() nothrow pure const { return this; }
-    @property const(TypeInfo) sarray_value() nothrow pure const { return this; }
-
 	/// Return the type info of a class, null for everything else (used for fast dynamic cast)
     @property const(TypeInfo_Class) info() @safe nothrow pure const { return null; }
 }
@@ -504,7 +500,6 @@ class TypeInfo_Array : TypeInfo
 
     override @property immutable(void)* rtInfo() nothrow pure const @safe { return RTInfo!(void[]); }
 
-    override @property const(TypeInfo) darray_value() nothrow pure const { return next(); }
 }
 
 class TypeInfo_StaticArray : TypeInfo
@@ -625,7 +620,6 @@ class TypeInfo_StaticArray : TypeInfo
         return 0;
     }
 
-    override @property const(TypeInfo) sarray_value() nothrow pure const { return value.unqual().sarray_value(); }
 }
 
 class TypeInfo_AssociativeArray : TypeInfo
@@ -1222,7 +1216,6 @@ class TypeInfo_Const : TypeInfo
         return base.argTypes(arg1, arg2);
     }
 
-    override @property const(TypeInfo) unqual() nothrow pure const @safe { return base.unqual(); }
 
     TypeInfo base;
 }

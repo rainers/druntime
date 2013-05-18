@@ -64,6 +64,7 @@ SRCS=\
 	src\gc\gcbits.d \
 	src\gc\gcstats.d \
 	src\gc\gcx.d \
+	src\gc\gctemplates.d \
 	\
 	src\rt\aApply.d \
 	src\rt\aApplyR.d \

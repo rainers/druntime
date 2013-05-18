@@ -48,6 +48,7 @@ private
         extern (C) size_t  function(void*, size_t, size_t, const TypeInfo) gc_extend;
         extern (C) size_t  function(size_t) gc_reserve;
         extern (C) void    function(void*) gc_free;
+        extern (C) bool    function(void*, size_t, const TypeInfo) gc_emplace;
 
         extern (C) void*   function(void*) gc_addrOf;
         extern (C) size_t  function(void*) gc_sizeOf;
@@ -82,6 +83,7 @@ private
         pthis.gc_extend = &gc_extend;
         pthis.gc_reserve = &gc_reserve;
         pthis.gc_free = &gc_free;
+        pthis.gc_emplace = &gc_emplace;
 
         pthis.gc_addrOf = &gc_addrOf;
         pthis.gc_sizeOf = &gc_sizeOf;
@@ -188,40 +190,40 @@ extern (C) uint gc_clrAttr( void* p, uint a )
     return proxy.gc_clrAttr( p, a );
 }
 
-extern (C) void* gc_malloc( size_t sz, uint ba = 0, const TypeInfo ti=null)
+extern (C) void* gc_malloc( size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
-        return _gc.malloc( sz, ba, null, ti);
-    return proxy.gc_malloc( sz, ba, ti);
+        return _gc.malloc( sz, ba, null, ti );
+    return proxy.gc_malloc( sz, ba, ti );
 }
 
-extern (C) BlkInfo gc_qalloc( size_t sz, uint ba = 0, const TypeInfo ti=null)
+extern (C) BlkInfo gc_qalloc( size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
     {
         BlkInfo retval;
-        retval.base = _gc.malloc( sz, ba, &retval.size, ti);
+        retval.base = _gc.malloc( sz, ba, &retval.size, ti );
         retval.attr = ba;
         return retval;
     }
     return proxy.gc_qalloc( sz, ba, ti );
 }
 
-extern (C) void* gc_calloc( size_t sz, uint ba = 0, const TypeInfo ti=null)
+extern (C) void* gc_calloc( size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
         return _gc.calloc( sz, ba, null, ti );
-    return proxy.gc_calloc( sz, ba, ti);
+    return proxy.gc_calloc( sz, ba, ti );
 }
 
-extern (C) void* gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo ti=null)
+extern (C) void* gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
-        return _gc.realloc( p, sz, ba, null, ti);
-    return proxy.gc_realloc( p, sz, ba, ti);
+        return _gc.realloc( p, sz, ba, null, ti );
+    return proxy.gc_realloc( p, sz, ba, ti );
 }
 
-extern (C) size_t gc_extend( void* p, size_t mx, size_t sz, const TypeInfo ti=null )
+extern (C) size_t gc_extend( void* p, size_t mx, size_t sz, const TypeInfo ti = null )
 {
     if( proxy is null )
         return _gc.extend( p, mx, sz, ti );
@@ -240,6 +242,13 @@ extern (C) void gc_free( void* p )
     if( proxy is null )
         return _gc.free( p );
     return proxy.gc_free( p );
+}
+
+extern (C) bool gc_emplace( void* p, size_t len, const TypeInfo ti )
+{
+    if( proxy is null )
+        return _gc.emplace( p, len, ti );
+    return proxy.gc_emplace( p, len, ti );
 }
 
 extern (C) void* gc_addrOf( void* p )

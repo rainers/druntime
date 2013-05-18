@@ -13,9 +13,6 @@ MANIFEST=\
 	\
 	src\object_.d \
 	src\object.di \
-	src\gctemplates.di \
-	src\rumptraits.di \
-	\
 	src\test_runner.d \
 	src\unittest.d \
 	\

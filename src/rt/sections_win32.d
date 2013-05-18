@@ -66,16 +66,23 @@ private:
 extern(C) void[] _hparea();
 extern(C) void[] _tlshparea();
 
+// version = conservative_roots;
+
 void initSections()
 {
     _sections._moduleGroup = ModuleGroup(getModuleInfos());
 
-    auto pbeg = cast(void*)&_xi_a;
-    auto pend = cast(void*)&_end;
-    _sections._gcRanges[0] = pbeg[0 .. pend - pbeg];
-
-    _sections._gcRanges_hp[0] = _hparea();
-    _sections._gcRanges_hptls[0] = _tlshparea();
+    version(conservative_roots)
+    {
+        auto pbeg = cast(void*)&_xi_a;
+        auto pend = cast(void*)&_end;
+        _sections._gcRanges[0] = pbeg[0 .. pend - pbeg];
+    }
+    else
+    {
+        _sections._gcRanges_hp[0] = _hparea();
+        _sections._gcRanges_hptls[0] = _tlshparea();
+    }
 }
 
 void finiSections()
