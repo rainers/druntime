@@ -46,7 +46,10 @@ GREP=grep
 DOCDIR=doc
 IMPDIR=import
 
-MODEL=32
+MODEL:=default
+ifneq (default,$(MODEL))
+	MODEL_FLAG:=-m$(MODEL)
+endif
 override PIC:=$(if $(PIC),-fPIC,)
 
 ifeq (osx,$(OS))
@@ -57,11 +60,12 @@ else
 	DOTLIB:=.a
 endif
 
-DFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
-UDFLAGS=-m$(MODEL) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
+DFLAGS=$(MODEL_FLAG) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
+UDFLAGS=$(MODEL_FLAG) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
 DMDDEP = # $(shell which $(DMD))
-DDOCFLAGS=-m$(MODEL) -c -w -o- -Isrc -Iimport
+DDOCFLAGS=$(MODEL_FLAG) -c -w -o- -Isrc -Iimport
 
+CFLAGS=$(MODEL_FLAG) -O $(PIC)
 ifeq ($(BUILD),debug)
 	OPTFLAGS=-g
 	CFLAGS += -g
@@ -99,7 +103,7 @@ DRUNTIMESO=lib/lib$(DRUNTIME_BASE).so
 DRUNTIMESOOBJ=lib/lib$(DRUNTIME_BASE)so.o
 DRUNTIMESOLIB=lib/lib$(DRUNTIME_BASE)so.a
 
-DOCFMT=-version=CoreDdoc
+DOCFMT=
 
 include mak/COPY
 COPY:=$(subst \,/,$(COPY))
@@ -169,7 +173,7 @@ import: $(IMPORTS)
 
 $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
 	@$(MKDIR) -p $(dir $@).
-	$(DMD) -m$(MODEL) -c -o- -Isrc -Iimport -Hf$@ $<
+	$(DMD) $(MODEL_FLAG) -c -o- -Isrc -Iimport -Hf$@ $<
 
 ######################## Header .di file copy ##############################
 
