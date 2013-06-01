@@ -102,6 +102,7 @@ private
     extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz, const TypeInfo = null ) pure nothrow;
     extern (C) size_t   gc_reserve( size_t sz ) nothrow;
     extern (C) void     gc_free( void* p ) pure nothrow;
+    extern (C) bool     gc_emplace( void *p, size_t len, const TypeInfo ti );
 
     extern (C) void*   gc_addrOf( void* p ) pure nothrow;
     extern (C) size_t  gc_sizeOf( void* p ) pure nothrow;
@@ -596,6 +597,22 @@ struct GC
     static BlkInfo query(void* p) pure nothrow
     {
         return gc_query( p );
+    }
+
+    /**
+    * Describe the memory at the given address range for precise collection
+    *
+    * Params:
+    *  p = A pointer to the root or the interior of a valid memory block
+    *  len = Length of the memory range
+    *  ti = Type info describing the memory usage
+    *
+    * Returns:
+    *  true if p points to GC managed memory
+    */
+    static bool emplace( void *p, size_t len, const TypeInfo ti )
+    {
+        return gc_emplace( p, len, ti );
     }
 
 
