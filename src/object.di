@@ -433,7 +433,7 @@ private:
         Slot*[4] binit;
     }
 
-    void* p; // really Hashtable*
+    Hashtable* p;
 
     struct Range
     {
@@ -441,11 +441,10 @@ private:
         Slot*[] slots;
         Slot* current;
 
-        this(void * aa)
+        this(Hashtable* aa)
         {
-            if (!aa) return;
-            auto pImpl = cast(Hashtable*) aa;
-            slots = pImpl.b;
+            if (aa is null) return;
+            slots = aa.b;
             nextSlot();
         }
 
@@ -490,7 +489,7 @@ public:
 
     Value[Key] rehash() @property
     {
-        auto p = _aaRehash(&p, typeid(Value[Key]));
+        auto p = _aaRehash(cast(void**) &p, typeid(Value[Key]));
         return *cast(Value[Key]*)(&p);
     }
 
@@ -539,7 +538,7 @@ public:
         {
             Range state;
 
-            this(void* p)
+            this(Hashtable* p)
             {
                 state = Range(p);
             }
@@ -561,7 +560,7 @@ public:
         {
             Range state;
 
-            this(void* p)
+            this(Hashtable* p)
             {
                 state = Range(p);
             }
