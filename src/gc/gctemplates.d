@@ -210,6 +210,6 @@ void gctemplates_setbit()(size_t* a, size_t offset)
     version(RTInfoPRINTF) 
         if(offset % bytesPerPtr)
             pragma(msg, "unaligned pointer offset"); // make this an error?
-    a[ptroff/ptrPerBitmapWord] |= 1 << (ptroff % ptrPerBitmapWord);
+    a[ptroff/ptrPerBitmapWord] |= cast(size_t)1 << (ptroff % ptrPerBitmapWord);
 }
 
