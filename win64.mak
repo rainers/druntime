@@ -479,6 +479,7 @@ lib\$(DRUNTIME_BASE).dll : $(OBJS) $(SRCS) win64.mak
 
 unittest : $(SRCS) $(DRUNTIME) src\unittest.d
 	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest src\unittest.d $(SRCS) $(DRUNTIME) -debuglib=$(DRUNTIME) -defaultlib=$(DRUNTIME) user32.lib
+	unittest
 
 ################### install/cleanup #########################
 

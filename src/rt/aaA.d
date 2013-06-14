@@ -20,28 +20,13 @@ private
     import core.stdc.stdio;
     import core.memory;
 
-    enum BlkAttr : uint
-    {
-        FINALIZE    = 0b0000_0001,
-        NO_SCAN     = 0b0000_0010,
-        NO_MOVE     = 0b0000_0100,
-        APPENDABLE  = 0b0000_1000,
-        NO_INTERIOR = 0b0001_0000,
-        ALL_BITS    = 0b1111_1111
-    }
-
-    extern (C) void* gc_malloc( size_t sz, uint ba = 0, const TypeInfo ti=null );
-    extern (C) void  gc_free( void* p );
-
     // Convenience function to make sure the NO_INTERIOR gets set on the
-    // aaA arrays.
-    aaA*[] newaaA(size_t len)
+    // bucket array.
+    Entry*[] newBuckets(size_t len)
     {
-        auto ptr = cast(aaA**) gc_malloc(
-            len * (aaA*).sizeof, BlkAttr.NO_INTERIOR);
-        auto ret = ptr[0..len];
-        ret[] = null;
-        return ret;
+        auto ptr = cast(Entry**) GC.calloc(
+            len * (Entry*).sizeof, GC.BlkAttr.NO_INTERIOR);
+        return ptr[0..len];
     }
 }
 
@@ -72,20 +57,20 @@ struct Array
     void* ptr;
 }
 
-struct aaA
+struct Entry
 {
-    aaA *next;
+    Entry *next;
     size_t hash;
     /* key   */
     /* value */
 }
 
-struct BB
+struct Impl
 {
-    aaA*[] b;
-    size_t nodes;       // total number of aaA nodes
+    Entry*[] buckets;
+    size_t nodes;       // total number of entries
     TypeInfo keyti;     // TODO: replace this with TypeInfo_AssociativeArray when available in _aaGet()
-    aaA*[4] binit;      // initial value of b[]
+    Entry*[4] binit;    // initial value of buckets[]
 }
 
 /* This is the type actually seen by the programmer, although
@@ -94,7 +79,7 @@ struct BB
 
 struct AA
 {
-    BB* a;
+    Impl* impl;
 }
 
 /**********************************
@@ -121,7 +106,7 @@ extern (C):
  */
 
 /+
-void _aaInvAh(aaA*[] aa)
+void _aaInvAh(Entry*[] aa)
 {
     for (size_t i = 0; i < aa.length; i++)
     {
@@ -130,7 +115,7 @@ void _aaInvAh(aaA*[] aa)
     }
 }
 
-private int _aaCmpAh_x(aaA *e1, aaA *e2)
+private int _aaCmpAh_x(Entry *e1, Entry *e2)
 {   int c;
 
     c = e1.hash - e2.hash;
@@ -143,11 +128,11 @@ private int _aaCmpAh_x(aaA *e1, aaA *e2)
     return c;
 }
 
-private void _aaInvAh_x(aaA *e)
+private void _aaInvAh_x(Entry *e)
 {
     size_t key_hash;
-    aaA *e1;
-    aaA *e2;
+    Entry *e1;
+    Entry *e2;
 
     key_hash = getHash(e.key);
     assert(key_hash == e.hash);
@@ -198,9 +183,9 @@ out (result)
 {
     size_t len = 0;
 
-    if (aa.a)
+    if (aa.impl)
     {
-        foreach (e; aa.a.b)
+        foreach (e; aa.impl.buckets)
         {
             while (e)
             {   len++;
@@ -214,7 +199,7 @@ out (result)
 }
 body
 {
-    return aa.a ? aa.a.nodes : 0;
+    return aa.impl ? aa.impl.nodes : 0;
 }
 
 
@@ -237,30 +222,30 @@ in
 out (result)
 {
     assert(result);
-    assert(aa.a);
-    assert(aa.a.b.length);
+    assert(aa.impl !is null);
+    assert(aa.impl.buckets.length);
     //assert(_aaInAh(*aa.a, key));
 }
 body
 {
     size_t i;
-    aaA *e;
+    Entry *e;
     //printf("keyti = %p\n", keyti);
     //printf("aa = %p\n", aa);
     immutable keytitsize = keyti.tsize;
 
-    if (!aa.a)
-    {   aa.a = new BB();
-        aa.a.b = aa.a.binit[];
+    if (aa.impl is null)
+    {   aa.impl = new Impl();
+        aa.impl.buckets = aa.impl.binit[];
     }
     //printf("aa = %p\n", aa);
     //printf("aa.a = %p\n", aa.a);
-    aa.a.keyti = keyti;
+    aa.impl.keyti = keyti;
 
     auto key_hash = keyti.getHash(pkey);
     //printf("hash = %d\n", key_hash);
-    i = key_hash % aa.a.b.length;
-    auto pe = &aa.a.b[i];
+    i = key_hash % aa.impl.buckets.length;
+    auto pe = &aa.impl.buckets[i];
     while ((e = *pe) !is null)
     {
         if (key_hash == e.hash)
@@ -274,18 +259,20 @@ body
 
     // Not found, create new elem
     //printf("create new one\n");
-    size_t size = aaA.sizeof + aligntsize(keytitsize) + valuesize;
-    e = cast(aaA *) gc_malloc(size, 0, typeid(aaA)); // TODO: combined TypeInfo needed
+    size_t size = Entry.sizeof + aligntsize(keytitsize) + valuesize;
+    e = cast(Entry *) GC.malloc(size, 0, typeid(Entry));
     e.next = null;
     e.hash = key_hash;
     ubyte* ptail = cast(ubyte*)(e + 1);
+    GC.emplace(ptail, keyti);
     memcpy(ptail, pkey, keytitsize);
     memset(ptail + aligntsize(keytitsize), 0, valuesize); // zero value
+    // TODO: GC.emplace(ptail, valueti);
     *pe = e;
 
-    auto nodes = ++aa.a.nodes;
-    //printf("length = %d, nodes = %d\n", aa.a.b.length, nodes);
-    if (nodes > aa.a.b.length * 4)
+    auto nodes = ++aa.impl.nodes;
+    //printf("length = %d, nodes = %d\n", aa.a.buckets.length, nodes);
+    if (nodes > aa.impl.buckets.length * 4)
     {
         //printf("rehash\n");
         _aaRehash(aa,keyti);
@@ -309,18 +296,18 @@ void* _aaGetRvalue(AA aa, TypeInfo keyti, size_t valuesize, ...)
 void* _aaGetRvalueX(AA aa, TypeInfo keyti, size_t valuesize, void* pkey)
 {
     //printf("_aaGetRvalue(valuesize = %u)\n", valuesize);
-    if (!aa.a)
+    if (aa.impl is null)
         return null;
 
     auto keysize = aligntsize(keyti.tsize);
-    auto len = aa.a.b.length;
+    auto len = aa.impl.buckets.length;
 
     if (len)
     {
         auto key_hash = keyti.getHash(pkey);
         //printf("hash = %d\n", key_hash);
         size_t i = key_hash % len;
-        auto e = aa.a.b[i];
+        auto e = aa.impl.buckets[i];
         while (e !is null)
         {
             if (key_hash == e.hash)
@@ -358,17 +345,17 @@ out (result)
 }
 body
 {
-    if (aa.a)
+    if (aa.impl)
     {
         //printf("_aaIn(), .length = %d, .ptr = %x\n", aa.a.length, cast(uint)aa.a.ptr);
-        auto len = aa.a.b.length;
+        auto len = aa.impl.buckets.length;
 
         if (len)
         {
             auto key_hash = keyti.getHash(pkey);
             //printf("hash = %d\n", key_hash);
             const i = key_hash % len;
-            auto e = aa.a.b[i];
+            auto e = aa.impl.buckets[i];
             while (e !is null)
             {
                 if (key_hash == e.hash)
@@ -398,14 +385,14 @@ bool _aaDel(AA aa, TypeInfo keyti, ...)
 
 bool _aaDelX(AA aa, TypeInfo keyti, void* pkey)
 {
-    aaA *e;
+    Entry *e;
 
-    if (aa.a && aa.a.b.length)
+    if (aa.impl && aa.impl.buckets.length)
     {
         auto key_hash = keyti.getHash(pkey);
         //printf("hash = %d\n", key_hash);
-        size_t i = key_hash % aa.a.b.length;
-        auto pe = &aa.a.b[i];
+        size_t i = key_hash % aa.impl.buckets.length;
+        auto pe = &aa.impl.buckets[i];
         while ((e = *pe) !is null) // null means not found
         {
             if (key_hash == e.hash)
@@ -414,8 +401,8 @@ bool _aaDelX(AA aa, TypeInfo keyti, void* pkey)
                 if (c == 0)
                 {
                     *pe = e.next;
-                    aa.a.nodes--;
-                    gc_free(e);
+                    aa.impl.nodes--;
+                    GC.free(e);
                     return true;
                 }
             }
@@ -437,18 +424,18 @@ ArrayRet_t _aaValues(AA aa, size_t keysize, size_t valuesize)
 
     auto alignsize = aligntsize(keysize);
 
-    if (aa.a)
+    if (aa.impl !is null)
     {
         a.length = _aaLen(aa);
-        a.ptr = cast(byte*) gc_malloc(a.length * valuesize,
-                                      valuesize < (void*).sizeof ? BlkAttr.NO_SCAN : 0, typeid(a));
+        a.ptr = cast(byte*) GC.malloc(a.length * valuesize,
+                                      valuesize < (void*).sizeof ? GC.BlkAttr.NO_SCAN : 0, typeid(a));
         resi = 0;
-        foreach (e; aa.a.b)
+        foreach (e; aa.impl.buckets)
         {
             while (e)
             {
                 memcpy(a.ptr + resi * valuesize,
-                       cast(byte*)e + aaA.sizeof + alignsize,
+                       cast(byte*)e + Entry.sizeof + alignsize,
                        valuesize);
                 resi++;
                 e = e.next;
@@ -476,10 +463,10 @@ out (result)
 body
 {
     //printf("Rehash\n");
-    if (paa.a)
+    if (paa.impl !is null)
     {
-        BB newb;
-        auto aa = paa.a;
+        Impl newImpl;
+        Impl* oldImpl = paa.impl;
         auto len = _aaLen(*paa);
         if (len)
         {   size_t i;
@@ -490,30 +477,30 @@ body
                     break;
             }
             len = prime_list[i];
-            newb.b = newaaA(len);
+            newImpl.buckets = newBuckets(len);
 
-            foreach (e; aa.b)
+            foreach (e; oldImpl.buckets)
             {
                 while (e)
                 {   auto enext = e.next;
                     const j = e.hash % len;
-                    e.next = newb.b[j];
-                    newb.b[j] = e;
+                    e.next = newImpl.buckets[j];
+                    newImpl.buckets[j] = e;
                     e = enext;
                 }
             }
-            if (aa.b.ptr == aa.binit.ptr)
-                aa.binit[] = null;
+            if (oldImpl.buckets.ptr == oldImpl.binit.ptr)
+                oldImpl.binit[] = null;
             else
-                GC.free(aa.b.ptr);
+                GC.free(oldImpl.buckets.ptr);
 
-            newb.nodes = aa.nodes;
-            newb.keyti = aa.keyti;
+            newImpl.nodes = oldImpl.nodes;
+            newImpl.keyti = oldImpl.keyti;
         }
 
-        *paa.a = newb;
+        *paa.impl = newImpl;
     }
-    return (*paa).a;
+    return (*paa).impl;
 }
 
 /********************************************
@@ -525,10 +512,12 @@ ArrayRet_t _aaKeys(AA aa, size_t keysize)
     auto len = _aaLen(aa);
     if (!len)
         return null;
-    auto res = (cast(byte*) gc_malloc(len * keysize,
-                                 !(aa.a.keyti.flags & 1) ? BlkAttr.NO_SCAN : 0))[0 .. len * keysize];
+
+    immutable blkAttr = !(aa.impl.keyti.flags & 1) ? GC.BlkAttr.NO_SCAN : 0;
+    auto res = (cast(byte*) GC.malloc(len * keysize, blkAttr))[0 .. len * keysize];
+
     size_t resi = 0;
-    foreach (e; aa.a.b)
+    foreach (e; aa.impl.buckets)
     {
         while (e)
         {
@@ -599,15 +588,15 @@ extern (D) alias int delegate(void *) dg_t;
 
 int _aaApply(AA aa, size_t keysize, dg_t dg)
 {
-    if (!aa.a)
+    if (aa.impl is null)
     {
         return 0;
     }
 
     immutable alignsize = aligntsize(keysize);
-    //printf("_aaApply(aa = x%llx, keysize = %d, dg = x%llx)\n", aa.a, keysize, dg);
+    //printf("_aaApply(aa = x%llx, keysize = %d, dg = x%llx)\n", aa.impl, keysize, dg);
 
-    foreach (e; aa.a.b)
+    foreach (e; aa.impl.buckets)
     {
         while (e)
         {
@@ -625,16 +614,16 @@ extern (D) alias int delegate(void *, void *) dg2_t;
 
 int _aaApply2(AA aa, size_t keysize, dg2_t dg)
 {
-    if (!aa.a)
+    if (aa.impl is null)
     {
         return 0;
     }
 
-    //printf("_aaApply(aa = x%llx, keysize = %d, dg = x%llx)\n", aa.a, keysize, dg);
+    //printf("_aaApply(aa = x%llx, keysize = %d, dg = x%llx)\n", aa.impl, keysize, dg);
 
     immutable alignsize = aligntsize(keysize);
 
-    foreach (e; aa.a.b)
+    foreach (e; aa.impl.buckets)
     {
         while (e)
         {
@@ -655,12 +644,12 @@ int _aaApply2(AA aa, size_t keysize, dg2_t dg)
  */
 
 extern (C)
-BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
+Impl* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
 {
     auto valuesize = ti.next.tsize;             // value size
     auto keyti = ti.key;
     auto keysize = keyti.tsize;                 // key size
-    BB* result;
+    Impl* result;
 
     //printf("_d_assocarrayliteralT(keysize = %d, valuesize = %d, length = %d)\n", keysize, valuesize, length);
     //printf("tivalue = %.*s\n", ti.next.classinfo.name);
@@ -677,7 +666,7 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
         else
             va_start(q, length);
 
-        result = new BB();
+        result = new Impl();
         result.keyti = keyti;
         size_t i;
 
@@ -687,7 +676,7 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
                 break;
         }
         auto len = prime_list[i];
-        result.b = newaaA(len);
+        result.buckets = newBuckets(len);
 
         size_t keystacksize   = (keysize   + int.sizeof - 1) & ~(int.sizeof - 1);
         size_t valuestacksize = (valuesize + int.sizeof - 1) & ~(int.sizeof - 1);
@@ -699,12 +688,12 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
             q += keystacksize;
             void* pvalue = q;
             q += valuestacksize;
-            aaA* e;
+            Entry* e;
 
             auto key_hash = keyti.getHash(pkey);
             //printf("hash = %d\n", key_hash);
             i = key_hash % len;
-            auto pe = &result.b[i];
+            auto pe = &result.buckets[i];
             while (1)
             {
                 e = *pe;
@@ -712,7 +701,7 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(aaA *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(aaA)); // TODO: provide full type info
+                    e = cast(Entry *) GC.malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(Entry)); // TODO: provide full type info
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
@@ -737,13 +726,13 @@ BB* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
 }
 
 extern (C)
-BB* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] values)
+Impl* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] values)
 {
     auto valuesize = ti.next.tsize;             // value size
     auto keyti = ti.key;
     auto keysize = keyti.tsize;                 // key size
     auto length = keys.length;
-    BB* result;
+    Impl* result;
 
     //printf("_d_assocarrayliteralT(keysize = %d, valuesize = %d, length = %d)\n", keysize, valuesize, length);
     //printf("tivalue = %.*s\n", ti.next.classinfo.name);
@@ -753,7 +742,7 @@ BB* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] val
     }
     else
     {
-        result = new BB();
+        result = new Impl();
         result.keyti = keyti;
 
         size_t i;
@@ -763,19 +752,19 @@ BB* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] val
                 break;
         }
         auto len = prime_list[i];
-        result.b = newaaA(len);
+        result.buckets = newBuckets(len);
 
         size_t keytsize = aligntsize(keysize);
 
         for (size_t j = 0; j < length; j++)
         {   auto pkey = keys.ptr + j * keysize;
             auto pvalue = values.ptr + j * valuesize;
-            aaA* e;
+            Entry* e;
 
             auto key_hash = keyti.getHash(pkey);
             //printf("hash = %d\n", key_hash);
             i = key_hash % len;
-            auto pe = &result.b[i];
+            auto pe = &result.buckets[i];
             while (1)
             {
                 e = *pe;
@@ -783,7 +772,7 @@ BB* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] val
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(aaA *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(aaA)); // TODO: provide full type info
+                    e = cast(Entry *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(Entry)); // TODO: provide full type info
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
@@ -846,7 +835,7 @@ int _aaEqual(TypeInfo tiRaw, AA e1, AA e2)
     //printf("keyti = %.*s\n", ti.key.classinfo.name);
     //printf("valueti = %.*s\n", ti.next.classinfo.name);
 
-    if (e1.a is e2.a)
+    if (e1.impl is e2.impl)
         return 1;
 
     size_t len = _aaLen(e1);
@@ -866,9 +855,9 @@ int _aaEqual(TypeInfo tiRaw, AA e1, AA e2)
     auto keyti = ti.key;
     auto valueti = ti.next;
     const keysize = aligntsize(keyti.tsize);
-    const len2 = e2.a.b.length;
+    const len2 = e2.impl.buckets.length;
 
-    int _aaKeys_x(aaA* e)
+    int _aaKeys_x(Entry* e)
     {
         do
         {
@@ -881,7 +870,7 @@ int _aaEqual(TypeInfo tiRaw, AA e1, AA e2)
             auto key_hash = keyti.getHash(pkey);
             //printf("hash = %d\n", key_hash);
             const i = key_hash % len2;
-            auto f = e2.a.b[i];
+            auto f = e2.impl.buckets[i];
             while (1)
             {
                 //printf("f is %p\n", f);
@@ -913,7 +902,7 @@ int _aaEqual(TypeInfo tiRaw, AA e1, AA e2)
         return 1;                       // this subtree matches
     }
 
-    foreach (e; e1.a.b)
+    foreach (e; e1.impl.buckets)
     {
         if (e)
         {   if (_aaKeys_x(e) == 0)
@@ -935,7 +924,7 @@ hash_t _aaGetHash(AA* aa, const(TypeInfo) tiRaw) nothrow
 {
     import rt.util.hash;
 
-    if (!aa.a)
+    if (aa.impl is null)
     	return 0;
 
     hash_t h = 0;
@@ -944,7 +933,7 @@ hash_t _aaGetHash(AA* aa, const(TypeInfo) tiRaw) nothrow
     auto valueti = ti.next;
     const keysize = aligntsize(keyti.tsize);
 
-    foreach (e; aa.a.b)
+    foreach (e; aa.impl.buckets)
     {
 	while (e)
 	{
