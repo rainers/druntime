@@ -25,7 +25,7 @@ private
     Entry*[] newBuckets(size_t len)
     {
         auto ptr = cast(Entry**) GC.calloc(
-            len * (Entry*).sizeof, GC.BlkAttr.NO_INTERIOR);
+            len * (Entry*).sizeof, GC.BlkAttr.NO_INTERIOR | GC.BlkAttr.REP_RTINFO, typeid(Entry*));
         return ptr[0..len];
     }
 }
@@ -264,10 +264,10 @@ body
     e.next = null;
     e.hash = key_hash;
     ubyte* ptail = cast(ubyte*)(e + 1);
-    GC.emplace(ptail, keyti);
+    GC.emplace(ptail, keytitsize, keyti);
+    GC.emplace(ptail + aligntsize(keytitsize), valuesize, typeid(void*)); // TODO: use valueti
     memcpy(ptail, pkey, keytitsize);
     memset(ptail + aligntsize(keytitsize), 0, valuesize); // zero value
-    // TODO: GC.emplace(ptail, valueti);
     *pe = e;
 
     auto nodes = ++aa.impl.nodes;
@@ -426,9 +426,9 @@ ArrayRet_t _aaValues(AA aa, size_t keysize, size_t valuesize)
 
     if (aa.impl !is null)
     {
+        auto attr = (valuesize < (void*).sizeof ? GC.BlkAttr.NO_SCAN : 0) | GC.BlkAttr.REP_RTINFO;
         a.length = _aaLen(aa);
-        a.ptr = cast(byte*) GC.malloc(a.length * valuesize,
-                                      valuesize < (void*).sizeof ? GC.BlkAttr.NO_SCAN : 0, typeid(a));
+        a.ptr = cast(byte*) GC.malloc(a.length * valuesize, attr, typeid(void*)); // TODO: needs valueti
         resi = 0;
         foreach (e; aa.impl.buckets)
         {
@@ -513,8 +513,8 @@ ArrayRet_t _aaKeys(AA aa, size_t keysize)
     if (!len)
         return null;
 
-    immutable blkAttr = !(aa.impl.keyti.flags & 1) ? GC.BlkAttr.NO_SCAN : 0;
-    auto res = (cast(byte*) GC.malloc(len * keysize, blkAttr))[0 .. len * keysize];
+    immutable blkAttr = (!(aa.impl.keyti.flags & 1) ? GC.BlkAttr.NO_SCAN : 0) | GC.BlkAttr.REP_RTINFO;
+    auto res = (cast(byte*) GC.malloc(len * keysize, blkAttr, aa.impl.keyti))[0 .. len * keysize];
 
     size_t resi = 0;
     foreach (e; aa.impl.buckets)
@@ -701,7 +701,9 @@ Impl* _d_assocarrayliteralT(TypeInfo_AssociativeArray ti, size_t length, ...)
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(Entry *) GC.malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(Entry)); // TODO: provide full type info
+                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, typeid(Entry));
+                    GC.emplace(e + 1, keysize, keyti);
+                    GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
@@ -772,7 +774,9 @@ Impl* _d_assocarrayliteralTX(TypeInfo_AssociativeArray ti, void[] keys, void[] v
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(Entry *) gc_malloc(aaA.sizeof + keytsize + valuesize, 0, typeid(Entry)); // TODO: provide full type info
+                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, typeid(Entry));
+                    GC.emplace(e + 1, keysize, keyti);
+                    GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;

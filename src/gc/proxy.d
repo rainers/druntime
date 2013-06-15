@@ -59,6 +59,7 @@ private
 
             void function(void*) gc_addRoot;
             void function(void*, size_t) gc_addRange;
+            void function(void*, size_t, bool) gc_addRange_hp;
 
             void function(void*) gc_removeRoot;
             void function(void*) gc_removeRange;
@@ -95,6 +96,7 @@ private
 
         pthis.gc_addRoot = &gc_addRoot;
         pthis.gc_addRange = &gc_addRange;
+        pthis.gc_addRange_hp = &gc_addRange_hp;
 
         pthis.gc_removeRoot = &gc_removeRoot;
         pthis.gc_removeRange = &gc_removeRange;
@@ -306,6 +308,13 @@ extern (C)
         if( proxy is null )
             return _gc.addRange( p, sz );
         return proxy.gc_addRange( p, sz );
+    }
+
+    void gc_addRange_hp( void* p, size_t sz, bool tls )
+    {
+        if( proxy is null )
+            return _gc.addRange_hp( p, sz, tls );
+        return proxy.gc_addRange_hp( p, sz, tls );
     }
 
     void gc_removeRoot( void* p )

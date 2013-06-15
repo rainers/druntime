@@ -33,7 +33,7 @@ module gc.gc;
 version = STACKGROWSDOWN;       // growing the stack means subtracting from the stack pointer
                                 // (use for Intel X86 CPUs)
                                 // else growing the stack means adding to the stack pointer
-//version = GC_PRECISE;           // enable precise garbage collection
+version = GC_PRECISE;           // enable precise garbage collection
 
 /***************************************************/
 
