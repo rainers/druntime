@@ -2728,7 +2728,7 @@ struct Gcx
     */
     void mark(void *p, const(TypeInfo) info, size_t repeat = 1)
     {
-        auto ti = info.unqual();
+        auto ti = info; //.unqual();
         assert(ti);
 
         debug(PRINTF)
