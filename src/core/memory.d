@@ -95,13 +95,14 @@ private
     extern (C) uint gc_setAttr( void* p, uint a ) pure nothrow;
     extern (C) uint gc_clrAttr( void* p, uint a ) pure nothrow;
 
-    extern (C) void*    gc_malloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_calloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow;
-    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz ) pure nothrow;
+    extern (C) void*    gc_malloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_calloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) BlkInfo_ gc_qalloc( size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) void*    gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo = null ) pure nothrow;
+    extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz, const TypeInfo = null ) pure nothrow;
     extern (C) size_t   gc_reserve( size_t sz ) nothrow;
     extern (C) void     gc_free( void* p ) pure nothrow;
+    extern (C) bool     gc_emplace( void *p, size_t len, const TypeInfo ti );
 
     extern (C) void*   gc_addrOf( void* p ) pure nothrow;
     extern (C) size_t  gc_sizeOf( void* p ) pure nothrow;
@@ -117,9 +118,11 @@ private
 
     extern (C) void gc_addRoot( in void* p ) nothrow;
     extern (C) void gc_addRange( in void* p, size_t sz ) nothrow;
+    extern (C) void gc_addRange_hp( in void* p, size_t sz, bool tls ) nothrow;
 
     extern (C) void gc_removeRoot( in void* p ) nothrow;
     extern (C) void gc_removeRange( in void* p ) nothrow;
+    extern (C) void gc_removeRange_hp( in void* p, size_t sz, bool tls ) nothrow;
 }
 
 
@@ -219,6 +222,10 @@ struct GC
         and is only implemented for data structures at least a page in size.
         */
         NO_INTERIOR = 0b0001_0000,
+
+        // additional info for allocating with type info
+        NO_RTINFO   = 0b0010_0000,
+        REP_RTINFO  = 0b0100_0000,
     }
 
 
@@ -332,9 +339,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* malloc( size_t sz, uint ba = 0 ) pure nothrow
+    static void* malloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_malloc( sz, ba );
+        return gc_malloc( sz, ba, ti );
     }
 
 
@@ -356,9 +363,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static BlkInfo qalloc( size_t sz, uint ba = 0 ) pure nothrow
+    static BlkInfo qalloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_qalloc( sz, ba );
+        return gc_qalloc( sz, ba, ti );
     }
 
 
@@ -381,9 +388,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* calloc( size_t sz, uint ba = 0 ) pure nothrow
+    static void* calloc( size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_calloc( sz, ba );
+        return gc_calloc( sz, ba, ti );
     }
 
 
@@ -419,9 +426,9 @@ struct GC
      * Throws:
      *  OutOfMemoryError on allocation failure.
      */
-    static void* realloc( void* p, size_t sz, uint ba = 0 ) pure nothrow
+    static void* realloc( void* p, size_t sz, uint ba = 0, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_realloc( p, sz, ba );
+        return gc_realloc( p, sz, ba, ti );
     }
 
 
@@ -447,9 +454,9 @@ struct GC
      *  as an indicator of success. $(LREF capacity) should be used to
      *  retrieve actual useable slice capacity.
      */
-    static size_t extend( void* p, size_t mx, size_t sz ) pure nothrow
+    static size_t extend( void* p, size_t mx, size_t sz, const TypeInfo ti = null ) pure nothrow
     {
-        return gc_extend( p, mx, sz );
+        return gc_extend( p, mx, sz, ti );
     }
     /// Standard extending
     unittest
@@ -594,6 +601,22 @@ struct GC
     static BlkInfo query(void* p) pure nothrow
     {
         return gc_query( p );
+    }
+
+    /**
+    * Describe the memory at the given address range for precise collection
+    *
+    * Params:
+    *  p = A pointer to the root or the interior of a valid memory block
+    *  len = Length of the memory range
+    *  ti = Type info describing the memory usage
+    *
+    * Returns:
+    *  true if p points to GC managed memory
+    */
+    static bool emplace( void *p, size_t len, const TypeInfo ti )
+    {
+        return gc_emplace( p, len, ti );
     }
 
 

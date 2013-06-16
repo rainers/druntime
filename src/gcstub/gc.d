@@ -60,13 +60,14 @@ private
         extern (C) uint function(void*, uint) gc_setAttr;
         extern (C) uint function(void*, uint) gc_clrAttr;
 
-        extern (C) void*   function(size_t, uint) gc_malloc;
-        extern (C) BlkInfo function(size_t, uint) gc_qalloc;
-        extern (C) void*   function(size_t, uint) gc_calloc;
-        extern (C) void*   function(void*, size_t, uint ba) gc_realloc;
-        extern (C) size_t  function(void*, size_t, size_t) gc_extend;
+        extern (C) void*   function(size_t, uint, const TypeInfo) gc_malloc;
+        extern (C) BlkInfo function(size_t, uint, const TypeInfo) gc_qalloc;
+        extern (C) void*   function(size_t, uint, const TypeInfo) gc_calloc;
+        extern (C) void*   function(void*, size_t, uint ba, const TypeInfo) gc_realloc;
+        extern (C) size_t  function(void*, size_t, size_t, const TypeInfo) gc_extend;
         extern (C) size_t  function(size_t) gc_reserve;
         extern (C) void    function(void*) gc_free;
+        extern (C) bool    function(void*, size_t, const TypeInfo) gc_emplace;
 
         extern (C) void*   function(void*) gc_addrOf;
         extern (C) size_t  function(void*) gc_sizeOf;
@@ -101,6 +102,7 @@ private
         pthis.gc_extend = &gc_extend;
         pthis.gc_reserve = &gc_reserve;
         pthis.gc_free = &gc_free;
+        pthis.gc_emplace = &gc_emplace;
 
         pthis.gc_addrOf = &gc_addrOf;
         pthis.gc_sizeOf = &gc_sizeOf;
@@ -190,7 +192,7 @@ extern (C) uint gc_clrAttr( void* p, uint a )
     return proxy.gc_clrAttr( p, a );
 }
 
-extern (C) void* gc_malloc( size_t sz, uint ba = 0 )
+extern (C) void* gc_malloc( size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
     {
@@ -200,10 +202,10 @@ extern (C) void* gc_malloc( size_t sz, uint ba = 0 )
             onOutOfMemoryError();
         return p;
     }
-    return proxy.gc_malloc( sz, ba );
+    return proxy.gc_malloc( sz, ba, ti );
 }
 
-extern (C) BlkInfo gc_qalloc( size_t sz, uint ba = 0 )
+extern (C) BlkInfo gc_qalloc( size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
     {
@@ -213,10 +215,10 @@ extern (C) BlkInfo gc_qalloc( size_t sz, uint ba = 0 )
         retval.attr = ba;
         return retval;
     }
-    return proxy.gc_qalloc( sz, ba );
+    return proxy.gc_qalloc( sz, ba, ti );
 }
 
-extern (C) void* gc_calloc( size_t sz, uint ba = 0 )
+extern (C) void* gc_calloc( size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
     {
@@ -226,10 +228,10 @@ extern (C) void* gc_calloc( size_t sz, uint ba = 0 )
             onOutOfMemoryError();
         return p;
     }
-    return proxy.gc_calloc( sz, ba );
+    return proxy.gc_calloc( sz, ba, ti );
 }
 
-extern (C) void* gc_realloc( void* p, size_t sz, uint ba = 0 )
+extern (C) void* gc_realloc( void* p, size_t sz, uint ba = 0, const TypeInfo ti = null )
 {
     if( proxy is null )
     {
@@ -239,14 +241,14 @@ extern (C) void* gc_realloc( void* p, size_t sz, uint ba = 0 )
             onOutOfMemoryError();
         return p;
     }
-    return proxy.gc_realloc( p, sz, ba );
+    return proxy.gc_realloc( p, sz, ba, ti );
 }
 
-extern (C) size_t gc_extend( void* p, size_t mx, size_t sz )
+extern (C) size_t gc_extend( void* p, size_t mx, size_t sz, const TypeInfo ti = null )
 {
     if( proxy is null )
         return 0;
-    return proxy.gc_extend( p, mx, sz );
+    return proxy.gc_extend( p, mx, sz, ti );
 }
 
 extern (C) size_t gc_reserve( size_t sz )
@@ -261,6 +263,13 @@ extern (C) void gc_free( void* p )
     if( proxy is null )
         return free( p );
     return proxy.gc_free( p );
+}
+
+extern (C) bool gc_emplace( void* p, size_t len, const TypeInfo ti )
+{
+    if( proxy is null )
+        return false;
+    return proxy.gc_emplace( p, len, ti );
 }
 
 extern (C) void* gc_addrOf( void* p )

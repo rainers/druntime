@@ -12,6 +12,7 @@
  */
 module object;
 
+private import gc.gctemplates;
 private
 {
     extern(C) void rt_finalize(void *ptr, bool det=true);
@@ -62,6 +63,9 @@ struct OffsetTypeInfo
     size_t   offset;
     TypeInfo ti;
 }
+
+enum void* rtinfoNoPointers  = null;
+enum void* rtinfoHasPointers = cast(void*)1;
 
 class TypeInfo
 {
@@ -653,7 +657,7 @@ void __ctfeWriteln(T...)(auto ref T values) { __ctfeWrite(values, "\n"); }
 
 template RTInfo(T)
 {
-    enum RTInfo = cast(void*)0x12345678;
+    enum RTInfo = gc.gctemplates.RTInfoImpl!T;
 }
 
 version (unittest)
