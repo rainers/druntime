@@ -63,8 +63,7 @@ endif
 
 DFLAGS=$(MODEL_FLAG) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
 UDFLAGS=$(MODEL_FLAG) $(OPTFLAGS) -w -Isrc -Iimport -property $(PIC) $(DMDEXTRAFLAGS)
-DMDDEP = # $(shell which $(DMD))
-DDOCFLAGS=$(MODEL_FLAG) -c -w -o- -Isrc -Iimport
+DDOCFLAGS=-c -w -o- -Isrc -Iimport -version=CoreDdoc
 
 CFLAGS=$(MODEL_FLAG) -O $(PIC)
 ifeq ($(BUILD),debug)
@@ -174,7 +173,7 @@ import: $(IMPORTS)
 
 $(IMPDIR)/core/sync/%.di : src/core/sync/%.d
 	@$(MKDIR) -p $(dir $@).
-	$(DMD) $(MODEL_FLAG) -c -o- -Isrc -Iimport -Hf$@ $<
+	$(DMD) -c -o- -Isrc -Iimport -Hf$@ $<
 
 ######################## Header .di file copy ##############################
 
