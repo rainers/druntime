@@ -507,7 +507,7 @@ unittest
     checkExp([&m1, &m2, &m0], []);
 }
 
-version (Win64)
+version (CRuntime_Microsoft)
 {
     // Dummy so Win32 code can still call it
     extern(C) void _minit() { }

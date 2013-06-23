@@ -16,9 +16,9 @@ else version (FreeBSD)
     public import rt.sections_freebsd;
 else version (OSX)
     public import rt.sections_osx;
-else version (Win32)
+else version (CRuntime_DigitalMars)
     public import rt.sections_win32;
-else version (Win64)
+else version (CRuntime_Microsoft)
     public import rt.sections_win64;
 else
     static assert(0, "unimplemented");

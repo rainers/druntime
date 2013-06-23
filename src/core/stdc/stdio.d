@@ -703,7 +703,6 @@ else
 void perror(in char* s);
 
 version(CRuntime_DigitalMars)
-version (DigitalMars) version (Win32)
 {
     import core.sys.windows.windows;
 
