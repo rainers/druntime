@@ -63,6 +63,7 @@ SRCS=\
 	src\gc\stats.d \
 	src\gc\proxy.d \
 	src\gc\gctemplates.d \
+	src\gc\config.d \
 	\
 	src\rt\aApply.d \
 	src\rt\aApplyR.d \
