@@ -272,18 +272,18 @@ void printGCBits(GCBits* bits)
 debug(PRINTF)
 string debugTypeName(const(TypeInfo) ti)
 {
-	string name;
-	if(ti is null)
-		name = "null";
-	else if(auto ci = cast(TypeInfo_Class)ti)
-		name = ci.name;
-	else if(auto si = cast(TypeInfo_Struct)ti)
-		name = si.name;
-	else if(auto ci = cast(TypeInfo_Const)ti)
-		return debugTypeName(ti.next);
-	else
-		name = ti.classinfo.name;
-	return name;
+    string name;
+    if(ti is null)
+        name = "null";
+    else if(auto ci = cast(TypeInfo_Class)ti)
+        name = ci.name;
+    else if(auto si = cast(TypeInfo_Struct)ti)
+        name = si.name;
+    else if(auto ci = cast(TypeInfo_Const)ti)
+        return debugTypeName(ti.next);
+    else
+        name = ti.classinfo.name;
+    return name;
 }
 
 class GC
@@ -478,7 +478,7 @@ class GC
                 pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof);
             }
             else
-            {	
+            {
                 const(size_t)* bitmap = cast (size_t*) rtInfo;
                 //first element of rtInfo is the size of the object the bitmap encodes
                 size_t element_size = * bitmap;
@@ -2468,55 +2468,28 @@ struct Gcx
     /**
      * Mark overload for initial mark() call.
      */
-    void mark(void *pbot, void *ptop) {
-        mark(null, pbot, ptop, MAX_MARK_RECURSIONS);
+    void markConservative(void *pbot, void *ptop) 
+    {
+        mark(pbot, ptop, MAX_MARK_RECURSIONS, null, null);
     }
 
     /**
      * Search a range of memory values and mark any pointers into the GC pool.
      */
-    void mark(Pool* pool, void *pbot, void *ptop, int nRecurse)
+    void markInPool(Pool* pool, void *pbot, void *ptop, int nRecurse)
     {
+        assert(pool);
+
         //import core.stdc.stdio;printf("nRecurse = %d\n", nRecurse);
         void **p1 = cast(void **)pbot;
         void **p2 = cast(void **)ptop;
         GCBits.wordtype * is_pointer = null;
         byte* hostBaseAddr = null;
 
-        if(gc_precise) {
-            debug(PRINTF) int indent = MAX_MARK_RECURSIONS - nRecurse;
-            //do we have precise pointer data for the area we are searching? If yes, use it
-            if(pool)
-            {
-                is_pointer = pool.is_pointer.data;
-                hostBaseAddr = cast(byte*)pool.baseAddr;
-            }
-            else if (cast(byte*)p1 >= minAddr && cast(byte*)p2 < maxAddr)
-            {
-                auto hostpool1 = findPool(p1);
-                auto hostpool2 = findPool(p2-1); // TODO: check against hostpool1 range instead
-
-                //found host pool
-                if (hostpool1)
-                {
-                    //mark call spans multiple pools, this is very bad
-                    if (hostpool1 == hostpool2)
-                    {
-                        is_pointer = hostpool1.is_pointer.data;
-                        hostBaseAddr = cast(byte*)hostpool1.baseAddr;
-                        debug(PRINTF) printf("%.*sscanning at pool %p with precise pointer data, starting from pointer %p\n", indent, "".ptr, hostpool1,pbot);
-                        debug(PRINTF) printf("%.*spointer data is at %p + %d\n", indent, "".ptr, &hostpool1.is_pointer, pbot - hostBaseAddr);  
-                        debug(PRINTF)
-                        {
-                            //printGCBits(is_pointer);
-                            auto tp1 = p1;
-                            auto tp2 = p2;
-                            // for(;tp1<tp2; tp1++) printf("loc = %p cont = % p biti = %d bit = %d\n", tp1, cast(byte*)(*tp1),((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof,is_pointer.test(((cast(byte*)tp1)-hostBaseAddr)/(void*).sizeof));
-                        }
-                    }
-                    else debug(PRINTF) printf("%.*sMark call from %p to %p spans multiple pools.", indent, "".ptr, p1, p2);
-                }
-            }
+        if(gc_precise) 
+        {
+            is_pointer = pool.is_pointer.data;
+            hostBaseAddr = cast(byte*)pool.baseAddr;
         }
         mark(pbot, ptop, nRecurse, is_pointer, hostBaseAddr);
     }
@@ -2632,12 +2605,12 @@ struct Gcx
                                 // is the max depth of the heap graph.
                                 if (bin < B_PAGE)
                                 {
-                                    mark(pool, base, base + binsize[bin], nRecurse - 1);
+                                    markInPool(pool, base, base + binsize[bin], nRecurse - 1);
                                 }
                                 else
                                 {
                                     auto u = pool.bPageOffsets[pn];
-                                    mark(pool, base, base + u * PAGESIZE, nRecurse - 1);
+                                    markInPool(pool, base, base + u * PAGESIZE, nRecurse - 1);
                                 }
                             }
                         }
@@ -2676,19 +2649,19 @@ struct Gcx
             else
             {
                 debug(PRINTF) printf("rtInfo: has %d pointers\n", ti.tsize / (void*).sizeof);
-                mark(null, p, p + ti.tsize, MAX_MARK_RECURSIONS - 1); // -1 for indentation in debug output
+                markConservative(p, p + ti.tsize);
             }
         }
         else if(cast(TypeInfo_Class)ti)
         {
             // class is not emplaced into data memory, must be a reference
             debug(PRINTF) printf("class reference\n");
-            mark(p, p + (void*).sizeof, MAX_MARK_RECURSIONS - 1, null, null);
+            markConservative(p, p + (void*).sizeof);
         }
         else
         {
             debug(PRINTF) printf("mark with rtInfo\n");
-            mark(p, p + rtInfo[0], MAX_MARK_RECURSIONS-1, rtInfo, cast(byte*)p);
+            mark(p, p + rtInfo[0], MAX_MARK_RECURSIONS-1, rtInfo + 1, cast(byte*)p); // first word is size
         }
     }
 
@@ -2769,12 +2742,12 @@ struct Gcx
         {
             debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
             // Scan stacks and registers for each paused thread
-            thread_scanAll(&mark);
+            thread_scanAll(&markConservative);
         }
 
         // Scan roots[]
         debug(COLLECT_PRINTF) printf("\tscan roots[]\n");
-        mark(roots, roots + nroots);
+        markConservative(roots, roots + nroots);
 
         // Scan ranges[]
         debug(COLLECT_PRINTF) printf("\tscan ranges[]\n");
@@ -2782,7 +2755,7 @@ struct Gcx
         for (n = 0; n < nranges; n++)
         {
             debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
-            mark(ranges[n].pbot, ranges[n].ptop);
+            markConservative(ranges[n].pbot, ranges[n].ptop);
         }
         //log--;
 
@@ -2830,12 +2803,12 @@ struct Gcx
                         auto bin = cast(Bins)pool.pagetable[pn];
                         if (bin < B_PAGE)
                         {
-                            mark(pool, o, o + binsize[bin], MAX_MARK_RECURSIONS);
+                            markInPool(pool, o, o + binsize[bin], MAX_MARK_RECURSIONS);
                         }
                         else if (bin == B_PAGE)
                         {
                             auto u = pool.bPageOffsets[pn];
-                            mark(pool, o, o + u * PAGESIZE, MAX_MARK_RECURSIONS);
+                            markInPool(pool, o, o + u * PAGESIZE, MAX_MARK_RECURSIONS);
                         }
 
                         bitm >>= 1;
