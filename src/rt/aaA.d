@@ -19,6 +19,7 @@ private
     import core.stdc.string;
     import core.stdc.stdio;
     import core.memory;
+    import gc.config;
 
     // Convenience function to make sure the NO_INTERIOR gets set on the
     // bucket array.
@@ -267,8 +268,11 @@ body
     e.next = null;
     e.hash = key_hash;
     ubyte* ptail = cast(ubyte*)(e + 1);
-    GC.emplace(ptail, keytitsize, keyti);
-    GC.emplace(ptail + aligntsize(keytitsize), valuesize, typeid(void*)); // TODO: use valueti
+    if(gc_precise)
+    {
+        GC.emplace(ptail, keytitsize, keyti);
+        GC.emplace(ptail + aligntsize(keytitsize), valuesize, typeid(void*)); // TODO: use valueti
+    }
     memcpy(ptail, pkey, keytitsize);
     memset(ptail + aligntsize(keytitsize), 0, valuesize); // zero value
     *pe = e;
@@ -716,8 +720,11 @@ Impl* _d_assocarrayliteralT(const TypeInfo_AssociativeArray ti, in size_t length
                     // Not found, create new elem
                     //printf("create new one\n");
                     e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, typeid(Entry));
-                    GC.emplace(e + 1, keysize, keyti);
-                    GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
+                    if(gc_precise)
+                    {
+                        GC.emplace(e + 1, keysize, keyti);
+                        GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
+                    }
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
@@ -788,8 +795,11 @@ Impl* _d_assocarrayliteralTX(const TypeInfo_AssociativeArray ti, void[] keys, vo
                     // Not found, create new elem
                     //printf("create new one\n");
                     e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, typeid(Entry));
-                    GC.emplace(e + 1, keysize, keyti);
-                    GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
+                    if(gc_precise)
+                    {
+                        GC.emplace(e + 1, keysize, keyti);
+                        GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
+                    }
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
