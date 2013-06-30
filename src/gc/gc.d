@@ -2609,7 +2609,7 @@ struct Gcx
             return markConservative(pbot, ptop, nRecurse);
 
         assert(pool);
-        GCBits.wordtype * is_pointer = pool.is_pointer.base;
+        GCBits.wordtype * is_pointer = pool.is_pointer.base();
         byte* baseAddr = cast(byte*)pool.baseAddr;
 
         markPrecise(pbot, ptop, nRecurse, is_pointer, baseAddr);
