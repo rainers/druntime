@@ -448,9 +448,6 @@ class GC
 
     static void setPointerBitmap(void* p, Pool* pool, size_t s, size_t allocSize, const TypeInfo ti, bool repeat)
     {
-        if (!gc_precise)
-            return;
-
         size_t offset = p-pool.baseAddr;
         //debug(PRINTF) printGCBits(&pool.is_pointer);
 
@@ -525,9 +522,8 @@ class GC
 
     void setPointerBitmap(void* p, size_t s, size_t allocSize, const TypeInfo cti, bool repeat)
     {
-        if(gc_precise)
-            if(auto pool = gcx.findPool(p))
-                setPointerBitmap(p, pool, s, allocSize, cti, repeat);
+        if(auto pool = gcx.findPool(p))
+            setPointerBitmap(p, pool, s, allocSize, cti, repeat);
     }
 
     /**
@@ -660,7 +656,7 @@ class GC
         {
             gcx.setBits(pool, cast(size_t)(p - pool.baseAddr) >> pool.shiftBy, bits);
         }
-        if (!(bits & (BlkAttr.NO_SCAN | BlkAttr.NO_RTINFO)))
+        if (gc_precise && !(bits & (BlkAttr.NO_SCAN | BlkAttr.NO_RTINFO)))
             setPointerBitmap(p, pool, size, *alloc_size, ti, (bits & BlkAttr.REP_RTINFO) != 0);
 
         gcx.cached_info_key = p;
@@ -801,7 +797,7 @@ class GC
                     auto newsz = (size + PAGESIZE - 1) / PAGESIZE;
                     if (newsz == psz)
                     {
-                        if(!(bits & BlkAttr.NO_RTINFO))
+                        if(gc_precise && !(bits & BlkAttr.NO_RTINFO))
                             setPointerBitmap(p, size, newsz * PAGESIZE, ti, (bits & BlkAttr.REP_RTINFO) != 0);
                         return p;
                     }
@@ -819,7 +815,7 @@ class GC
                         }
                         if(alloc_size)
                             *alloc_size = newsz * PAGESIZE;
-                        if(!(bits & BlkAttr.NO_RTINFO))
+                        if(gc_precise && !(bits & BlkAttr.NO_RTINFO))
                             setPointerBitmap(p, pool, size, newsz * PAGESIZE, ti, (bits & BlkAttr.REP_RTINFO) != 0);
                         return p;
                     }
@@ -841,7 +837,7 @@ class GC
                         pool.freepages -= (newsz - psz);
                         debug(PRINTF) printFreeInfo(pool);
 
-                        if(!(bits & BlkAttr.NO_RTINFO))
+                        if(gc_precise && !(bits & BlkAttr.NO_RTINFO))
                             setPointerBitmap(p, pool, size, newsz * PAGESIZE, ti, (bits & BlkAttr.REP_RTINFO) != 0);
                         return p;
 
@@ -882,7 +878,7 @@ class GC
                 {
                     if(alloc_size)
                         *alloc_size = psize;
-                    if(!(bits & BlkAttr.NO_RTINFO))
+                    if(gc_precise && !(bits & BlkAttr.NO_RTINFO))
                         setPointerBitmap(p, size, psize, ti, (bits & BlkAttr.REP_RTINFO) != 0);
                 }
             }
@@ -2630,19 +2626,26 @@ struct Gcx
 
         for (; p1 < p2; p1++)
         {
+        L_next:
             if(pointer_data & 1)
             {
                 auto p = cast(byte *)(*p1);
                 if (p >= minAddr && p < maxAddr)
                 {
-                    debug(PRINTF) printf("%.*sskipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-baseAddr)/(void*).sizeof, p1);
+                    debug(PRINTF) printf("%.*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-baseAddr)/(void*).sizeof, p1);
                     mixin markOne!();
                     doit();
                 }
-                else
-                {
-                    debug(PRINTF) printf("%.*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-baseAddr)/(void*).sizeof, p1);
-                }
+            }
+            else if(pointer_data == 0)
+            {
+                size_t jmp = GCBits.BITS_PER_WORD - (pointer_off & GCBits.BITS_MASK);
+                p1 += jmp;
+                if(p1 >= p2)
+                    break;
+                pointer_off += jmp;
+                pointer_data = *++is_pointer;
+                goto L_next;
             }
             if((++pointer_off & GCBits.BITS_MASK) == 0)
             {
