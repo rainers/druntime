@@ -2609,7 +2609,7 @@ struct Gcx
             return markConservative(pbot, ptop, nRecurse);
 
         assert(pool);
-        GCBits.wordtype * is_pointer = pool.is_pointer.data;
+        GCBits.wordtype * is_pointer = pool.is_pointer.base;
         byte* baseAddr = cast(byte*)pool.baseAddr;
 
         markPrecise(pbot, ptop, nRecurse, is_pointer, baseAddr);
@@ -2624,30 +2624,32 @@ struct Gcx
         void **p2 = cast(void **)ptop;
         debug(PRINTF) int indent = MAX_MARK_RECURSIONS - nRecurse;
 
-        size_t pointer_off = ((cast(byte*)p1)-baseAddr)/(void*).sizeof;
-        is_pointer += pointer_off >> GCBits.BITS_SHIFT;
-        pointer_off &= GCBits.BITS_MASK;
-        //size_t pointer_data = *is_pointer++ >> pointer_off;
+        size_t pointer_off = ((cast(byte*)p1) - baseAddr) / (void*).sizeof;
+        is_pointer += (pointer_off >> GCBits.BITS_SHIFT);
+        GCBits.wordtype pointer_data = *is_pointer >> (pointer_off & GCBits.BITS_MASK);
 
-        for (; p1 < p2; p1++, pointer_off++)
+        for (; p1 < p2; p1++)
         {
-            auto p = cast(byte *)(*p1);
-            //if (log) debug(PRINTF) printf("\tmark %p\n", p);
-            if (p >= minAddr && p < maxAddr)
+            if(pointer_data & 1)
             {
-                if (!(GCBits.test(is_pointer, pointer_off) != 0))
+                auto p = cast(byte *)(*p1);
+                if (p >= minAddr && p < maxAddr)
                 {
                     debug(PRINTF) printf("%.*sskipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-baseAddr)/(void*).sizeof, p1);
-                    continue;
+                    mixin markOne!();
+                    doit();
                 }
                 else
                 {
                     debug(PRINTF) printf("%.*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-baseAddr)/(void*).sizeof, p1);
                 }
-
-                mixin markOne!();
-                doit();
             }
+            if((++pointer_off & GCBits.BITS_MASK) == 0)
+            {
+                pointer_data = *++is_pointer;
+            }
+            else
+                pointer_data >>= 1;
         }
         anychanges |= changes;
     }

@@ -66,13 +66,66 @@ struct Entry
     /* value */
 }
 
+class TypeInfo_Entry : TypeInfo
+{
+    this(const TypeInfo keyti, const TypeInfo valti, size_t valuesize)
+    {
+        immutable(size_t)* keyinfo = cast(immutable(size_t)*) keyti.rtInfo;
+        immutable(size_t)* valinfo = cast(immutable(size_t)*) valti.rtInfo;
+
+        size_t keysize = aligntsize(keyti.tsize); // aligns value
+        size_t rtinfosize = Entry.sizeof + keysize + valuesize;
+
+        m_rtInfo[0] = rtinfosize;
+        
+        size_t keybits;
+        if (keyinfo is rtinfoNoPointers)
+            keybits = 0;
+        else if (keyinfo is rtinfoHasPointers)
+            keybits = (1 << ((keyti.tsize + (void*).sizeof - 1) / (void*).sizeof)) - 1;
+        else
+            keybits = keyinfo[1];
+
+        size_t valbits;
+        if (valinfo is rtinfoNoPointers)
+            valbits = 0;
+        else if (valinfo is rtinfoHasPointers)
+            valbits = (1 << ((valuesize + (void*).sizeof - 1) / (void*).sizeof)) - 1;
+        else
+            valbits = keyinfo[1];
+
+        size_t valshift = (Entry.sizeof + keysize + (void*).sizeof - 1) / (void*).sizeof;
+        m_rtInfo[1] = 1 | (keybits << 2) | (valbits << valshift);
+    }
+
+    override @property size_t tsize() nothrow pure const @safe { return 0; }
+    override @property uint flags() nothrow pure const @safe { return 1; }
+
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return m_rtInfo.ptr; }
+
+    size_t m_rtInfo[2]; // assumes key+value not larger than 128/512 bytes for 32/64 bit
+}
+
 struct Impl
 {
+    this(const TypeInfo keyti, const TypeInfo valti, size_t valuesize)
+    {
+        _keyti = cast() keyti;
+
+        // Initialize the object in its pre-ctor state
+        _entryti[] = typeid(TypeInfo_Entry).init[];
+        (cast(TypeInfo_Entry)&_entryti).__ctor(keyti, valti, valuesize);
+    }
+
     Entry*[] buckets;
     size_t nodes;       // total number of entries
     TypeInfo _keyti;     // TODO: replace this with TypeInfo_AssociativeArray when available in _aaGet()
     Entry*[4] binit;    // initial value of buckets[]
 
+    byte[__traits(classInstanceSize, TypeInfo_Entry)] _entryti;
+
+    @property const(TypeInfo) entryti() const /*@safe*/ pure nothrow 
+    { return cast(const(TypeInfo_Entry))&_entryti; }
     @property const(TypeInfo) keyti() const @safe pure nothrow
     { return _keyti; }
 }
@@ -239,7 +292,7 @@ body
     immutable keytitsize = keyti.tsize;
 
     if (aa.impl is null)
-    {   aa.impl = new Impl();
+    {   aa.impl = new Impl(keyti, typeid(void*), valuesize);
         aa.impl.buckets = aa.impl.binit[];
     }
     //printf("aa = %p\n", aa);
@@ -264,15 +317,10 @@ body
     // Not found, create new elem
     //printf("create new one\n");
     size_t size = Entry.sizeof + aligntsize(keytitsize) + valuesize;
-    e = cast(Entry *) GC.malloc(size, 0, typeid(Entry));
+    e = cast(Entry *) GC.malloc(size, 0, aa.impl.entryti);
     e.next = null;
     e.hash = key_hash;
     ubyte* ptail = cast(ubyte*)(e + 1);
-    if(gc_precise)
-    {
-        GC.emplace(ptail, keytitsize, keyti);
-        GC.emplace(ptail + aligntsize(keytitsize), valuesize, typeid(void*)); // TODO: use valueti
-    }
     memcpy(ptail, pkey, keytitsize);
     memset(ptail + aligntsize(keytitsize), 0, valuesize); // zero value
     *pe = e;
@@ -473,6 +521,8 @@ body
     if (paa.impl !is null)
     {
         Impl newImpl;
+        newImpl._entryti[] = paa.impl._entryti[];
+
         Impl* oldImpl = paa.impl;
         auto len = _aaLen(*paa);
         if (len)
@@ -684,7 +734,7 @@ Impl* _d_assocarrayliteralT(const TypeInfo_AssociativeArray ti, in size_t length
         else
             va_start(q, length);
 
-        result = new Impl();
+        result = new Impl(keyti, ti.next, valuesize);
         result._keyti = cast() keyti;
         size_t i;
 
@@ -719,12 +769,7 @@ Impl* _d_assocarrayliteralT(const TypeInfo_AssociativeArray ti, in size_t length
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, typeid(Entry));
-                    if(gc_precise)
-                    {
-                        GC.emplace(e + 1, keysize, keyti);
-                        GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
-                    }
+                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, result.entryti);
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
@@ -764,7 +809,7 @@ Impl* _d_assocarrayliteralTX(const TypeInfo_AssociativeArray ti, void[] keys, vo
     }
     else
     {
-        result = new Impl();
+        result = new Impl(keyti, ti.next, valuesize);
         result._keyti = cast() keyti;
 
         size_t i;
@@ -794,12 +839,7 @@ Impl* _d_assocarrayliteralTX(const TypeInfo_AssociativeArray ti, void[] keys, vo
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, typeid(Entry));
-                    if(gc_precise)
-                    {
-                        GC.emplace(e + 1, keysize, keyti);
-                        GC.emplace(cast(void*)(e + 1) + keytsize, valuesize, typeid(void*)); // TODO: needs valueti
-                    }
+                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, result.entryti);
                     memcpy(e + 1, pkey, keysize);
                     e.next = null;
                     e.hash = key_hash;
@@ -951,7 +991,7 @@ hash_t _aaGetHash(in AA* aa, in TypeInfo tiRaw) nothrow
     import rt.util.hash;
 
     if (aa.impl is null)
-    	return 0;
+        return 0;
 
     hash_t h = 0;
     const TypeInfo_AssociativeArray ti = _aaUnwrapTypeInfo(tiRaw);
@@ -961,27 +1001,27 @@ hash_t _aaGetHash(in AA* aa, in TypeInfo tiRaw) nothrow
 
     foreach (const(Entry)* e; aa.impl.buckets)
     {
-	while (e)
-	{
-	    auto pkey = cast(void*)(e + 1);
-	    auto pvalue = pkey + keysize;
+        while (e)
+        {
+            auto pkey = cast(void*)(e + 1);
+            auto pvalue = pkey + keysize;
 
-	    // Compute a hash for the key/value pair by hashing their
-	    // respective hash values.
-	    hash_t[2] hpair;
-	    hpair[0] = e.hash;
-	    hpair[1] = valueti.getHash(pvalue);
+            // Compute a hash for the key/value pair by hashing their
+            // respective hash values.
+            hash_t[2] hpair;
+            hpair[0] = e.hash;
+            hpair[1] = valueti.getHash(pvalue);
 
-	    // Combine the hash of the key/value pair with the running hash
-	    // value using an associative operator (+) so that the resulting
-	    // hash value is independent of the actual order the pairs are
-	    // stored in (important to ensure equality of hash value for two
-	    // AA's containing identical pairs but with different hashtable
-	    // sizes).
-	    h += hashOf(hpair.ptr, hpair.length * hash_t.sizeof);
+            // Combine the hash of the key/value pair with the running hash
+            // value using an associative operator (+) so that the resulting
+            // hash value is independent of the actual order the pairs are
+            // stored in (important to ensure equality of hash value for two
+            // AA's containing identical pairs but with different hashtable
+            // sizes).
+            h += hashOf(hpair.ptr, hpair.length * hash_t.sizeof);
 
-	    e = e.next;
-	}
+            e = e.next;
+        }
     }
 
     return h;
