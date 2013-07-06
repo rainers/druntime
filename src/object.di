@@ -55,7 +55,7 @@ struct Interface
 {
     TypeInfo_Class   classinfo;
     void*[]     vtbl;
-    ptrdiff_t   offset;   // offset to Interface 'this' from Object 'this'
+    size_t      offset;   // offset to Interface 'this' from Object 'this'
 }
 
 struct OffsetTypeInfo
@@ -650,7 +650,7 @@ private
     return _d_arraysetcapacity(typeid(T[]), 0, cast(void *)&arr);
 }
 
-size_t reserve(T)(ref T[] arr, size_t newcapacity) pure nothrow
+size_t reserve(T)(ref T[] arr, size_t newcapacity) pure nothrow @trusted
 {
     return _d_arraysetcapacity(typeid(T[]), newcapacity, cast(void *)&arr);
 }

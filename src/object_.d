@@ -176,7 +176,7 @@ struct Interface
 {
     TypeInfo_Class   classinfo;  /// .classinfo for this interface (not for containing class)
     void*[]     vtbl;
-    ptrdiff_t   offset;     /// offset to Interface 'this' from Object 'this'
+    size_t      offset;     /// offset to Interface 'this' from Object 'this'
 }
 
 /**
@@ -2581,7 +2581,7 @@ unittest
  * The return value is the new capacity of the array (which may be larger than
  * the requested capacity).
  */
-size_t reserve(T)(ref T[] arr, size_t newcapacity) pure nothrow
+size_t reserve(T)(ref T[] arr, size_t newcapacity) pure nothrow @trusted
 {
     return _d_arraysetcapacity(typeid(T[]), newcapacity, cast(void *)&arr);
 }
@@ -2604,6 +2604,13 @@ unittest
     a ~= [5, 6, 7, 8];
     assert(p == a.ptr);      //a should not have been reallocated
     assert(u == a.capacity); //a should not have been extended
+}
+
+// Issue 6646: should be possible to use array.reserve from SafeD.
+@safe unittest
+{
+    int[] a;
+    a.reserve(10);
 }
 
 /**
