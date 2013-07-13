@@ -274,37 +274,9 @@ class MemberInfo_function : MemberInfo
 
 struct ModuleInfo
 {
-    struct New
-    {
-        uint flags;
-        uint index;
-    }
+    uint _flags;
+    uint _index;
 
-    struct Old
-    {
-        string           name;
-        ModuleInfo*[]    importedModules;
-        TypeInfo_Class[] localClasses;
-        uint             flags;
-
-        void function() ctor;
-        void function() dtor;
-        void function() unitTest;
-        void* xgetMembers;
-        void function() ictor;
-        void function() tlsctor;
-        void function() tlsdtor;
-        uint index;
-        void*[1] reserved;
-    }
-
-    union
-    {
-        New n;
-        Old o;
-    }
-
-    @property bool isNew() nothrow pure;
     @property uint index() nothrow pure;
     @property void index(uint i) nothrow pure;
     @property uint flags() nothrow pure;
@@ -672,6 +644,7 @@ bool _ArrayEq(T1, T2)(T1[] a1, T2[] a2)
 }
 
 bool _xopEquals(in void* ptr, in void* ptr);
+bool _xopCmp(in void* ptr, in void* ptr);
 
 void __ctfeWrite(T...)(auto ref T) {}
 void __ctfeWriteln(T...)(auto ref T values) { __ctfeWrite(values, "\n"); }
