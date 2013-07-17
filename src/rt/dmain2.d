@@ -169,14 +169,13 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         _set_output_format(_TWO_DIGIT_EXPONENT);
 
         // enable full precision for reals
+        ushort fpucw;
         asm
         {
-            push    RAX;
-            fstcw   word ptr [RSP];
-            or      [RSP], 0b11_00_111111; // 11: use 64 bit extended-precision
+            fstsw   fpucw;
+            or      fpucw, 0b11_00_111111; // 11: use 64 bit extended-precision
                                            // 111111: mask all FP exceptions
-            fldcw   word ptr [RSP];
-            pop     RAX;
+            fldcw   fpucw;
         }
     }
 
