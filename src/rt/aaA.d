@@ -92,7 +92,7 @@ class TypeInfo_Entry : TypeInfo
         else if (valinfo is rtinfoHasPointers)
             valbits = (1 << ((valuesize + (void*).sizeof - 1) / (void*).sizeof)) - 1;
         else
-            valbits = keyinfo[1];
+            valbits = valinfo[1];
 
         size_t valshift = (Entry.sizeof + keysize + (void*).sizeof - 1) / (void*).sizeof;
         m_rtInfo[1] = 1 | (keybits << 2) | (valbits << valshift);
