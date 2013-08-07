@@ -224,8 +224,8 @@ struct GC
         NO_INTERIOR = 0b0001_0000,
 
         // additional info for allocating with type info
-        NO_RTINFO   = 0b0010_0000,
-        REP_RTINFO  = 0b0100_0000,
+        NO_RTINFO   = 0b0010_0000, // do not copy RTInfo in malloc/realloc
+        REP_RTINFO  = 0b0100_0000, // repeat RTInfo if allocation is larger than type info
     }
 
 

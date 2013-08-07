@@ -21,7 +21,9 @@ import core.stdc.stdlib;
 
 private extern (C) void onOutOfMemoryError();
 
-// version = bitwise;
+// use version bitwise to disable optimizations that use word operands 
+// on bulk operation copyRange, setRange, clrRange, etc.
+// version = bitwise; 
 
 version (DigitalMars)
 {
