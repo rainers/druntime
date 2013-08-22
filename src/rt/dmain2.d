@@ -303,7 +303,7 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
             {
                 dg();
             }
-            catch (StackTracingThrowable t)
+            catch (Throwable t)
             {
                 print(t);
                 result = EXIT_FAILURE;

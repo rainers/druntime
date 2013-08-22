@@ -96,7 +96,6 @@ SRCS=\
 	src\rt\minfo.d \
 	src\rt\monitor_.d \
 	src\rt\obj.d \
-	src\rt\onerror.d \
 	src\rt\qsort.d \
 	src\rt\rtinit.d \
 	src\rt\sections.d \

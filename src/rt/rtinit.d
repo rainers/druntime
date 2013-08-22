@@ -173,27 +173,6 @@ extern (C) bool rt_unloadLibrary(void* ptr)
     }
 }
 
-// NOTE: This is to preserve compatibility with old Windows DLLs.
-extern (C) void _moduleCtor()
-{
-    rt_moduleCtor();
-}
-
-extern (C) void _moduleDtor()
-{
-    rt_moduleDtor();
-}
-
-extern (C) void _moduleTlsCtor()
-{
-    rt_moduleTlsCtor();
-}
-
-extern (C) void _moduleTlsDtor()
-{
-    rt_moduleTlsDtor();
-}
-
 // command line arguments
 struct CArgs
 {
