@@ -1,7 +1,7 @@
 /**
- * Contains main program entry point and support routines.
+ * Contains druntime startup and shutdown routines.
  *
- * Copyright: Copyright Digital Mars 2000 - 2012.
+ * Copyright: Copyright Digital Mars 2000 - 2013.
  * License: Distributed under the
  *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
  *    (See accompanying file LICENSE)
@@ -64,6 +64,7 @@ extern (C) void rt_moduleTlsCtor();
 extern (C) void rt_moduleDtor();
 extern (C) void rt_moduleTlsDtor();
 extern (C) void thread_joinAll();
+extern (C) bool runModuleUnitTests();
 
 version (OSX)
 {
@@ -76,51 +77,12 @@ version (OSX)
 extern (C) __gshared bool rt_trapExceptions = true;
 
 /***********************************
- * The D main() function supplied by the user's program
- *
- * It always has `_Dmain` symbol name and uses C calling convention.
- * But DMD frontend returns its type as `extern(D)` because of Issue @@@9028@@@.
- * As we need to deal with actual calling convention we have to mark it
- * as `extern(C)` and use its symbol name.
- */
-extern(C) int _Dmain(char[][] args);
-alias extern(C) int function(char[][] args) MainFunc;
-
-/***********************************
- * Substitutes for the C main() function.
- * Just calls into d_run_main with the default main function.
- * Applications are free to implement their own
- * main function and call the _d_run_main function
- * themselves with any main function.
- */
-extern (C) int main(int argc, char **argv)
-{
-    auto result = _d_run_main(argc, argv, &_Dmain);
-    // Issue 10344: flush stdout and return nonzero on failure
-    if (.fflush(.stdout) != 0)
-    {
-        .fprintf(.stderr, "Failed to flush stdout: %s\n", .strerror(.errno));
-        if (result == 0)
-        {
-            result = EXIT_FAILURE;
-        }
-    }
-    return result;
-}
-
-version (Solaris) extern (C) int _main(int argc, char** argv)
-{
-    // This is apparently needed on Solaris because the
-    // C tool chain seems to expect the main function
-    // to be called _main. It needs both not just one!
-    return main(argc, argv);
-}
-
-/***********************************
  * Run the given main function.
  * Its purpose is to wrap the D main()
  * function and catch any unhandled exceptions.
  */
+private alias extern(C) int function(char[][] args) MainFunc;
+
 extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
 {
     version(druntime_sharedrtl) 
@@ -130,8 +92,10 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         shared_dll_add_tlsdata();
     }
 
+    // Remember the original C argc/argv
     _cArgs.argc = argc;
     _cArgs.argv = argv;
+
     int result;
 
     version (OSX)
@@ -185,9 +149,16 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         _STI_critical_init();
     }
 
+    // Allocate args[] on the stack
     char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
+
     version (Windows)
     {
+        /* Because we want args[] to be UTF-8, and Windows doesn't guarantee that,
+         * we ignore argc/argv and go get the Windows command line again as UTF-16.
+         * Then, reparse into wargc/wargs, and then use Windows API to convert
+         * to UTF-8.
+         */
         const wchar_t* wCommandLine = GetCommandLineW();
         immutable size_t wCommandLineLength = wcslen(wCommandLine);
         int wargc;
@@ -230,6 +201,10 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     else
         static assert(0);
 
+    /* Create a copy of args[] on the stack, and set the global _d_args to refer to it.
+     * Why a copy instead of just using args[] is unclear.
+     * This also means that when this function returns, _d_args will refer to garbage.
+     */
     {
         auto buff = cast(char[]*) alloca(argc * (char[]).sizeof + totalArgsLength);
 
@@ -385,6 +360,16 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     {
         _STD_critical_term();
         _STD_monitor_staticdtor();
+    }
+
+    // Issue 10344: flush stdout and return nonzero on failure
+    if (.fflush(.stdout) != 0)
+    {
+        .fprintf(.stderr, "Failed to flush stdout: %s\n", .strerror(.errno));
+        if (result == 0)
+        {
+            result = EXIT_FAILURE;
+        }
     }
 
     return result;

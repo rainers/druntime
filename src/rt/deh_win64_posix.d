@@ -2,29 +2,22 @@
  * Written in the D programming language.
  * Implementation of exception handling support routines for Posix and Win64.
  *
- * Copyright: Copyright Digital Mars 2000 - 2012.
+ * Copyright: Copyright Digital Mars 2000 - 2013.
  * License: Distributed under the
  *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
  *    (See accompanying file LICENSE)
  * Authors:   Walter Bright, Sean Kelly
- * Source: $(DRUNTIMESRC src/rt/_deh2.d)
+ * Source: $(DRUNTIMESRC src/rt/deh_win64_posix.d)
  */
 
-module rt.deh2;
+module rt.deh_win64_posix;
 
+version (Win64)
+    version = Win64_Posix;
 version (Posix)
-{
-    version = deh2;
-}
-else version (Win64)
-{
-    version = deh2;
-}
+    version = Win64_Posix;
 
-// Use deh.d for Win32
-
-version (deh2)
-{
+version (Win64_Posix):
 
 //debug=PRINTF;
 debug(PRINTF) import core.stdc.stdio : printf;
@@ -32,10 +25,8 @@ debug(PRINTF) import core.stdc.stdio : printf;
 extern (C)
 {
     Throwable.TraceInfo _d_traceContext(void* ptr = null);
-
     int _d_isbaseof(ClassInfo oc, ClassInfo c);
-
-    void _d_createTrace(Object*, void*);
+    void _d_createTrace(Object o, void* context);
 }
 
 alias int function() fp_t;   // function pointer in ambient memory model
@@ -210,7 +201,7 @@ size_t __eh_find_caller(size_t regbp, size_t *pretaddr)
  * Throw a D object.
  */
 
-extern (C) void _d_throwc(Object *h)
+extern (C) void _d_throwc(Object h)
 {
     size_t regebp;
 
@@ -336,7 +327,7 @@ extern (C) void _d_throwc(Object *h)
                         n = n.next;
                     n.next = cast(Throwable) h;
                     prev.next = curr.next;
-                    h = cast(Object*) t;
+                    h = t;
                 }
             }
         }
@@ -365,7 +356,7 @@ extern (C) void _d_throwc(Object *h)
                         // Matched the catch type, so we've found the handler.
 
                         // Initialize catch variable
-                        *cast(void **)(regebp + (pcb.bpoffset)) = h;
+                        *cast(void **)(regebp + (pcb.bpoffset)) = cast(void*)h;
 
                         // Jump to catch block. Does not return.
                         {
@@ -485,4 +476,3 @@ extern (C) void _d_throwc(Object *h)
     terminate();
 }
 
-}

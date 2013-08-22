@@ -23,7 +23,7 @@ else version (CRuntime_Microsoft)
 else
     static assert(0, "unimplemented");
 
-import rt.deh2, rt.minfo;
+import rt.deh, rt.minfo;
 
 template isSectionGroup(T)
 {
