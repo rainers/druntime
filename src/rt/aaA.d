@@ -425,8 +425,10 @@ body
         auto len = _aaLen(*paa);
         if (len)
         {
+
             Impl newImpl;
             Impl* oldImpl = paa.impl;
+            newImpl._entryti = oldImpl._entryti;
 
             size_t i;
             for (i = 0; i < prime_list.length - 1; i++)
