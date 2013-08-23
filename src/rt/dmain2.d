@@ -64,7 +64,6 @@ extern (C) void rt_moduleTlsCtor();
 extern (C) void rt_moduleDtor();
 extern (C) void rt_moduleTlsDtor();
 extern (C) void thread_joinAll();
-extern (C) bool runModuleUnitTests();
 
 version (OSX)
 {
