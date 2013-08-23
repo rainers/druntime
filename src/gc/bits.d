@@ -48,7 +48,7 @@ struct GCBits
     enum BITS_0 = cast(wordtype)0;
     enum BITS_1 = cast(wordtype)1;
     enum BITS_2 = cast(wordtype)2;
-	enum sentinelWords = 1; // before and after data to allow accesses without checking boundaries
+    enum sentinelWords = 1; // before and after data to allow accesses without checking boundaries
 
     wordtype*  data = null;
     size_t nwords = 0;    // allocated words in data[] excluding sentinals
