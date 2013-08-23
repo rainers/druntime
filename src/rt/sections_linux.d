@@ -19,7 +19,7 @@ import core.stdc.string : strlen;
 import core.sys.linux.elf;
 import core.sys.linux.link;
 import rt.minfo;
-import rt.deh2;
+import rt.deh;
 import rt.util.container;
 
 alias DSO SectionGroup;
@@ -80,15 +80,11 @@ private:
     size_t _tlsSize;
 }
 
-// drag in _d_dso_registry ref to support weak linkage
-private __gshared void* _dummy_ref;
-
 /****
  * Gets called on program startup just before GC is initialized.
  */
 void initSections()
 {
-    _dummy_ref = &_d_dso_registry;
 }
 
 
@@ -146,18 +142,16 @@ struct CompilerDSOData
     size_t _version;                                  // currently 1
     void** _slot;                                     // can be used to store runtime data
     object.ModuleInfo** _minfo_beg, _minfo_end;       // array of modules in this object file
-    immutable(rt.deh2.FuncTable)* _deh_beg, _deh_end; // array of exception handling data
+    immutable(rt.deh.FuncTable)* _deh_beg, _deh_end; // array of exception handling data
 }
 
 T[] toRange(T)(T* beg, T* end) { return beg[0 .. end - beg]; }
 
-/* For each object file (not for each module), the compiler generates code that sets
- * up CompilerDSOData and then calls _d_dso_registry().
- * A pointer to that code is then inserted into both the .ctors and .dtors segment
- * so it gets called by the loader on startup and shutdown.
- * (Note that there can be multiple modules in one object file.)
+/* For each shared library and executable, the compiler generates code that
+ * sets up CompilerDSOData and calls _d_dso_registry().
+ * A pointer to that code is inserted into both the .ctors and .dtors
+ * segment so it gets called by the loader on startup and shutdown.
  */
-package // dmain weak linkage
 extern(C) void _d_dso_registry(CompilerDSOData* data)
 {
     // only one supported currently

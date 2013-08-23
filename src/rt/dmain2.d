@@ -1,7 +1,7 @@
 /**
- * Contains main program entry point and support routines.
+ * Contains druntime startup and shutdown routines.
  *
- * Copyright: Copyright Digital Mars 2000 - 2012.
+ * Copyright: Copyright Digital Mars 2000 - 2013.
  * License: Distributed under the
  *      $(LINK2 http://www.boost.org/LICENSE_1_0.txt, Boost Software License 1.0).
  *    (See accompanying file LICENSE)
@@ -44,22 +44,6 @@ version (Windows)
     pragma(lib, "shell32.lib"); // needed for CommandLineToArgvW
 }
 
-version (all)
-{
-    extern (C) Throwable.TraceInfo _d_traceContext(void* ptr = null);
-
-    extern (C) void _d_createTrace(Object *o, void* context)
-    {
-        auto t = cast(Throwable) o;
-
-        if (t !is null && t.info is null &&
-            cast(byte*) t !is t.classinfo.init.ptr)
-        {
-            t.info = _d_traceContext(context);
-        }
-    }
-}
-
 version (FreeBSD)
 {
     import core.stdc.fenv;
@@ -76,27 +60,7 @@ extern (C) void rt_moduleTlsCtor();
 extern (C) void rt_moduleDtor();
 extern (C) void rt_moduleTlsDtor();
 extern (C) void thread_joinAll();
-
-// NOTE: This is to preserve compatibility with old Windows DLLs.
-extern (C) void _moduleCtor()
-{
-    rt_moduleCtor();
-}
-
-extern (C) void _moduleDtor()
-{
-    rt_moduleDtor();
-}
-
-extern (C) void _moduleTlsCtor()
-{
-    rt_moduleTlsCtor();
-}
-
-extern (C) void _moduleTlsDtor()
-{
-    rt_moduleTlsDtor();
-}
+extern (C) bool runModuleUnitTests();
 
 version (OSX)
 {
@@ -119,6 +83,12 @@ extern (C)
     alias void  function()      gcClrFn;
 }
 
+/*******************************************
+ * Loads a DLL written in D with the name 'name'.
+ * Returns:
+ *      opaque handle to the DLL if successfully loaded
+ *      null if failure
+ */
 extern (C) void* rt_loadLibrary(in char[] name)
 {
     version (Windows)
@@ -145,6 +115,7 @@ extern (C) void* rt_loadLibrary(in char[] name)
         buf[len] = '\0';
 
         // BUG: LoadLibraryW() call calls rt_init(), which fails if proxy is not set!
+        // (What? LoadLibraryW() is a Windows API call, it shouldn't call rt_init().)
         auto mod = LoadLibraryW(buf);
         if (mod is null)
             return mod;
@@ -159,9 +130,50 @@ extern (C) void* rt_loadLibrary(in char[] name)
     else version (Posix)
     {
         throw new Exception("rt_loadLibrary not yet implemented on Posix.");
+        version (none)
+        {
+            /* This also means that the library libdl.so must be linked in,
+             * meaning this code should go into a separate module so it is only
+             * linked in if rt_loadLibrary() is actually called.
+             */
+            import core.sys.posix.dlfcn;
+
+            /* Need a 0-terminated C string for the dll name
+             */
+            auto buf = cast(char*)malloc(name.length + 1);
+            if (!buf)
+                return null;
+            buf[0..len] = name[];
+            buf[len] = 0;
+            scope (exit) free(buf);
+
+            auto dl_handle = dlopen(buf, RTLD_LAZY);
+            if (!dl_handle)
+                return null;
+
+            /* As the DLL is now loaded, if we get here, it means that
+             * the DLL has also successfully called all the functions in its .ctors
+             * segment. For D, that means all the _d_dso_registry() calls are done.
+             * Next up is:
+             *  registering the DLL's static data segments with the GC
+             *  (Does the DLL's TLS data need to be registered with the GC?)
+             *  registering the DLL's exception handler tables
+             *  calling the DLL's module constructors
+             *  calling the DLL's TLS module constructors
+             *  calling the DLL's unit tests
+             */
+        }
     }
 }
 
+/*************************************
+ * Unloads DLL that was previously loaded by rt_loadLibrary().
+ * Input:
+ *      ptr     the handle returned by rt_loadLibrary()
+ * Returns:
+ *      true    succeeded
+ *      false   some failure happened
+ */
 extern (C) bool rt_unloadLibrary(void* ptr)
 {
     version (Windows)
@@ -174,91 +186,28 @@ extern (C) bool rt_unloadLibrary(void* ptr)
     else version (Posix)
     {
         throw new Exception("rt_unloadLibrary not yet implemented on Posix.");
-    }
-}
-
-/***********************************
- * These functions must be defined for any D program linked
- * against this library.
- */
-extern (C) void onAssertError(string file, size_t line);
-extern (C) void onAssertErrorMsg(string file, size_t line, string msg);
-extern (C) void onUnittestErrorMsg(string file, size_t line, string msg);
-extern (C) void onRangeError(string file, size_t line);
-extern (C) void onHiddenFuncError(Object o);
-extern (C) void onSwitchError(string file, size_t line);
-extern (C) bool runModuleUnitTests();
-
-// this function is called from the utf module
-//extern (C) void onUnicodeError(string msg, size_t idx);
-
-/***********************************
- * These are internal callbacks for various language errors.
- */
-
-extern (C)
-{
-    // Use ModuleInfo to get file name for "m" versions
-
-    void _d_assertm(ModuleInfo* m, uint line)
-    {
-        onAssertError(m.name, line);
-    }
-
-    void _d_assert_msg(string msg, string file, uint line)
-    {
-        onAssertErrorMsg(file, line, msg);
-    }
-
-    void _d_assert(string file, uint line)
-    {
-        onAssertError(file, line);
-    }
-
-    void _d_unittestm(ModuleInfo* m, uint line)
-    {
-        _d_unittest(m.name, line);
-    }
-
-    void _d_unittest_msg(string msg, string file, uint line)
-    {
-        onUnittestErrorMsg(file, line, msg);
-    }
-
-    void _d_unittest(string file, uint line)
-    {
-        _d_unittest_msg("unittest failure", file, line);
-    }
-
-    void _d_array_bounds(ModuleInfo* m, uint line)
-    {
-        onRangeError(m.name, line);
-    }
-
-    void _d_switch_error(ModuleInfo* m, uint line)
-    {
-        onSwitchError(m.name, line);
-    }
-}
-
-extern (C) void _d_hidden_func()
-{
-    Object o;
-    version(D_InlineAsm_X86)
-        asm
+        version (none)
         {
-            mov o, EAX;
-        }
-    else version(D_InlineAsm_X86_64)
-        asm
-        {
-            mov o, RDI;
-        }
-    else
-        static assert(0, "unknown os");
+            import core.sys.posix.dlfcn;
 
-    onHiddenFuncError(o);
+            /* Perform the following:
+             *  calling the DLL's TLS module destructors
+             *  calling the DLL's module destructors
+             *  unregistering the DLL's exception handler tables
+             *  (Does the DLL's TLS data need to be unregistered with the GC?)
+             *  unregistering the DLL's static data segments with the GC
+             */
+
+            dlclose(ptr);
+            /* dlclose() will also call all the functions in the .dtors segment,
+             * meaning calls to _d_dso_register() will get called.
+             */
+        }
+    }
 }
+
+/* To get out-of-band access to the args[] passed to main().
+ */
 
 __gshared string[] _d_args = null;
 
@@ -271,17 +220,21 @@ extern (C) string[] rt_args()
 // be fine to leave it as __gshared.
 extern (C) __gshared bool rt_trapExceptions = true;
 
-void _d_criticalInit()
-{
-  _STI_monitor_staticctor();
-  _STI_critical_init();
-}
-
 alias void delegate(Throwable) ExceptionHandler;
 
+/**********************************************
+ * Initialize druntime.
+ * If a C program wishes to call D code, and there's no D main(), then it
+ * must call rt_init() and rt_term().
+ * If it fails, call dg. Except that what dg might be
+ * able to do is undetermined, since the state of druntime
+ * will not be known.
+ * This needs rethinking.
+ */
 extern (C) bool rt_init(ExceptionHandler dg = null)
 {
-    _d_criticalInit();
+    _STI_monitor_staticctor();
+    _STI_critical_init();
 
     try
     {
@@ -295,21 +248,29 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
     }
     catch (Throwable e)
     {
+        /* Note that if we get here, the runtime is in an unknown state.
+         * I'm not sure what the point of calling dg is.
+         */
         if (dg)
             dg(e);
         else
             throw e;    // rethrow, don't silently ignore error
+        /* Rethrow, and the two STD functions aren't called?
+         * This needs rethinking.
+         */
     }
-    _d_criticalTerm();
+    _STD_critical_term();
+    _STD_monitor_staticdtor();
     return false;
 }
 
-void _d_criticalTerm()
-{
-  _STD_critical_term();
-  _STD_monitor_staticdtor();
-}
-
+/**********************************************
+ * Terminate use of druntime.
+ * If it fails, call dg. Except that what dg might be
+ * able to do is undetermined, since the state of druntime
+ * will not be known.
+ * This needs rethinking.
+ */
 extern (C) bool rt_term(ExceptionHandler dg = null)
 {
     try
@@ -328,10 +289,16 @@ extern (C) bool rt_term(ExceptionHandler dg = null)
     }
     finally
     {
-        _d_criticalTerm();
+        _STD_critical_term();
+        _STD_monitor_staticdtor();
     }
     return false;
 }
+
+/***********************************
+ * Provide out-of-band access to the original C argc/argv
+ * passed to this program via main(argc,argv).
+ */
 
 struct CArgs
 {
@@ -347,55 +314,18 @@ extern (C) CArgs rt_cArgs()
 }
 
 /***********************************
- * The D main() function supplied by the user's program
- *
- * It always has `_Dmain` symbol name and uses C calling convention.
- * But DMD frontend returns its type as `extern(D)` because of Issue @@@9028@@@.
- * As we need to deal with actual calling convention we have to mark it
- * as `extern(C)` and use its symbol name.
- */
-extern(C) int _Dmain(char[][] args);
-alias extern(C) int function(char[][] args) MainFunc;
-
-/***********************************
- * Substitutes for the C main() function.
- * Just calls into d_run_main with the default main function.
- * Applications are free to implement their own
- * main function and call the _d_run_main function
- * themselves with any main function.
- */
-extern (C) int main(int argc, char **argv)
-{
-    auto result = _d_run_main(argc, argv, &_Dmain);
-    // Issue 10344: flush stdout and return nonzero on failure
-    if (.fflush(.stdout) != 0)
-    {
-        .fprintf(.stderr, "Failed to flush stdout: %s\n", .strerror(.errno));
-        if (result == 0)
-        {
-            result = EXIT_FAILURE;
-        }
-    }
-    return result;
-}
-
-version (Solaris) extern (C) int _main(int argc, char** argv)
-{
-    // This is apparently needed on Solaris because the
-    // C tool chain seems to expect the main function
-    // to be called _main. It needs both not just one!
-    return main(argc, argv);
-}
-
-/***********************************
  * Run the given main function.
  * Its purpose is to wrap the D main()
  * function and catch any unhandled exceptions.
  */
+private alias extern(C) int function(char[][] args) MainFunc;
+
 extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
 {
+    // Remember the original C argc/argv
     _cArgs.argc = argc;
     _cArgs.argv = argv;
+
     int result;
 
     version (OSX)
@@ -448,9 +378,16 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     _STI_monitor_staticctor();
     _STI_critical_init();
 
+    // Allocate args[] on the stack
     char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
+
     version (Windows)
     {
+        /* Because we want args[] to be UTF-8, and Windows doesn't guarantee that,
+         * we ignore argc/argv and go get the Windows command line again as UTF-16.
+         * Then, reparse into wargc/wargs, and then use Windows API to convert
+         * to UTF-8.
+         */
         const wchar_t* wCommandLine = GetCommandLineW();
         immutable size_t wCommandLineLength = wcslen(wCommandLine);
         int wargc;
@@ -493,6 +430,10 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     else
         static assert(0);
 
+    /* Create a copy of args[] on the stack, and set the global _d_args to refer to it.
+     * Why a copy instead of just using args[] is unclear.
+     * This also means that when this function returns, _d_args will refer to garbage.
+     */
     {
         auto buff = cast(char[]*) alloca(argc * (char[]).sizeof + totalArgsLength);
 
@@ -639,6 +580,16 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
 
     _STD_critical_term();
     _STD_monitor_staticdtor();
+
+    // Issue 10344: flush stdout and return nonzero on failure
+    if (.fflush(.stdout) != 0)
+    {
+        .fprintf(.stderr, "Failed to flush stdout: %s\n", .strerror(.errno));
+        if (result == 0)
+        {
+            result = EXIT_FAILURE;
+        }
+    }
 
     return result;
 }

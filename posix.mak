@@ -49,8 +49,8 @@ else
 	DOTLIB:=.a
 endif
 
-DFLAGS=$(MODEL_FLAG) -O -release -inline -w -Isrc -Iimport -property $(PIC)
-UDFLAGS=$(MODEL_FLAG) -O -release -w -Isrc -Iimport -property $(PIC)
+DFLAGS=$(MODEL_FLAG) -O -release -inline -w -Isrc -Iimport $(PIC)
+UDFLAGS=$(MODEL_FLAG) -O -release -w -Isrc -Iimport $(PIC)
 DDOCFLAGS=-c -w -o- -Isrc -Iimport -version=CoreDdoc
 
 CFLAGS=$(MODEL_FLAG) -O $(PIC)
@@ -195,7 +195,7 @@ $(UT_DRUNTIME): $(OBJS) $(SRCS)
 	$(DMD) $(UDFLAGS) -shared -version=druntime_unittest -unittest -of$@ $(SRCS) $(OBJS) -debuglib= -defaultlib=
 
 $(OBJDIR)/test_runner: $(UT_DRUNTIME) src/test_runner.d
-	$(DMD) $(UDFLAGS) -of$@ src/test_runner.d -L-L$(OBJDIR) -L-rpath=$(OBJDIR) -L-l$(DRUNTIME_BASE)-ut -debuglib= -defaultlib=
+	$(DMD) $(UDFLAGS) -of$@ src/test_runner.d -L$(UT_DRUNTIME) -debuglib= -defaultlib=
 
 endif
 
