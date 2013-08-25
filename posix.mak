@@ -204,7 +204,7 @@ $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
 	$(CC) -c $(CFLAGS_O)$@ $<
 
 $(OBJDIR)/threadasm.o : src/core/threadasm.S
-	@mkdir -p $(OBJDIR)
+	@$(MKDIR) -p $(OBJDIR)
 	$(CC) $(ASMFLAGS) -c $(CFLAGS) $< -o$@
 
 src\rt\minit.obj : src\rt\minit.asm
@@ -280,7 +280,7 @@ endif
 moduleName=$(subst rt.invariant,invariant,$(subst object_,object,$(subst /,.,$(1))))
 
 $(OBJDIR)/% : $(OBJDIR)/test_runner
-	@mkdir -p $(dir $@)
+	@$(MKDIR) -p $(dir $@)
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 ifeq (win32,$(OS))
 	@if $(GREP) -q unittest $< ; then \
