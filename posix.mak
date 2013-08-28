@@ -196,7 +196,7 @@ endif
 ################### C/ASM Targets ############################
 
 $(OBJDIR)/%.$O : src/rt/%.c
-	@$(MKDIR) -p $(dir $@)
+	@$(MKDIR) -p $(dir $@).
 	$(CC) -c $(CFLAGS_O)$@ $<
 
 $(OBJDIR)/errno_c.$O : src/core/stdc/errno.c
@@ -260,7 +260,7 @@ $(addprefix $(OBJDIR)/,$(DISABLED_TESTS)) :
 
 ifneq (linux,$(OS))
 
-$(OBJDIR)/test_runner: $(OBJS) $(SRCS) src/test_runner.d
+$(OBJDIR)/test_runner$(DOTEXE): $(OBJS) $(SRCS) src/test_runner.d
 	$(DMD) $(UDFLAGS) -version=druntime_unittest -unittest -of$@ src/test_runner.d $(SRCS) $(OBJS) -debuglib= -defaultlib=
 
 else
@@ -271,7 +271,7 @@ $(UT_DRUNTIME): override PIC:=-fPIC
 $(UT_DRUNTIME): $(OBJS) $(SRCS)
 	$(DMD) $(UDFLAGS) -shared -version=druntime_unittest -unittest -of$@ $(SRCS) $(OBJS) -debuglib= -defaultlib=
 
-$(OBJDIR)/test_runner: $(UT_DRUNTIME) src/test_runner.d
+$(OBJDIR)/test_runner$(DOTEXE): $(UT_DRUNTIME) src/test_runner.d
 	$(DMD) $(UDFLAGS) -of$@ src/test_runner.d -L$(UT_DRUNTIME) -debuglib= -defaultlib=
 
 endif
@@ -279,8 +279,8 @@ endif
 # macro that returns the module name given the src path
 moduleName=$(subst rt.invariant,invariant,$(subst object_,object,$(subst /,.,$(1))))
 
-$(OBJDIR)/% : $(OBJDIR)/test_runner
-	@$(MKDIR) -p $(dir $@)
+$(OBJDIR)/% : $(OBJDIR)/test_runner$(DOTEXE)
+	@$(MKDIR) -p $(dir $@).
 $(OBJDIR)/%$(DOTEXE) : src/%.d $(DRUNTIME) $(OBJDIR)/emptymain.d
 ifeq (win32,$(OS))
 	@if $(GREP) -q unittest $< ; then \
@@ -309,7 +309,7 @@ else
 # make the file very old so it builds and runs again if it fails
 	@touch -t 197001230123 $@
 # run unittest in its own directory
-	$(QUIET)$(RUN) $(OBJDIR)/test_runner $(call moduleName,$*)
+	$(QUIET)$(RUN) $(OBJDIR)/test_runner$(DOTEXE) $(call moduleName,$*)
 # succeeded, render the file new again
 	@touch $@
 endif	
