@@ -142,12 +142,6 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         }
     }
 
-    version(druntime_sharedrtl) {} else 
-    {
-        _STI_monitor_staticctor();
-        _STI_critical_init();
-    }
-
     // Allocate args[] on the stack
     char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
 
@@ -322,44 +316,18 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     //       the user's main function.  If main terminates with an exception,
     //       the exception is handled and then cleanup begins.  An exception
     //       thrown during cleanup, however, will abort the cleanup process.
-
-    void runMain()
-    {
-        result = mainFunc(args);
-    }
-
     void runAll()
     {
-        initSections();
-        version(druntime_sharedrtl) { }	else
-        {
-            gc_init();
-            initStaticDataGC();
-        }
-        rt_moduleCtor();
-        rt_moduleTlsCtor();
-
-        if (runModuleUnitTests())
-            tryExec(&runMain);
+        if (rt_init() && runModuleUnitTests())
+            tryExec({ result = mainFunc(args); });
         else
             result = EXIT_FAILURE;
-        thread_joinAll();
-        rt_moduleTlsDtor();
-        rt_moduleDtor();
-        version(druntime_sharedrtl) { }	else
-        {
-            gc_term();
-        }
-        finiSections();
+
+        if (!rt_term())
+            result = (result == EXIT_SUCCESS) ? EXIT_FAILURE : result;
     }
 
     tryExec(&runAll);
-
-    version(druntime_sharedrtl) {} else 
-    {
-        _STD_critical_term();
-        _STD_monitor_staticdtor();
-    }
 
     // Issue 10344: flush stdout and return nonzero on failure
     if (.fflush(.stdout) != 0)

@@ -58,7 +58,6 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
         initStaticDataGC();
         rt_moduleCtor();
         rt_moduleTlsCtor();
-        runModuleUnitTests();
         return true;
     }
     catch (Throwable e)
@@ -67,6 +66,9 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
             dg(e);
         else
             throw e;    // rethrow, don't silently ignore error
+        /* Rethrow, and the two STD functions aren't called?
+         * This needs rethinking.
+         */
     }
     _d_criticalTerm();
     return false;
