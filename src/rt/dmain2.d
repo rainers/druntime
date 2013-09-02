@@ -318,12 +318,12 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     //       thrown during cleanup, however, will abort the cleanup process.
     void runAll()
     {
-        if (rt_init() && runModuleUnitTests())
+        if (rt.rtinit.rt_init() && runModuleUnitTests())
             tryExec({ result = mainFunc(args); });
         else
             result = EXIT_FAILURE;
 
-        if (!rt_term())
+        if (!rt.rtinit.rt_term())
             result = (result == EXIT_SUCCESS) ? EXIT_FAILURE : result;
     }
 
