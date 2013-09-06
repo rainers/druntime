@@ -86,6 +86,7 @@ DGROUP         group   HPTLSB,HPTLS,HPTLSE
 endif
 
 ifndef COFF
+    extrn   __tls_used:near
     extrn   __moduleinfo_array:near
 
     begcode minit
@@ -98,6 +99,7 @@ ifndef COFF
 
     public  __minit
 __minit proc    near
+    mov EAX,__tls_used  ; ensure tlsdata.c from DMC runtime is linked in
     mov EDX,offset DATAGRP:FMB
     mov EAX,offset DATAGRP:FME
     mov dword ptr __moduleinfo_array+4,EDX

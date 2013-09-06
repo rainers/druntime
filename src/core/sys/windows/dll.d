@@ -27,18 +27,18 @@ version( Windows )
 
     // in this special case, we have to treat _tlsstart and _tlsend as non-TLS variables
     //  as they are used to simulate TLS when it is not set up under XP. In this case we must
-	//  not access tls_array[tls_index] as needed for thread local _tlsstart and _tlsend
+    //  not access tls_array[tls_index] as needed for thread local _tlsstart and _tlsend
     version(CRuntime_DigitalMars)
     {
-        extern (C) extern __gshared byte  _tlsstart;
-        extern (C) extern __gshared byte  _tlsend;
+        private extern (C) extern __gshared byte  _tlsstart;
+        private extern (C) extern __gshared byte  _tlsend;
     }
     else version(CRuntime_Microsoft)
     {
-        extern (C) extern __gshared byte  _tls_start;
-        extern (C) extern __gshared byte  _tls_end;
-        alias _tls_start _tlsstart;
-        alias _tls_end   _tlsend;
+        private extern (C) extern __gshared byte  _tls_start;
+        private extern (C) extern __gshared byte  _tls_end;
+        private alias _tls_start _tlsstart;
+        private alias _tls_end   _tlsend;
     }
 
     extern (C) // rt.minfo

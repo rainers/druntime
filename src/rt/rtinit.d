@@ -32,6 +32,7 @@ version (Windows)
     {
         alias int function() FARPROC;
         FARPROC    GetProcAddress(void*, in char*);
+        void*      LoadLibraryA(in char*);
         void*      LoadLibraryW(in wchar_t*);
         int        FreeLibrary(void*);
         void*      LocalFree(void*);
@@ -118,32 +119,28 @@ extern (C)
     alias void  function()      gcClrFn;
 }
 
-extern (C) void* rt_loadLibrary(in char[] name)
+/*******************************************
+ * Loads a DLL written in D with the name 'name'.
+ * Returns:
+ *      opaque handle to the DLL if successfully loaded
+ *      null if failure
+ */
+version (Windows)
 {
-    version (Windows)
+    extern (C) void* rt_loadLibrary(const char* name)
     {
-        if (name.length == 0) return null;
-        // Load a DLL at runtime
-        enum CP_UTF8 = 65001;
-        auto len = MultiByteToWideChar(
-									   CP_UTF8, 0, name.ptr, cast(int)name.length, null, 0);
-        if (len == 0)
-            return null;
+        return initLibrary(.LoadLibraryA(name));
+    }
 
-        auto buf = cast(wchar_t*)malloc((len+1) * wchar_t.sizeof);
-        if (buf is null)
-            return null;
-        scope (exit)
-            free(buf);
+    extern (C) void* rt_loadLibraryW(const wchar_t* name)
+    {
+        return initLibrary(.LoadLibraryW(name));
+    }
 
-        len = MultiByteToWideChar(CP_UTF8, 0, name.ptr, cast(int)name.length, buf, len);
-        if (len == 0)
-            return null;
-
-        buf[len] = '\0';
-
-        // BUG: LoadLibraryW() call calls rt_init(), which fails if proxy is not set!
-        auto mod = LoadLibraryW(buf);
+    void* initLibrary(void* mod)
+    {
+        // BUG: LoadLibrary() call calls rt_init(), which fails if proxy is not set!
+        // (What? LoadLibrary() is a Windows API call, it shouldn't call rt_init().)
         if (mod is null)
             return mod;
         gcSetFn gcSet = cast(gcSetFn) GetProcAddress(mod, "gc_setProxy");
@@ -152,14 +149,48 @@ extern (C) void* rt_loadLibrary(in char[] name)
             gcSet(gc_getProxy());
         }
         return mod;
-
     }
-    else version (Posix)
+}
+else version (Posix)
+{
+    extern (C) void* rt_loadLibrary(const char* name)
     {
         throw new Exception("rt_loadLibrary not yet implemented on Posix.");
+        version (none)
+        {
+            /* This also means that the library libdl.so must be linked in,
+             * meaning this code should go into a separate module so it is only
+             * linked in if rt_loadLibrary() is actually called.
+             */
+            import core.sys.posix.dlfcn;
+
+            auto dl_handle = dlopen(name, RTLD_LAZY);
+            if (!dl_handle)
+                return null;
+
+            /* As the DLL is now loaded, if we get here, it means that
+             * the DLL has also successfully called all the functions in its .ctors
+             * segment. For D, that means all the _d_dso_registry() calls are done.
+             * Next up is:
+             *  registering the DLL's static data segments with the GC
+             *  (Does the DLL's TLS data need to be registered with the GC?)
+             *  registering the DLL's exception handler tables
+             *  calling the DLL's module constructors
+             *  calling the DLL's TLS module constructors
+             *  calling the DLL's unit tests
+             */
+        }
     }
 }
 
+/*************************************
+ * Unloads DLL that was previously loaded by rt_loadLibrary().
+ * Input:
+ *      ptr     the handle returned by rt_loadLibrary()
+ * Returns:
+ *      true    succeeded
+ *      false   some failure happened
+ */
 extern (C) bool rt_unloadLibrary(void* ptr)
 {
     version (Windows)
@@ -172,6 +203,23 @@ extern (C) bool rt_unloadLibrary(void* ptr)
     else version (Posix)
     {
         throw new Exception("rt_unloadLibrary not yet implemented on Posix.");
+        version (none)
+        {
+            import core.sys.posix.dlfcn;
+
+            /* Perform the following:
+             *  calling the DLL's TLS module destructors
+             *  calling the DLL's module destructors
+             *  unregistering the DLL's exception handler tables
+             *  (Does the DLL's TLS data need to be unregistered with the GC?)
+             *  unregistering the DLL's static data segments with the GC
+             */
+
+            dlclose(ptr);
+            /* dlclose() will also call all the functions in the .dtors segment,
+             * meaning calls to _d_dso_register() will get called.
+             */
+        }
     }
 }
 
