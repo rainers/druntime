@@ -943,12 +943,19 @@ class GC
         }
         if (sz < minsz)
             return 0;
-        debug (MEMSTOMP) memset(p + psize, 0xF0, (psz + sz) * PAGESIZE - psize);
+        size_t nsize = (psz + sz) * PAGESIZE;
+        debug (MEMSTOMP) memset(p + psize, 0xF0, nsize - psize);
         memset(pool.pagetable + pagenum + psz, B_PAGEPLUS, sz);
         pool.updateOffsets(pagenum);
         pool.freepages -= sz;
-        gcx.updateCaches(p, (psz + sz) * PAGESIZE);
-        return (psz + sz) * PAGESIZE;
+        gcx.updateCaches(p, nsize);
+
+        size_t offset = cast(size_t)(p - pool.baseAddr);
+        size_t biti = cast(size_t)(offset >> pool.shiftBy);
+        if (!pool.noscan.test(biti))
+            setPointerBitmap(p, pool, nsize, nsize, ti, true);
+
+        return nsize;
     }
 
 
