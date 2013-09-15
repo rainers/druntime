@@ -391,7 +391,7 @@ private:
 public:
     @property size_t length() const { return _aaLen(p); }
 
-    Value[Key] rehash() @property
+    Value[Key] rehash()
     {
         auto p = _aaRehash(cast(void**) &p, typeid(Value[Key]));
         return *cast(Value[Key]*)(&p);
@@ -447,7 +447,7 @@ public:
         // bug 10720 - check whether Value is copyable
     })))
     {
-        @property Value[Key] dup()
+        Value[Key] dup()
         {
             Value[Key] result;
             foreach (k, v; this)
@@ -458,9 +458,9 @@ public:
         }
     }
     else
-        @disable @property Value[Key] dup();    // for better error message
+        @disable Value[Key] dup();    // for better error message
 
-    @property auto byKey()
+    auto byKey()
     {
         static struct Result
         {
@@ -475,7 +475,7 @@ public:
         return Result(_aaRange(p));
     }
 
-    @property auto byValue()
+    auto byValue()
     {
         static struct Result
         {
