@@ -85,8 +85,21 @@ extern (C) bool rt_term(ExceptionHandler dg = null)
 {
     try
     {
+        /* Check that all other non-daemon threads have finished
+         * execution before calling the shared module destructors.
+         * Calling thread_joinAll here would be too late because other
+         * shared libraries might have already been
+         * destructed/unloaded.
+         */
+        import core.thread : Thread;
+        auto tthis = Thread.getThis();
+        foreach (t; Thread)
+        {
+            if (t !is tthis && t.isRunning && !t.isDaemon)
+                assert(0, "Can only call rt_term when all non-daemon threads have been joined or detached.");
+        }
+
         rt_moduleTlsDtor();
-        thread_joinAll();
         rt_moduleDtor();
         gc_term();
         finiSections();

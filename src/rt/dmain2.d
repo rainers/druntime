@@ -322,6 +322,8 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
             tryExec({ result = mainFunc(args); });
         else
             result = EXIT_FAILURE;
+
+        tryExec({thread_joinAll();});
     }
 
     void runMainWithInit()
@@ -330,6 +332,8 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
             tryExec({ result = mainFunc(args); });
         else
             result = EXIT_FAILURE;
+
+        tryExec({thread_joinAll();});
 
         if (!rt.rtinit.rt_term())
             result = (result == EXIT_SUCCESS) ? EXIT_FAILURE : result;
