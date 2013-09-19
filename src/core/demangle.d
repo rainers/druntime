@@ -767,7 +767,18 @@ private struct Demangle
         case 'E': // TypeEnum (E LName)
         case 'T': // TypeTypedef (T LName)
             next();
+        L_nextQN:
             parseQualifiedName();
+            switch( tok() )
+            {
+            case 'F', 'U', 'V', 'W', 'R':
+                parseTypeFunction( null, IsDelegate.no, true );
+                put( "." );
+                goto L_nextQN;
+                break;
+            default:
+                break;
+            }
             pad( name );
             return dst[beg .. len];
         case 'D': // TypeDelegate (D TypeFunction)
@@ -858,7 +869,7 @@ private struct Demangle
         Z     // not variadic
     */
     enum IsDelegate { no, yes }
-    char[] parseTypeFunction( char[] name = null, IsDelegate isdg = IsDelegate.no )
+    char[] parseTypeFunction( char[] name = null, IsDelegate isdg = IsDelegate.no, bool fqn = false )
     {
         debug(trace) printf( "parseTypeFunction+\n" );
         debug(trace) scope(success) printf( "parseTypeFunction-\n" );
@@ -938,24 +949,27 @@ private struct Demangle
         scope(success)
         {
             put( ")" );
-            auto t = len;
-            parseType();
-            put( " " );
-            if( name.length )
+            if( !fqn )
             {
-                if( !contains( dst[0 .. len], name ) )
-                    put( name );
-                else if( shift( name ).ptr != name.ptr )
+                auto t = len;
+                parseType();
+                put( " " );
+                if( name.length )
                 {
-                    beg -= name.length;
-                    t -= name.length;
+                    if( !contains( dst[0 .. len], name ) )
+                        put( name );
+                    else if( shift( name ).ptr != name.ptr )
+                    {
+                        beg -= name.length;
+                        t -= name.length;
+                    }
                 }
+                else if( IsDelegate.yes == isdg )
+                    put( "delegate" );
+                else
+                    put( "function" );
+                shift( dst[beg .. t] );
             }
-            else if( IsDelegate.yes == isdg )
-                put( "delegate" );
-            else
-                put( "function" );
-            shift( dst[beg .. t] );
         }
 
         // Arguments
@@ -1691,7 +1705,9 @@ version(unittest)
         ["_D8demangle13__T2fnVeeINFZ2fnFZv", "void demangle.fn!(real.infinity).fn()"],
         ["_D8demangle21__T2fnVHiiA2i1i2i3i4Z2fnFZv", "void demangle.fn!([1:2, 3:4]).fn()"],
         ["_D8demangle2fnFNgiZNgi", "inout(int) demangle.fn(inout(int))"],
-        ["_D8demangle29__T2fnVa97Va9Va0Vu257Vw65537Z2fnFZv", "void demangle.fn!('a', '\\t', \\x00, '\\u0101', '\\U00010001').fn()"]
+        ["_D8demangle29__T2fnVa97Va9Va0Vu257Vw65537Z2fnFZv", "void demangle.fn!('a', '\\t', \\x00, '\\u0101', '\\U00010001').fn()"],
+        ["_D2gc11gctemplates56__T8mkBitmapTS3std5range13__T4iotaTiTiZ4iotaFiiZ6ResultZ8mkBitmapFNbNfPmmZv",
+         "nothrow @safe void gc.gctemplates.mkBitmap!(std.range.iota!(int, int).iota(int, int).Result).mkBitmap(ulong*, ulong)"],
     ];
 
     template staticIota(int x)
@@ -1712,7 +1728,7 @@ unittest
         assert( r == name[1],
                 "demangled \"" ~ name[0] ~ "\" as \"" ~ r ~ "\" but expected \"" ~ name[1] ~ "\"");
     }
-    foreach( i; staticIota!(table.length) )
+version(none)    foreach( i; staticIota!(table.length) )
     {
         enum r = demangle( table[i][0] );
         static assert( r == table[i][1],
