@@ -1772,7 +1772,7 @@ unittest
         assert( r == name[1],
                 "demangled \"" ~ name[0] ~ "\" as \"" ~ r ~ "\" but expected \"" ~ name[1] ~ "\"");
     }
-version(none)    foreach( i; staticIota!(table.length) )
+    foreach( i; staticIota!(table.length) )
     {
         enum r = demangle( table[i][0] );
         static assert( r == table[i][1],

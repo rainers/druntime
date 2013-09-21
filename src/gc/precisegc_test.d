@@ -21,11 +21,10 @@
 
 module precisegc_test;
 
-import gctemplates;
+import gc.gctemplates;
 import std.stdio;
 import std.conv;
 
-import gc.gcx;
 import gc.gc;
 
 enum BITS_PER_WORD = (size_t.sizeof * 8);
@@ -74,7 +73,7 @@ void __testType(T)(size_t[] expected)
     enum info = RTInfoImpl2!(T); // we want the array, not the pointer
     writef("%-20s:", T.stringof);
     writef(" CT:%s", info);
-    writef(" EXP:%s", expected);
+    writef(" EXP:%s", expected);writeln();
     assert(info[0] == allocatedSize!T);
     assert(info[1..$] == expected);
     assert(words == expected.length);
@@ -141,12 +140,14 @@ L_testNull:
         assert(pinfo[1 .. words+1] == expected[]);
     }
 L_xit:
+static if(__traits(compiles, gc_findPool))
+{
     write(" GC ");
     static if(__traits(compiles, new T))
         testGC!T(expected);
     else
         write("skipped");
-
+}
     writeln();
 }
 
@@ -221,17 +222,18 @@ void testType(T)(size_t[] expected)
     _testType!(S!(T, string))(sexp);
 
     // generate bit pattern for C!T
+	enum mutexBit = RTInfoMark__Monitor ? 2 : 0;
     C!T ct = null;
     int ctpOff = ct.p.offsetof / bytesPerPtr;
     int cttOff = ct.t.offsetof / bytesPerPtr;
-    sexp[0] = (expected[0] << cttOff) | (1 << ctpOff) | 2; // mutex
+    sexp[0] = (expected[0] << cttOff) | (1 << ctpOff) | mutexBit;
     _testType!(C!(T))(sexp);
 
     C!(T, string) cts = null;
     int ctspOff = cts.p.offsetof / bytesPerPtr;
     int ctstOff = cts.t.offsetof / bytesPerPtr;
     // generate bit pattern for C!T
-    sexp[0] = (expected[0] << ctstOff) | (1 << ctspOff) | 0b1010; // mutex + arr ptr
+    sexp[0] = (expected[0] << ctstOff) | (1 << ctspOff) | mutexBit | 0b1000; // mutex + arr ptr
     _testType!(C!(T, string))(sexp);
 }
 

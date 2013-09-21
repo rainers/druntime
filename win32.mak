@@ -139,6 +139,7 @@ copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\sys\posix\sys
 	mkdir $(IMPDIR)\core\sys\windows
 	mkdir $(IMPDIR)\etc\linux
+	mkdir $(IMPDIR)\gc
 
 copy: $(COPY)
 
@@ -452,6 +453,9 @@ $(IMPDIR)\core\sys\windows\windows.d : src\core\sys\windows\windows.d
 	copy $** $@
 
 $(IMPDIR)\etc\linux\memoryerror.d : src\etc\linux\memoryerror.d
+	copy $** $@
+
+$(IMPDIR)\gc\gctemplates.d : src\gc\gctemplates.d
 	copy $** $@
 
 ################### C\ASM Targets ############################

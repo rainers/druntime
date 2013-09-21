@@ -20,6 +20,7 @@ private
     import core.bitop;
     debug(PRINTF) import core.stdc.stdio;
     static import rt.tlsgc;
+    import gc.config;
 }
 
 private
@@ -600,26 +601,25 @@ void __doPostblit(void *ptr, size_t len, const TypeInfo ti)
     }
 }
 
-version = GC_PRECISE;
-
 BlkInfo gc_qalloc_emplace( size_t sz, uint ba, const TypeInfo ti )
 {
-version(GC_PRECISE) {
-    // an array of classes is in fact an array of pointers
-    const(TypeInfo) tinext = ti.next.classinfo.name == "TypeInfo_Class" ? typeid(void*) : ti.next;
-
-    if( sz <= PAGESIZE / 2 )
-        return gc_qalloc( sz, ba | BlkAttr.REP_RTINFO, tinext );
-
-    BlkInfo info = gc_qalloc( sz, ba | BlkAttr.NO_RTINFO, tinext );
-    if( info.base )
+    if(gc_precise) 
     {
-        void* arr = __arrayStart(info);
-        gc_emplace( arr, info.base + info.size - arr, tinext );
+        // an array of classes is in fact an array of pointers
+        const(TypeInfo) tinext = ti.next.classinfo.name == "TypeInfo_Class" ? typeid(void*) : ti.next;
+
+        if( sz <= PAGESIZE / 2 )
+            return gc_qalloc( sz, ba | BlkAttr.REP_RTINFO, tinext );
+
+        BlkInfo info = gc_qalloc( sz, ba | BlkAttr.NO_RTINFO, tinext );
+        if( info.base )
+        {
+            void* arr = __arrayStart(info);
+            gc_emplace( arr, info.base + info.size - arr, tinext );
+        }
+        return info;
     }
-    return info;
-}
-	else
+    else
         return gc_qalloc( sz, ba, ti );
 }
 
@@ -631,15 +631,15 @@ BlkInfo gc_qalloc_emplace( size_t sz, const TypeInfo ti )
 size_t gc_extend_emplace( void* p, size_t mx, size_t sz, size_t oldsz, const TypeInfo ti )
 {
     size_t newsz = gc_extend( p, mx, sz, ti );
-	version(GC_PRECISE)
-		if( newsz >= PAGESIZE )
-	{
-	    // an array of classes is in fact an array of pointers
-		const(TypeInfo) tinext = ti.next.classinfo.name == "TypeInfo_Class" ? typeid(void*) : ti.next;
-		void* arr = p; // LARGEPREFIX already added to p
-		gc_emplace( arr, newsz - LARGEPAD, tinext );
-	}
-	return newsz;
+    if(gc_precise)
+        if( newsz >= PAGESIZE )
+    {
+        // an array of classes is in fact an array of pointers
+        const(TypeInfo) tinext = ti.next.classinfo.name == "TypeInfo_Class" ? typeid(void*) : ti.next;
+        void* arr = p; // LARGEPREFIX already added to p
+        gc_emplace( arr, newsz - LARGEPAD, tinext );
+    }
+    return newsz;
 }
 
 
