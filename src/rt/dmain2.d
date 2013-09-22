@@ -142,9 +142,6 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         }
     }
 
-    // Allocate args[] on the stack
-    char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
-
     version (Windows)
     {
         /* Because we want args[] to be UTF-8, and Windows doesn't guarantee that,
@@ -156,7 +153,10 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
         immutable size_t wCommandLineLength = wcslen(wCommandLine);
         int wargc;
         wchar_t** wargs = CommandLineToArgvW(wCommandLine, &wargc);
-        assert(wargc == argc);
+
+        // Allocate args[] on the stack
+        char[][] args = (cast(char[]*) alloca(wargc * (char[]).sizeof))[0 .. wargc];
+        argc = wargc;
 
         // This is required because WideCharToMultiByte requires int as input.
         assert(wCommandLineLength <= cast(size_t) int.max, "Wide char command line length must not exceed int.max");
@@ -184,6 +184,9 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     }
     else version (Posix)
     {
+        // Allocate args[] on the stack
+        char[][] args = (cast(char[]*) alloca(argc * (char[]).sizeof))[0 .. argc];
+
         size_t totalArgsLength = 0;
         foreach(i, ref arg; args)
         {
