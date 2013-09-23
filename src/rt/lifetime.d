@@ -468,13 +468,13 @@ BlkInfo *__getBlkInfo(void *interior)
         auto curi = ptr + __nextBlkIdx;
         for(auto i = curi; i >= ptr; --i)
         {
-            if(i.base && i.base <= interior && (interior - i.base) < i.size)
+            if(i.base && i.base <= interior && cast(size_t)(interior - i.base) < i.size)
                 return i;
         }
 
         for(auto i = ptr + N_CACHE_BLOCKS - 1; i > curi; --i)
         {
-            if(i.base && i.base <= interior && (interior - i.base) < i.size)
+            if(i.base && i.base <= interior && cast(size_t)(interior - i.base) < i.size)
                 return i;
         }
     }
@@ -2085,7 +2085,7 @@ extern (C) void[] _d_arraycatnT(const TypeInfo ti, uint n, ...)
     {
         byte[]* p = cast(byte[]*)(&n + 1);
 
-        for (auto i = 0; i < n; i++)
+        for (auto i = 0u; i < n; i++)
         {
             byte[] b = *p++;
             length += b.length;
@@ -2106,7 +2106,7 @@ extern (C) void[] _d_arraycatnT(const TypeInfo ti, uint n, ...)
         __va_list argsave = __va_argsave.va;
         va_list ap;
         va_start(ap, __va_argsave);
-        for (auto i = 0; i < n; i++)
+        for (auto i = 0u; i < n; i++)
         {
             byte[] b;
             va_arg(ap, b);
@@ -2128,7 +2128,7 @@ extern (C) void[] _d_arraycatnT(const TypeInfo ti, uint n, ...)
         p = cast(byte[]*)(&n + 1);
 
         size_t j = 0;
-        for (auto i = 0; i < n; i++)
+        for (auto i = 0u; i < n; i++)
         {
             byte[] b = *p++;
             if (b.length)
@@ -2157,7 +2157,7 @@ extern (C) void[] _d_arraycatnT(const TypeInfo ti, uint n, ...)
     {
         va_list ap2 = &argsave;
         size_t j = 0;
-        for (auto i = 0; i < n; i++)
+        for (auto i = 0u; i < n; i++)
         {
             byte[] b;
             va_arg(ap2, b);
