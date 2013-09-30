@@ -3445,15 +3445,12 @@ class Fiber
 
 
     /**
-     * Resets this fiber so that it may be re-used.  This routine may only be
-     * called for fibers that have terminated, as doing otherwise could result
-     * in scope-dependent functionality that is not executed.  Stack-based
-     * classes, for example, may not be cleaned up properly if a fiber is reset
-     * before it has terminated.
-     *
-     * Params:
-     *  fn = The fiber function.
-     *  dg = The fiber function.
+     * Resets this fiber so that it may be re-used, optionally with a
+     * new function/delegate.  This routine may only be called for
+     * fibers that have terminated, as doing otherwise could result in
+     * scope-dependent functionality that is not executed.
+     * Stack-based classes, for example, may not be cleaned up
+     * properly if a fiber is reset before it has terminated.
      *
      * In:
      *  This fiber must be in state TERM.
@@ -3747,6 +3744,7 @@ private:
         else
         {
             version (Posix) import core.sys.posix.sys.mman; // mmap
+            version (linux) import core.sys.linux.sys.mman : MAP_ANON;
 
             static if( __traits( compiles, mmap ) )
             {
@@ -4422,6 +4420,86 @@ unittest
 
     fib.reset(delegate void(){method = "delegate";});
     expect(fib, "delegate");
+}
+
+
+// stress testing GC stack scanning
+unittest
+{
+    import core.memory;
+
+    static void unreferencedThreadObject()
+    {
+        static void sleep() { Thread.sleep(dur!"msecs"(100)); }
+        auto thread = new Thread(&sleep);
+        thread.start();
+    }
+    unreferencedThreadObject();
+    GC.collect();
+
+    static class Foo
+    {
+        this(int value)
+        {
+            _value = value;
+        }
+
+        int bar()
+        {
+            return _value;
+        }
+
+        int _value;
+    }
+
+    static void collect()
+    {
+        auto foo = new Foo(2);
+        assert(foo.bar() == 2);
+        GC.collect();
+        Fiber.yield();
+        GC.collect();
+        assert(foo.bar() == 2);
+    }
+
+    auto fiber = new Fiber(&collect);
+
+    fiber.call();
+    GC.collect();
+    fiber.call();
+
+    // thread reference
+    auto foo = new Foo(2);
+
+    void collect2()
+    {
+        assert(foo.bar() == 2);
+        GC.collect();
+        Fiber.yield();
+        GC.collect();
+        assert(foo.bar() == 2);
+    }
+
+    fiber = new Fiber(&collect2);
+
+    fiber.call();
+    GC.collect();
+    fiber.call();
+
+    static void recurse(size_t cnt)
+    {
+        --cnt;
+        Fiber.yield();
+        if (cnt)
+        {
+            auto fib = new Fiber(() { recurse(cnt); });
+            fib.call();
+            GC.collect();
+            fib.call();
+        }
+    }
+    fiber = new Fiber(() { recurse(20); });
+    fiber.call();
 }
 
 }
