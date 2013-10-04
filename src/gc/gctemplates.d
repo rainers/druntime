@@ -74,7 +74,11 @@ template RTInfoImpl(T)
 
 template RTInfoImpl2(T)
 {
-    immutable RTInfoImpl2 = bitmap!T();
+    static if (is(typeof(T.sizeof)))
+        immutable RTInfoImpl2 = bitmap!T();
+    else
+        // for struct/class declarations without {}
+        immutable RTInfoImpl2 = emptyBitmap!T();
 }
 
 // first element is size of the object that the bitmap corresponds to in bytes.
@@ -83,6 +87,13 @@ size_t[bitmapSize!T + 1] bitmap(T)()
     size_t[bitmapSize!T + 1] A;
     bitmapImpl!(Unqual!T)(A.ptr + 1);
     A[0] = allocatedSize!T;
+    return A;
+}
+
+size_t[1] emptyBitmap(T)()
+{
+    size_t[1] A;
+    A[0] = 0;
     return A;
 }
 
