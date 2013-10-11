@@ -12,31 +12,18 @@
 
 module rt.lifetime;
 //debug = PRINTF;
-private
-{
-    import core.stdc.stdlib;
-    import core.stdc.string;
-    import core.stdc.stdarg;
-    import core.bitop;
-    debug(PRINTF) import core.stdc.stdio;
-    static import rt.tlsgc;
-    import gc.config;
-}
+import core.stdc.stdlib;
+import core.stdc.string;
+import core.stdc.stdarg;
+import core.bitop;
+static import core.memory;
+private alias BlkAttr = core.memory.GC.BlkAttr;
+debug(PRINTF) import core.stdc.stdio;
+static import rt.tlsgc;
+import gc.config;
 
 private
 {
-    enum BlkAttr : uint
-    {
-        FINALIZE   = 0b0000_0001,
-        NO_SCAN    = 0b0000_0010,
-        NO_MOVE    = 0b0000_0100,
-        APPENDABLE = 0b0000_1000,
-        NO_INTERIOR = 0b0001_0000,
-        NO_RTINFO  = 0b0010_0000,
-        REP_RTINFO = 0b0100_0000,
-        ALL_BITS   = 0b1111_1111
-    }
-
     package struct BlkInfo
     {
         void*  base;
@@ -116,10 +103,10 @@ extern (C) Object _d_newclass(const ClassInfo ci)
     else
     {
         // TODO: should this be + 1 to avoid having pointers to the next block?
-        BlkAttr attr;
+        BlkAttr attr = BlkAttr.FINALIZE;
         // extern(C++) classes don't have a classinfo pointer in their vtable so the GC can't finalize them
-        if (!(ci.m_flags & TypeInfo_Class.ClassFlags.isCPPclass))
-            attr |= BlkAttr.FINALIZE;
+        if (ci.m_flags & TypeInfo_Class.ClassFlags.isCPPclass)
+            attr &= ~BlkAttr.FINALIZE;
         if (ci.m_flags & TypeInfo_Class.ClassFlags.noPointers)
             attr |= BlkAttr.NO_SCAN;
         p = gc_malloc(ci.init.length, attr, ci);
@@ -129,7 +116,7 @@ extern (C) Object _d_newclass(const ClassInfo ci)
     debug(PRINTF)
     {
         printf("p = %p\n", p);
-        printf("ci = %p, ci.init = %p, len = %d\n", ci, ci.init, ci.init.length);
+        printf("ci = %p, ci.init.ptr = %p, len = %llu\n", ci, ci.init.ptr, cast(ulong)ci.init.length);
         printf("vptr = %p\n", *cast(void**) ci.init);
         printf("vtbl[0] = %p\n", (*cast(void***) ci.init)[0]);
         printf("vtbl[1] = %p\n", (*cast(void***) ci.init)[1]);
