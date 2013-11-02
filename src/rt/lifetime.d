@@ -423,6 +423,15 @@ void processGCMarks(BlkInfo* cache, scope rt.tlsgc.IsMarkedDg isMarked)
     }
 }
 
+unittest
+{
+    import core.memory;
+    // Bugzilla 10701 - segfault in GC
+    ubyte[] result; result.length = 4096;
+    GC.free(result.ptr);
+    GC.collect();
+}
+
 /**
   Get the cached block info of an interior pointer.  Returns null if the
   interior pointer's block is not cached.
@@ -2422,4 +2431,19 @@ unittest
     auto s4 = new S4;
     assert(s4.x == null);
     assert(gc_getAttr(s4) == 0);
+}
+
+unittest
+{
+    import core.memory;
+    // Bugzilla 3454 - Inconsistent flag setting in GC.realloc()
+    static void test(size_t multiplier)
+    {
+        auto p = GC.malloc(8 * multiplier, BlkAttr.NO_SCAN);
+        assert(GC.getAttr(p) == BlkAttr.NO_SCAN);
+        p = GC.realloc(p, 2 * multiplier, BlkAttr.NO_SCAN);
+        assert(GC.getAttr(p) == BlkAttr.NO_SCAN);
+    }
+    test(1);
+    test(1024 * 1024);
 }

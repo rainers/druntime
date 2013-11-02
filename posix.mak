@@ -232,7 +232,7 @@ $(DRUNTIME): $(OBJS) $(SRCS) posix.mak $(DMDDEP)
 	$(DMD) -lib -of$(DRUNTIME) -Xf$(JSONDIR)\druntime.json $(DFLAGS) $(SRCS) $(OBJS)
 
 ################### shared Library generation ##################
-ADDITIONAL_TESTS:=
+ADDITIONAL_TESTS:=test/init_fini test/exceptions
 ADDITIONAL_TESTS+=$(if $(findstring $(OS),linux),test/shared,)
 
 unittest : $(UT_MODULES) $(addsuffix /.run,$(ADDITIONAL_TESTS))
@@ -304,8 +304,12 @@ else
 	@touch $@
 endif	
 
-test/%/.run: test/%/Makefile $(DRUNTIMESO)
-	$(QUIET)$(MAKE) -C test/$* MODEL=$(MODEL) OS=$(OS) DMD=$(abspath $(DMD)) DRUNTIMESO=$(abspath $(DRUNTIMESO)) QUIET=$(QUIET)
+test/init_fini/.run test/exceptions/.run: $(DRUNTIME)
+test/shared/.run: $(DRUNTIMESO)
+
+test/%/.run: test/%/Makefile
+	$(QUIET)$(MAKE) -C test/$* MODEL=$(MODEL) OS=$(OS) DMD=$(abspath $(DMD)) \
+		DRUNTIME=$(abspath $(DRUNTIME)) DRUNTIMESO=$(abspath $(DRUNTIMESO)) QUIET=$(QUIET)
 
 $(OBJDIR)/testall$(DOTEXE) : $(SRCS) $(DRUNTIME) $(OBJDIR)/emptymain.d
 	@echo Testing $@

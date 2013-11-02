@@ -224,75 +224,6 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
 
     void tryExec(scope void delegate() dg)
     {
-        void printLocLine(Throwable t)
-        {
-            if (t.file)
-            {
-               console(t.classinfo.name)("@")(t.file)("(")(t.line)(")");
-            }
-            else
-            {
-                console(t.classinfo.name);
-            }
-            console("\n");
-        }
-
-        void printMsgLine(Throwable t)
-        {
-            if (t.file)
-            {
-               console(t.classinfo.name)("@")(t.file)("(")(t.line)(")");
-            }
-            else
-            {
-                console(t.classinfo.name);
-            }
-            if (t.msg)
-            {
-                console(": ")(t.msg);
-            }
-            console("\n");
-        }
-
-        void printInfoBlock(Throwable t)
-        {
-            if (t.info)
-            {
-                console("----------------\n");
-                foreach (i; t.info)
-                    console(i)("\n");
-                console("----------------\n");
-            }
-        }
-
-        void print(Throwable t)
-        {
-            Throwable firstWithBypass = null;
-
-            for (; t; t = t.next)
-            {
-                printMsgLine(t);
-                printInfoBlock(t);
-                auto e = cast(Error) t;
-                if (e && e.bypassedException)
-                {
-                    console("Bypasses ");
-                    printLocLine(e.bypassedException);
-                    if (firstWithBypass is null)
-                        firstWithBypass = t;
-                }
-            }
-            if (firstWithBypass is null)
-                return;
-            console("=== Bypassed ===\n");
-            for (t = firstWithBypass; t; t = t.next)
-            {
-                auto e = cast(Error) t;
-                if (e && e.bypassedException)
-                    print(e.bypassedException);
-            }
-        }
-
         if (trapExceptions)
         {
             try
@@ -301,7 +232,7 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
             }
             catch (Throwable t)
             {
-                print(t);
+                printThrowable(t);
                 result = EXIT_FAILURE;
             }
         }
@@ -319,33 +250,18 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     //       the user's main function.  If main terminates with an exception,
     //       the exception is handled and then cleanup begins.  An exception
     //       thrown during cleanup, however, will abort the cleanup process.
-    void runMain()
-    {
-        if (runModuleUnitTests())
-            tryExec({ result = mainFunc(args); });
-        else
-            result = EXIT_FAILURE;
-
-        tryExec({thread_joinAll();});
-    }
-
-    void runMainWithInit()
+    void runAll()
     {
         if (rt.rtinit.rt_init() && runModuleUnitTests())
             tryExec({ result = mainFunc(args); });
         else
             result = EXIT_FAILURE;
 
-        tryExec({thread_joinAll();});
-
         if (!rt.rtinit.rt_term())
             result = (result == EXIT_SUCCESS) ? EXIT_FAILURE : result;
     }
 
-    version (linux) // initialization is done in rt.sections_linux
-        tryExec(&runMain);
-    else
-        tryExec(&runMainWithInit);
+    tryExec(&runAll);
 
     // Issue 10344: flush stdout and return nonzero on failure
     if (.fflush(.stdout) != 0)
@@ -358,4 +274,27 @@ extern (C) int _d_run_main(int argc, char **argv, MainFunc mainFunc)
     }
 
     return result;
+}
+
+private void printThrowable(Throwable t)
+{
+    void sink(const(char)[] buf) nothrow
+    {
+        fprintf(stderr, "%.*s", cast(int)buf.length, buf.ptr);
+    }
+
+    for (; t; t = t.next)
+    {
+        t.toString(&sink); sink("\n");
+
+        auto e = cast(Error)t;
+        if (e is null || e.bypassedException is null) continue;
+
+        sink("=== Bypassed ===\n");
+        for (auto t2 = e.bypassedException; t2; t2 = t2.next)
+        {
+            t2.toString(&sink); sink("\n");
+        }
+        sink("=== ~Bypassed ===\n");
+    }
 }

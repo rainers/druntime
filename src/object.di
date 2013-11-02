@@ -322,6 +322,7 @@ class Throwable : Object
     @safe pure nothrow this(string msg, Throwable next = null);
     @safe pure nothrow this(string msg, string file, size_t line, Throwable next = null);
     override string toString();
+    void toString(scope void delegate(const(char)[]) sink) const;
 }
 
 
@@ -530,7 +531,7 @@ void destroy(T)(ref T obj) if (is(T == struct))
         buf[] = init[];
 }
 
-void destroy(T : U[n], U, size_t n)(ref T obj)
+void destroy(T : U[n], U, size_t n)(ref T obj) if (!is(T == struct))
 {
     obj[] = U.init;
 }
