@@ -19,6 +19,7 @@ import rt.sections;
 
 import core.runtime;
 import core.stdc.stdlib;
+import core.stdc.stdio;   // for printf()
 import core.thread : thread_joinAll;
 
 extern (C) void gc_init();
@@ -46,10 +47,28 @@ void _d_criticalInit()
     _STI_critical_init();
 }
 
+
 alias void delegate(Throwable) ExceptionHandler;
 
-extern (C) bool rt_init(ExceptionHandler dg = null)
+/**
+ * Keep track of how often rt_init/rt_term were called.
+ */
+shared size_t _initCount;
+
+/**********************************************
+ * Initialize druntime.
+ * If a C program wishes to call D code, and there's no D main(), then it
+ * must call rt_init() and rt_term().
+ */
+extern (C) int rt_init()
 {
+    /* @@BUG 11380 @@ Need to synchronize rt_init/rt_term calls for
+       version (Shared) druntime, because multiple C threads might
+       initialize different D libraries without knowing about the
+       shared druntime. Also we need to attach any thread that calls
+       rt_init. */
+    if (_initCount++) return 1;
+
     _d_criticalInit();
 
     try
@@ -59,20 +78,15 @@ extern (C) bool rt_init(ExceptionHandler dg = null)
         initStaticDataGC();
         rt_moduleCtor();
         rt_moduleTlsCtor();
-        return true;
+        return 1;
     }
-    catch (Throwable e)
+    catch (Throwable t)
     {
-        if (dg)
-            dg(e);
-        else
-            throw e;    // rethrow, don't silently ignore error
-        /* Rethrow, and the two STD functions aren't called?
-         * This needs rethinking.
-         */
+        _initCount = 0;
+        printThrowable(t);
     }
     _d_criticalTerm();
-    return false;
+    return 0;
 }
 
 void _d_criticalTerm()
@@ -81,34 +95,26 @@ void _d_criticalTerm()
     _STD_monitor_staticdtor();
 }
 
-extern (C) bool rt_term(ExceptionHandler dg = null)
+/**********************************************
+ * Terminate use of druntime.
+ */
+extern (C) int rt_term()
 {
+    if (!_initCount) return 0; // was never initialized
+    if (--_initCount) return 1;
+
     try
     {
-        /* Check that all other non-daemon threads have finished
-         * execution before calling the shared module destructors.
-         * Calling thread_joinAll here would be too late because other
-         * shared libraries might have already been
-         * destructed/unloaded.
-         */
-        import core.thread : Thread;
-        auto tthis = Thread.getThis();
-        foreach (t; Thread)
-        {
-            if (t !is tthis && t.isRunning && !t.isDaemon)
-                assert(0, "Can only call rt_term when all non-daemon threads have been joined or detached.");
-        }
-
         rt_moduleTlsDtor();
+        thread_joinAll();
         rt_moduleDtor();
         gc_term();
         finiSections();
-        return true;
+        return 1;
     }
-    catch (Throwable e)
+    catch (Throwable t)
     {
-        if (dg)
-            dg(e);
+        printThrowable(t);
     }
     finally
     {
@@ -118,9 +124,9 @@ extern (C) bool rt_term(ExceptionHandler dg = null)
 }
 
 /***********************************
-* These are a temporary means of providing a GC hook for DLL use.  They may be
-* replaced with some other similar functionality later.
-*/
+ * These are a temporary means of providing a GC hook for DLL use.  They may be
+ * replaced with some other similar functionality later.
+ */
 extern (C)
 {
     void* gc_getProxy();
@@ -132,14 +138,14 @@ extern (C)
     alias void  function()      gcClrFn;
 }
 
-/*******************************************
- * Loads a DLL written in D with the name 'name'.
- * Returns:
- *      opaque handle to the DLL if successfully loaded
- *      null if failure
- */
 version (Windows)
 {
+    /*******************************************
+     * Loads a DLL written in D with the name 'name'.
+     * Returns:
+     *      opaque handle to the DLL if successfully loaded
+     *      null if failure
+     */
     extern (C) void* rt_loadLibrary(const char* name)
     {
         return initLibrary(.LoadLibraryA(name));
@@ -163,79 +169,23 @@ version (Windows)
         }
         return mod;
     }
-}
-else version (Posix)
-{
-    extern (C) void* rt_loadLibrary(const char* name)
-    {
-        throw new Exception("rt_loadLibrary not yet implemented on Posix.");
-        version (none)
-        {
-            /* This also means that the library libdl.so must be linked in,
-             * meaning this code should go into a separate module so it is only
-             * linked in if rt_loadLibrary() is actually called.
-             */
-            import core.sys.posix.dlfcn;
 
-            auto dl_handle = dlopen(name, RTLD_LAZY);
-            if (!dl_handle)
-                return null;
-
-            /* As the DLL is now loaded, if we get here, it means that
-             * the DLL has also successfully called all the functions in its .ctors
-             * segment. For D, that means all the _d_dso_registry() calls are done.
-             * Next up is:
-             *  registering the DLL's static data segments with the GC
-             *  (Does the DLL's TLS data need to be registered with the GC?)
-             *  registering the DLL's exception handler tables
-             *  calling the DLL's module constructors
-             *  calling the DLL's TLS module constructors
-             *  calling the DLL's unit tests
-             */
-        }
-    }
-}
-
-/*************************************
- * Unloads DLL that was previously loaded by rt_loadLibrary().
- * Input:
- *      ptr     the handle returned by rt_loadLibrary()
- * Returns:
- *      true    succeeded
- *      false   some failure happened
- */
-extern (C) bool rt_unloadLibrary(void* ptr)
-{
-    version (Windows)
+    /*************************************
+     * Unloads DLL that was previously loaded by rt_loadLibrary().
+     * Input:
+     *      ptr     the handle returned by rt_loadLibrary()
+     * Returns:
+     *      1   succeeded
+     *      0   some failure happened
+     */
+    extern (C) int rt_unloadLibrary(void* ptr)
     {
         gcClrFn gcClr  = cast(gcClrFn) GetProcAddress(ptr, "gc_clrProxy");
         if (gcClr !is null)
             gcClr();
         return FreeLibrary(ptr) != 0;
     }
-    else version (Posix)
-    {
-        throw new Exception("rt_unloadLibrary not yet implemented on Posix.");
-        version (none)
-        {
-            import core.sys.posix.dlfcn;
-
-            /* Perform the following:
-             *  calling the DLL's TLS module destructors
-             *  calling the DLL's module destructors
-             *  unregistering the DLL's exception handler tables
-             *  (Does the DLL's TLS data need to be unregistered with the GC?)
-             *  unregistering the DLL's static data segments with the GC
-             */
-
-            dlclose(ptr);
-            /* dlclose() will also call all the functions in the .dtors segment,
-             * meaning calls to _d_dso_register() will get called.
-             */
-        }
-    }
 }
-
 // command line arguments
 struct CArgs
 {
@@ -257,6 +207,28 @@ extern (C) string[] rt_args()
     return _d_args;
 }
 
+private void printThrowable(Throwable t)
+{
+    void sink(const(char)[] buf) nothrow
+    {
+        fprintf(stderr, "%.*s", cast(int)buf.length, buf.ptr);
+    }
+
+    for (; t; t = t.next)
+    {
+        t.toString(&sink); sink("\n");
+
+        auto e = cast(Error)t;
+        if (e is null || e.bypassedException is null) continue;
+
+        sink("=== Bypassed ===\n");
+        for (auto t2 = e.bypassedException; t2; t2 = t2.next)
+        {
+            t2.toString(&sink); sink("\n");
+        }
+        sink("=== ~Bypassed ===\n");
+    }
+}
 bool runModuleUnitTests()
 {
     foreach (ref sg; SectionGroup)

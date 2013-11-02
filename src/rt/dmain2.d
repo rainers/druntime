@@ -20,7 +20,6 @@ private
     import rt.sections;
     import rt.minfo;
     import rt.rtinit;
-    import rt.util.console;
     import rt.util.string;
     import core.runtime;
     import core.stdc.stddef;
