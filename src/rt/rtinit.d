@@ -209,7 +209,7 @@ extern (C) string[] rt_args()
 
 private void printThrowable(Throwable t)
 {
-    void sink(const(char)[] buf) nothrow
+    void sink(in char[] buf) nothrow
     {
         fprintf(stderr, "%.*s", cast(int)buf.length, buf.ptr);
     }
