@@ -298,7 +298,7 @@ class GC
     void initialize()
     {
         gc_config_init();
-        mutexStorage[] = GCMutex.classinfo.init[];
+        mutexStorage[] = typeid(GCMutex).init[];
         gcLock = cast(GCMutex) mutexStorage.ptr;
         gcLock.__ctor();
         gcx = cast(Gcx*)cstdlib.calloc(1, Gcx.sizeof);

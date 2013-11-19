@@ -79,7 +79,7 @@ class Object
      */
     string toString()
     {
-        return this.classinfo.name;
+        return typeid(this).name;
     }
 
     /**
@@ -105,7 +105,7 @@ class Object
         // BUG: this prevents a compacting GC from working, needs to be fixed
         //return cast(int)cast(void*)this - cast(int)cast(void*)o;
 
-        throw new Exception("need opCmp for class " ~ this.classinfo.name);
+        throw new Exception("need opCmp for class " ~ typeid(this).name);
         //return this !is o;
     }
 
@@ -923,7 +923,7 @@ class TypeInfo_Interface : TypeInfo
         if (this is o)
             return true;
         auto c = cast(const TypeInfo_Interface)o;
-        return c && this.info.name == c.classinfo.name;
+        return c && this.info.name == typeid(c).name;
     }
 
     override size_t getHash(in void* p) @trusted const
@@ -1387,7 +1387,7 @@ class Throwable : Object
     {
         SizeStringBuff tmpBuff = void;
 
-        sink(this.classinfo.name);
+        sink(typeid(this).name);
         if (file)
         {
             sink("@"); sink(file);
