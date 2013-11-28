@@ -365,9 +365,10 @@ version(PRINTF) import core.stdc.stdio;
         size_t off = reldata[r].symbolOff;
 version(PRINTF) printf("Reloc: adr %p off %p", adr, off);
 
+        ubyte* symadr;
         if(adr < memStart || adr >= memEnd)
             goto L_next;
-        auto symadr = cast(ubyte*) (*adr - off);
+        symadr = cast(ubyte*) (*adr - off);
         if(symadr < memStart || symadr >= memEnd)
             goto L_next;
 
