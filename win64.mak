@@ -459,10 +459,19 @@ $(IMPDIR)\core\sys\windows\dbghelp.d : src\core\sys\windows\dbghelp.d
 $(IMPDIR)\core\sys\windows\dll.d : src\core\sys\windows\dll.d
 	copy $** $@
 
+$(IMPDIR)\core\sys\windows\dllshared.d : src\core\sys\windows\dllshared.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\dllclient.d : src\core\sys\windows\dllclient.d
+	copy $** $@
+
 $(IMPDIR)\core\sys\windows\stacktrace.d : src\core\sys\windows\stacktrace.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\threadaux.d : src\core\sys\windows\threadaux.d
+	copy $** $@
+
+$(IMPDIR)\core\sys\windows\tls.d : src\core\sys\windows\tls.d
 	copy $** $@
 
 $(IMPDIR)\core\sys\windows\windows.d : src\core\sys\windows\windows.d
