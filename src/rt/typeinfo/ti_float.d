@@ -80,4 +80,6 @@ class TypeInfo_f : TypeInfo
 
         return (cast(float *)&r)[0 .. 1];
     }
+
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return rtinfoNoPointers; }
 }
