@@ -43,6 +43,7 @@ struct GCBits
     enum BITS_SHIFT = (wordtype.sizeof == 8 ? 6 : 5);
     enum BITS_MASK = (BITS_PER_WORD - 1);
     enum BITS_1 = cast(wordtype)1;
+    enum sentinelWords = 1; // before and after data to allow accesses without checking boundaries
 
     wordtype*  data = null;
     size_t nwords = 0;    // allocated words in data[] excluding sentinals
@@ -69,7 +70,7 @@ struct GCBits
     {
         this.nbits = nbits;
         nwords = (nbits + (BITS_PER_WORD - 1)) >> BITS_SHIFT;
-        data = cast(typeof(data[0])*)calloc(nwords + 2, data[0].sizeof);
+        data = cast(typeof(data[0])*)calloc(nwords + 2 * sentinelWords, data[0].sizeof);
         if (!data)
             onOutOfMemoryError();
     }
@@ -83,12 +84,12 @@ struct GCBits
     {
         version (none)
         {
-            return core.bitop.bt(data + 1, i);   // this is actually slower! don't use
+            return core.bitop.bt(data + sentinelWords, i);   // this is actually slower! don't use
         }
         else
         {
             //return (cast(bit *)(data + 1))[i];
-            return data[1 + (i >> BITS_SHIFT)] & (BITS_1 << (i & BITS_MASK));
+            return data[sentinelWords + (i >> BITS_SHIFT)] & (BITS_1 << (i & BITS_MASK));
         }
     }
 
@@ -100,7 +101,7 @@ struct GCBits
     body
     {
         //(cast(bit *)(data + 1))[i] = 1;
-        data[1 + (i >> BITS_SHIFT)] |= (BITS_1 << (i & BITS_MASK));
+        data[sentinelWords + (i >> BITS_SHIFT)] |= (BITS_1 << (i & BITS_MASK));
     }
 
     void clear(size_t i)
@@ -111,14 +112,14 @@ struct GCBits
     body
     {
         //(cast(bit *)(data + 1))[i] = 0;
-        data[1 + (i >> BITS_SHIFT)] &= ~(BITS_1 << (i & BITS_MASK));
+        data[sentinelWords + (i >> BITS_SHIFT)] &= ~(BITS_1 << (i & BITS_MASK));
     }
 
     wordtype testClear(size_t i)
     {
         version (bitops)
         {
-            return core.bitop.btr(data + 1, i);   // this is faster!
+            return core.bitop.btr(data + sentinelWords, i);   // this is faster!
         }
         else version (Asm86)
         {
@@ -127,7 +128,7 @@ struct GCBits
                 naked                   ;
                 mov     EAX,data[EAX]   ;
                 mov     ECX,i-4[ESP]    ;
-                btr     4[EAX],ECX      ;
+                btr     4[EAX],ECX      ; //4*sentinelWords
                 sbb     EAX,EAX         ;
                 ret     4               ;
             }
@@ -137,7 +138,7 @@ struct GCBits
             //result = (cast(bit *)(data + 1))[i];
             //(cast(bit *)(data + 1))[i] = 0;
 
-            auto p = &data[1 + (i >> BITS_SHIFT)];
+            auto p = &data[sentinelWords + (i >> BITS_SHIFT)];
             auto mask = (BITS_1 << (i & BITS_MASK));
             auto result = *p & mask;
             *p &= ~mask;
@@ -149,7 +150,7 @@ struct GCBits
     {
         version (bitops)
         {
-            return core.bitop.bts(data + 1, i);   // this is faster!
+            return core.bitop.bts(data + sentinelWords, i);   // this is faster!
         }
         else version (Asm86)
         {
@@ -158,7 +159,7 @@ struct GCBits
                 naked                   ;
                 mov     EAX,data[EAX]   ;
                 mov     ECX,i-4[ESP]    ;
-                bts     4[EAX],ECX      ;
+                bts     4[EAX],ECX      ; // 4*sentinelWords
                 sbb     EAX,EAX         ;
                 ret     4               ;
             }
@@ -168,7 +169,7 @@ struct GCBits
             //result = (cast(bit *)(data + 1))[i];
             //(cast(bit *)(data + 1))[i] = 0;
 
-            auto p = &data[1 + (i >> BITS_SHIFT)];
+            auto p = &data[sentinelWords + (i >> BITS_SHIFT)];
             auto  mask = (BITS_1 << (i & BITS_MASK));
             auto result = *p & mask;
             *p |= mask;
@@ -178,7 +179,7 @@ struct GCBits
 
     void zero()
     {
-        memset(data + 1, 0, nwords * wordtype.sizeof);
+        memset(data + sentinelWords, 0, nwords * wordtype.sizeof);
     }
 
     void copy(GCBits *f)
@@ -188,7 +189,7 @@ struct GCBits
     }
     body
     {
-        memcpy(data + 1, f.data + 1, nwords * wordtype.sizeof);
+        memcpy(data + sentinelWords, f.data + sentinelWords, nwords * wordtype.sizeof);
     }
 
     wordtype* base()
@@ -198,7 +199,7 @@ struct GCBits
     }
     body
     {
-        return data + 1;
+        return data + sentinelWords;
     }
 }
 
