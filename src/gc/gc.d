@@ -39,6 +39,7 @@ version = STACKGROWSDOWN;       // growing the stack means subtracting from the 
 import gc.bits;
 import gc.stats;
 import gc.os;
+import gc.config;
 
 import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
 import core.stdc.string;
@@ -280,6 +281,7 @@ class GC
 
     void initialize()
     {
+        gc_config_init();
         mutexStorage[] = typeid(GCMutex).init[];
         gcLock = cast(GCMutex) mutexStorage.ptr;
         gcLock.__ctor();
