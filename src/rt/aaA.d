@@ -19,13 +19,14 @@ private
     import core.stdc.string;
     import core.stdc.stdio;
     import core.memory;
+    import gc.config;
 
     // Convenience function to make sure the NO_INTERIOR gets set on the
     // bucket array.
     Entry*[] newBuckets(in size_t len) @trusted pure nothrow
     {
         auto ptr = cast(Entry**) GC.calloc(
-            len * (Entry*).sizeof, GC.BlkAttr.NO_INTERIOR);
+            len * (Entry*).sizeof, GC.BlkAttr.NO_INTERIOR | GC.BlkAttr.REP_RTINFO, typeid(Entry*));
         return ptr[0..len];
     }
 }
@@ -65,13 +66,67 @@ struct Entry
     /* value */
 }
 
+// build type info with appropriate RTInfo at runtime
+class TypeInfo_Entry : TypeInfo
+{
+    this(const TypeInfo keyti, const TypeInfo valti, size_t valuesize)
+    {
+        immutable(size_t)* keyinfo = cast(immutable(size_t)*) keyti.rtInfo;
+        immutable(size_t)* valinfo = cast(immutable(size_t)*) valti.rtInfo;
+
+        size_t keysize = aligntsize(keyti.tsize); // aligns value
+        size_t rtinfosize = Entry.sizeof + keysize + valuesize;
+
+        m_rtInfo[0] = rtinfosize;
+        
+        size_t keybits;
+        if (keyinfo is rtinfoNoPointers)
+            keybits = 0;
+        else if (keyinfo is rtinfoHasPointers)
+            keybits = (1 << ((keyti.tsize + (void*).sizeof - 1) / (void*).sizeof)) - 1;
+        else
+            keybits = keyinfo[1];
+
+        size_t valbits;
+        if (valinfo is rtinfoNoPointers)
+            valbits = 0;
+        else if (valinfo is rtinfoHasPointers)
+            valbits = (1 << ((valuesize + (void*).sizeof - 1) / (void*).sizeof)) - 1;
+        else
+            valbits = valinfo[1];
+
+        size_t valshift = (Entry.sizeof + keysize + (void*).sizeof - 1) / (void*).sizeof;
+        m_rtInfo[1] = 1 | (keybits << 2) | (valbits << valshift);
+    }
+
+    override @property size_t tsize() nothrow pure const @safe { return 0; }
+    override @property uint flags() nothrow pure const @safe { return 1; }
+
+    override @property immutable(void)* rtInfo() nothrow pure const @safe { return m_rtInfo.ptr; }
+
+    size_t m_rtInfo[2]; // assumes key+value not larger than 128/512 bytes for 32/64 bit
+}
+
 struct Impl
 {
+    this(const TypeInfo keyti, const TypeInfo valti, size_t valuesize)
+    {
+        _keyti = cast() keyti;
+
+        // Initialize the object in its pre-ctor state
+        _entryti[] = typeid(TypeInfo_Entry).init[];
+        (cast(TypeInfo_Entry)&_entryti).__ctor(keyti, valti, valuesize);
+    }
+
     Entry*[] buckets;
     size_t nodes;       // total number of entries
     TypeInfo _keyti;
     Entry*[4] binit;    // initial value of buckets[]
 
+    byte[__traits(classInstanceSize, TypeInfo_Entry)] _entryti;
+
+    @property const(TypeInfo) entryti() const /*@safe*/ pure nothrow 
+    { return cast(const(TypeInfo_Entry))&_entryti; }
     @property const(TypeInfo) keyti() const @safe pure nothrow
     { return _keyti; }
 }
@@ -160,7 +215,7 @@ body
     immutable keytitsize = keyti.tsize;
 
     if (aa.impl is null)
-    {   aa.impl = new Impl();
+    {   aa.impl = new Impl(keyti, typeid(void*), valuesize);
         aa.impl.buckets = aa.impl.binit[];
     }
     //printf("aa = %p\n", aa);
@@ -186,7 +241,7 @@ body
         // Not found, create new elem
         //printf("create new one\n");
         size_t size = Entry.sizeof + aligntsize(keytitsize) + valuesize;
-        e = cast(Entry *) GC.malloc(size);
+        e = cast(Entry *) GC.malloc(size, 0, aa.impl.entryti);
         e.next = null;
         e.hash = key_hash;
         ubyte* ptail = cast(ubyte*)(e + 1);
@@ -332,9 +387,9 @@ inout(ArrayRet_t) _aaValues(inout AA aa, in size_t keysize, in size_t valuesize)
 
     if (aa.impl !is null)
     {
+        auto attr = (valuesize < (void*).sizeof ? GC.BlkAttr.NO_SCAN : 0) | GC.BlkAttr.REP_RTINFO;
         a.length = _aaLen(aa);
-        a.ptr = cast(byte*) GC.malloc(a.length * valuesize,
-                                      valuesize < (void*).sizeof ? GC.BlkAttr.NO_SCAN : 0);
+        a.ptr = cast(byte*) GC.malloc(a.length * valuesize, attr, typeid(void*)); // TODO: needs valueti
         resi = 0;
         foreach (inout(Entry)* e; aa.impl.buckets)
         {
@@ -375,6 +430,7 @@ body
         {
             Impl newImpl;
             Impl* oldImpl = paa.impl;
+            newImpl._entryti = oldImpl._entryti;
 
             size_t i;
             for (i = 0; i < prime_list.length - 1; i++)
@@ -424,8 +480,8 @@ inout(ArrayRet_t) _aaKeys(inout AA aa, in size_t keysize) pure nothrow
     if (!len)
         return null;
 
-    immutable blkAttr = !(aa.impl.keyti.flags & 1) ? GC.BlkAttr.NO_SCAN : 0;
-    auto res = (cast(byte*) GC.malloc(len * keysize, blkAttr))[0 .. len * keysize];
+    immutable blkAttr = (!(aa.impl.keyti.flags & 1) ? GC.BlkAttr.NO_SCAN : 0) | GC.BlkAttr.REP_RTINFO;
+    auto res = (cast(byte*) GC.malloc(len * keysize, blkAttr, aa.impl.keyti))[0 .. len * keysize];
 
     size_t resi = 0;
     foreach (inout(Entry)* e; aa.impl.buckets)
@@ -579,7 +635,7 @@ Impl* _d_assocarrayliteralTX(const TypeInfo_AssociativeArray ti, void[] keys, vo
     }
     else
     {
-        result = new Impl();
+        result = new Impl(keyti, ti.next, valuesize);
         result._keyti = cast() keyti;
 
         size_t i;
@@ -609,8 +665,9 @@ Impl* _d_assocarrayliteralTX(const TypeInfo_AssociativeArray ti, void[] keys, vo
                 {
                     // Not found, create new elem
                     //printf("create new one\n");
-                    e = cast(Entry *) cast(void*) new void[Entry.sizeof + keytsize + valuesize];
+                    e = cast(Entry *) GC.malloc(Entry.sizeof + keytsize + valuesize, 0, result.entryti);
                     memcpy(e + 1, pkey, keysize);
+                    e.next = null;
                     e.hash = key_hash;
                     *pe = e;
                     result.nodes++;
