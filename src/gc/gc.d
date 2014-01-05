@@ -2441,14 +2441,15 @@ struct Gcx
     /**
      * Mark overload for initial mark() call.
      */
-    void mark(void *pbot, void *ptop) {
-        mark(pbot, ptop, MAX_MARK_RECURSIONS);
+    void markConservative(void *pbot, void *ptop) 
+    {
+        markConservative(pbot, ptop, MAX_MARK_RECURSIONS);
     }
 
     /**
      * Search a range of memory values and mark any pointers into the GC pool.
      */
-    void mark(void *pbot, void *ptop, int nRecurse)
+    void markConservative(void *pbot, void *ptop, int nRecurse) 
     {
         //import core.stdc.stdio;printf("nRecurse = %d\n", nRecurse);
         void **p1 = cast(void **)pbot;
@@ -2464,100 +2465,214 @@ struct Gcx
             //if (log) debug(PRINTF) printf("\tmark %p\n", p);
             if (p >= minAddr && p < maxAddr)
             {
-                if ((cast(size_t)p & ~cast(size_t)(PAGESIZE-1)) == pcache)
-                    continue;
-
-                auto pool = findPool(p);
-                if (pool)
-                {
-                    size_t offset = cast(size_t)(p - pool.baseAddr);
-                    size_t biti = void;
-                    size_t pn = offset / PAGESIZE;
-                    Bins   bin = cast(Bins)pool.pagetable[pn];
-                    void* base = void;
-
-                    // For the NO_INTERIOR attribute.  This tracks whether
-                    // the pointer is an interior pointer or points to the
-                    // base address of a block.
-                    bool pointsToBase = false;
-
-                    //debug(PRINTF) printf("\t\tfound pool %p, base=%p, pn = %zd, bin = %d, biti = x%x\n", pool, pool.baseAddr, pn, bin, biti);
-
-                    // Adjust bit to be at start of allocated memory block
-                    if (bin < B_PAGE)
-                    {
-                        // We don't care abou setting pointsToBase correctly
-                        // because it's ignored for small object pools anyhow.
-                        auto offsetBase = offset & notbinsize[bin];
-                        biti = offsetBase >> pool.shiftBy;
-                        base = pool.baseAddr + offsetBase;
-                        //debug(PRINTF) printf("\t\tbiti = x%x\n", biti);
-                    }
-                    else if (bin == B_PAGE)
-                    {
-                        auto offsetBase = offset & notbinsize[bin];
-                        base = pool.baseAddr + offsetBase;
-                        pointsToBase = offsetBase == offset;
-                        biti = offsetBase >> pool.shiftBy;
-                        //debug(PRINTF) printf("\t\tbiti = x%x\n", biti);
-
-                        pcache = cast(size_t)p & ~cast(size_t)(PAGESIZE-1);
-                    }
-                    else if (bin == B_PAGEPLUS)
-                    {
-                        pn -= pool.bPageOffsets[pn];
-                        base = pool.baseAddr + (pn * PAGESIZE);
-                        biti = pn * (PAGESIZE >> pool.shiftBy);
-                        pcache = cast(size_t)p & ~cast(size_t)(PAGESIZE-1);
-                    }
-                    else
-                    {
-                        // Don't mark bits in B_FREE pages
-                        assert(bin == B_FREE);
-                        continue;
-                    }
-
-                    if(pool.nointerior.nbits && !pointsToBase && pool.nointerior.test(biti))
-                    {
-                        continue;
-                    }
-
-                    //debug(PRINTF) printf("\t\tmark(x%x) = %d\n", biti, pool.mark.test(biti));
-                    if (!pool.mark.testSet(biti))
-                    {
-                        //if (log) debug(PRINTF) printf("\t\tmarking %p\n", p);
-                        if (!pool.noscan.test(biti))
-                        {
-                            if(nRecurse == 0) {
-                                // Then we've got a really deep heap graph.
-                                // Start marking stuff to be scanned when we
-                                // traverse the heap again next time, to save
-                                // stack space.
-                                pool.scan.set(biti);
-                                changes = 1;
-                                pool.newChanges = true;
-                            } else {
-                                // Directly recurse mark() to prevent having
-                                // to traverse the heap O(D) times where D
-                                // is the max depth of the heap graph.
-                                if (bin < B_PAGE)
-                                {
-                                    mark(base, base + binsize[bin], nRecurse - 1);
-                                }
-                                else
-                                {
-                                    auto u = pool.bPageOffsets[pn];
-                                    mark(base, base + u * PAGESIZE, nRecurse - 1);
-                                }
-                            }
-                        }
-
-                        debug (LOGGING) log_parent(sentinel_add(pool.baseAddr + (biti << pool.shiftBy)), sentinel_add(pbot));
-                    }
-                }
+                mixin markOne!();
+                markPointer();
             }
         }
         anychanges |= changes;
+    }
+
+    mixin template markOne()
+    {
+        void markPointer()
+        {
+            if ((cast(size_t)p & ~cast(size_t)(PAGESIZE-1)) == pcache)
+                return;
+
+            auto pool = findPool(p);
+            if (pool)
+            {
+                size_t offset = cast(size_t)(p - pool.baseAddr);
+                size_t biti = void;
+                size_t pn = offset / PAGESIZE;
+                Bins   bin = cast(Bins)pool.pagetable[pn];
+                void* base = void;
+
+                // For the NO_INTERIOR attribute.  This tracks whether
+                // the pointer is an interior pointer or points to the
+                // base address of a block.
+                bool pointsToBase = false;
+
+                //debug(PRINTF) printf("\t\tfound pool %p, base=%p, pn = %zd, bin = %d, biti = x%x\n", pool, pool.baseAddr, pn, bin, biti);
+
+                // Adjust bit to be at start of allocated memory block
+                if (bin < B_PAGE)
+                {
+                    // We don't care abou setting pointsToBase correctly
+                    // because it's ignored for small object pools anyhow.
+                    auto offsetBase = offset & notbinsize[bin];
+                    biti = offsetBase >> pool.shiftBy;
+                    base = pool.baseAddr + offsetBase;
+                    //debug(PRINTF) printf("\t\tbiti = x%x\n", biti);
+                }
+                else if (bin == B_PAGE)
+                {
+                    auto offsetBase = offset & notbinsize[bin];
+                    base = pool.baseAddr + offsetBase;
+                    pointsToBase = offsetBase == offset;
+                    biti = offsetBase >> pool.shiftBy;
+                    //debug(PRINTF) printf("\t\tbiti = x%x\n", biti);
+
+                    pcache = cast(size_t)p & ~cast(size_t)(PAGESIZE-1);
+                }
+                else if (bin == B_PAGEPLUS)
+                {
+                    pn -= pool.bPageOffsets[pn];
+                    base = pool.baseAddr + (pn * PAGESIZE);
+                    biti = pn * (PAGESIZE >> pool.shiftBy);
+                    pcache = cast(size_t)p & ~cast(size_t)(PAGESIZE-1);
+                }
+                else
+                {
+                    // Don't mark bits in B_FREE pages
+                    assert(bin == B_FREE);
+                    return;
+                }
+
+                if(pool.nointerior.nbits && !pointsToBase && pool.nointerior.test(biti))
+                {
+                    return;
+                }
+
+                //debug(PRINTF) printf("\t\tmark(x%x) = %d\n", biti, pool.mark.test(biti));
+                if (!pool.mark.testSet(biti))
+                {
+                    //if (log) debug(PRINTF) printf("\t\tmarking %p\n", p);
+                    if (!pool.noscan.test(biti))
+                    {
+                        if(nRecurse == 0) {
+                            // Then we've got a really deep heap graph.
+                            // Start marking stuff to be scanned when we
+                            // traverse the heap again next time, to save
+                            // stack space.
+                            pool.scan.set(biti);
+                            changes = 1;
+                            pool.newChanges = true;
+                        } else {
+                            // Directly recurse mark() to prevent having
+                            // to traverse the heap O(D) times where D
+                            // is the max depth of the heap graph.
+                            if (bin < B_PAGE)
+                            {
+                                markInPool(pool, base, base + binsize[bin], nRecurse - 1);
+                            }
+                            else
+                            {
+                                auto u = pool.bPageOffsets[pn];
+                                markInPool(pool, base, base + u * PAGESIZE, nRecurse - 1);
+                            }
+                        }
+                    }
+
+                    debug (LOGGING) log_parent(sentinel_add(pool.baseAddr + (biti << pool.shiftBy)), sentinel_add(pbot));
+                }
+            }
+        }
+    }
+
+    /**
+     * Search a range of memory values and mark any pointers into the GC pool.
+     */
+    void markInPool(Pool* pool, void *pbot, void *ptop, int nRecurse)
+    {
+        //import core.stdc.stdio;printf("nRecurse = %d\n", nRecurse);
+
+        if(!gc_precise) 
+            return markConservative(pbot, ptop, nRecurse);
+
+        assert(pool);
+        GCBits.wordtype * is_pointer = pool.is_pointer.base();
+        byte* baseAddr = cast(byte*)pool.baseAddr;
+
+        markPrecise(pbot, ptop, nRecurse, is_pointer, baseAddr);
+    }
+
+    void markPrecise(void *pbot, void *ptop, int nRecurse, const(GCBits.wordtype) * is_pointer, byte* baseAddr)
+    {
+        //printf("marking range: %p -> %p\n", pbot, ptop);
+        size_t pcache = 0;
+        uint changes = 0;
+        void **p1 = cast(void **)pbot;
+        void **p2 = cast(void **)ptop;
+        debug(PRINTF) int indent = MAX_MARK_RECURSIONS - nRecurse;
+
+        size_t pointer_off = ((cast(byte*)p1) - baseAddr) / (void*).sizeof;
+        is_pointer += (pointer_off >> GCBits.BITS_SHIFT);
+        GCBits.wordtype pointer_data = *is_pointer >> (pointer_off & GCBits.BITS_MASK);
+
+        for (; p1 < p2; p1++)
+        {
+        L_next:
+            if(pointer_data & 1)
+            {
+                auto p = cast(byte *)(*p1);
+                if (p >= minAddr && p < maxAddr)
+                {
+                    debug(PRINTF) printf("%.*snot skipping %p, biti = %d, at %p\n", indent, "".ptr, p, ((cast(byte*)p1)-baseAddr)/(void*).sizeof, p1);
+                    mixin markOne!();
+                    markPointer();
+                }
+            }
+            else if(pointer_data == 0)
+            {
+                size_t jmp = GCBits.BITS_PER_WORD - (pointer_off & GCBits.BITS_MASK);
+                p1 += jmp;
+                if(p1 >= p2)
+                    break;
+                pointer_off += jmp;
+                pointer_data = *++is_pointer;
+                goto L_next;
+            }
+            if((++pointer_off & GCBits.BITS_MASK) == 0)
+            {
+                pointer_data = *++is_pointer;
+            }
+            else
+                pointer_data >>= 1;
+        }
+        anychanges |= changes;
+    }
+
+    /**
+    * Search an object with type info and mark any pointers into the GC pool.
+    */
+    void mark(void *p, const(TypeInfo) info, size_t repeat = 1)
+    {
+        auto ti = info; //.unqual();
+        assert(ti);
+
+        debug(PRINTF)
+            printf("Mark call for %d %p with type info %s: ", repeat, p, debugTypeName(ti).ptr);
+
+        auto rtInfo = cast(const(size_t)*)ti.rtInfo();
+        if(rtInfo is rtinfoNoPointers)
+        {
+            debug(PRINTF) printf("rtInfo: no pointers\n");
+        }
+        else if(rtInfo is rtinfoHasPointers)
+        {
+            if (auto arrayti = cast(TypeInfo_StaticArray)ti)
+            {
+                debug(PRINTF) printf("static array\n");
+                mark(p, arrayti.next, repeat * arrayti.len);
+            }
+            else
+            {
+                debug(PRINTF) printf("rtInfo: has %d pointers\n", ti.tsize / (void*).sizeof);
+                markConservative(p, p + ti.tsize);
+            }
+        }
+        else if(cast(TypeInfo_Class)ti)
+        {
+            // class is not emplaced into data memory, must be a reference
+            debug(PRINTF) printf("class reference\n");
+            markConservative(p, p + (void*).sizeof);
+        }
+        else
+        {
+            debug(PRINTF) printf("mark with rtInfo\n");
+            markPrecise(p, p + rtInfo[0], MAX_MARK_RECURSIONS-1, rtInfo + 1, cast(byte*)p); // first word is size
+        }
     }
 
 
@@ -2637,12 +2752,12 @@ struct Gcx
         {
             debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
             // Scan stacks and registers for each paused thread
-            thread_scanAll(&mark);
+            thread_scanAll(&markConservative);
         }
 
         // Scan roots[]
         debug(COLLECT_PRINTF) printf("\tscan roots[]\n");
-        mark(roots, roots + nroots);
+        markConservative(roots, roots + nroots);
 
         // Scan ranges[]
         debug(COLLECT_PRINTF) printf("\tscan ranges[]\n");
@@ -2650,7 +2765,7 @@ struct Gcx
         for (n = 0; n < nranges; n++)
         {
             debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
-            mark(ranges[n].pbot, ranges[n].ptop);
+            markConservative(ranges[n].pbot, ranges[n].ptop);
         }
         //log--;
 
@@ -2698,12 +2813,12 @@ struct Gcx
                         auto bin = cast(Bins)pool.pagetable[pn];
                         if (bin < B_PAGE)
                         {
-                            mark(o, o + binsize[bin]);
+                            markInPool(pool, o, o + binsize[bin], MAX_MARK_RECURSIONS);
                         }
                         else if (bin == B_PAGE)
                         {
                             auto u = pool.bPageOffsets[pn];
-                            mark(o, o + u * PAGESIZE);
+                            markInPool(pool, o, o + u * PAGESIZE, MAX_MARK_RECURSIONS);
                         }
 
                         bitm >>= 1;
