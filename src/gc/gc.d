@@ -257,6 +257,7 @@ void printGCBits(GCBits* bits)
     printf("\n");
 }
 
+// we can assume the name is always from a literal, so it is zero terminated
 debug(PRINTF)
 string debugTypeName(const(TypeInfo) ti)
 {
@@ -268,7 +269,10 @@ string debugTypeName(const(TypeInfo) ti)
     else if(auto si = cast(TypeInfo_Struct)ti)
         name = si.name;
     else if(auto ci = cast(TypeInfo_Const)ti)
-        return debugTypeName(ti.next);
+        static if(__traits(compiles,ci.base)) // different whether compiled with object.di or object.d
+            return debugTypeName(ci.base);
+        else
+            return debugTypeName(ci.next);
     else
         name = ti.classinfo.name;
     return name;
@@ -440,16 +444,13 @@ class GC
         //debug(PRINTF) printGCBits(&pool.is_pointer);
 
         debug(PRINTF) 
-        {
-            string name = debugTypeName(ti);
-            printf("Setting a pointer bitmap for %.*s at %p + %zu\n", name.length, name.ptr, p, s);
-        }
-
-        if (repeat)
-            s = allocSize;
+            printf("Setting a pointer bitmap for %s at %p + %zu\n", debugTypeName(ti).ptr, p, s);
 
         if (ti)
         {
+            if (repeat)
+                s = allocSize;
+
             auto rtInfo = cast(const(size_t)*)ti.rtInfo();
 
             if (rtInfo is rtinfoNoPointers) 
@@ -480,8 +481,8 @@ class GC
                     pool.is_pointer.copyRange(offset/(void*).sizeof, tocopy, bitmap);
                 }
 
-                debug(PRINTF) printf("\tSetting bitmap for new object (%.*s)\n\t\tat %p\t\tcopying from %p + %zu: ", 
-                                     name.length, name.ptr, p, bitmap, element_size);
+                debug(PRINTF) printf("\tSetting bitmap for new object (%s)\n\t\tat %p\t\tcopying from %p + %zu: ", 
+                                     debugTypeName(ti).ptr, p, bitmap, element_size);
                 debug(PRINTF) 
                     for(size_t i = 0; i < element_size/((void*).sizeof); i++) 
                         printf("%d", (bitmap[i/(8*size_t.sizeof)] >> (i%(8*size_t.sizeof))) & 1);
@@ -494,16 +495,18 @@ class GC
                 }
             }
 
+            if(s < allocSize)
+            {
+                offset = (offset + s + (void*).sizeof - 1) & ~((void*).sizeof - 1);
+                pool.is_pointer.clrRange(offset/(void*).sizeof, (allocSize - s)/(void*).sizeof);
+            }
         }
         else 
         {
+            s = allocSize;
+
             debug(PRINTF) printf("Allocating a block without TypeInfo\n");
             pool.is_pointer.setRange(offset/(void*).sizeof, s/(void*).sizeof);
-        }
-        if(s < allocSize)
-        {
-            offset = (offset + s + (void*).sizeof - 1) & ~((void*).sizeof - 1);
-            pool.is_pointer.clrRange(offset/(void*).sizeof, (allocSize - s)/(void*).sizeof);
         }
         //debug(PRINTF) printGCBits(&pool.is_pointer);
     }
@@ -559,13 +562,8 @@ class GC
         Bins bin;
 
         debug(PRINTF)
-        {
-            if (ti)
-                printf("GC::malloc(gcx = %p, %.*s size = %d bits = %x)\n", gcx,
-                       ti.classinfo.name.length, ti.classinfo.name.ptr, size, bits);
-            else
-                printf("GC::malloc(gcx = %p, size = %d, bits = %x)\n", gcx, size, bits);
-        }
+            printf("GC::malloc(gcx = %p, size = %d bits = %x, ti = %s)\n", gcx, size, bits, debugTypeName(ti).ptr);
+
         assert(gcx);
         //debug(PRINTF) printf("gcx.self = %x, pthread_self() = %x\n", gcx.self, pthread_self());
 
@@ -917,12 +915,19 @@ class GC
         }
         if (sz < minsz)
             return 0;
-        debug (MEMSTOMP) memset(p + psize, 0xF0, (psz + sz) * PAGESIZE - psize);
+        size_t nsize = (psz + sz) * PAGESIZE;
+        debug (MEMSTOMP) memset(p + psize, 0xF0, nsize - psize);
         memset(pool.pagetable + pagenum + psz, B_PAGEPLUS, sz);
         pool.updateOffsets(pagenum);
         pool.freepages -= sz;
-        gcx.updateCaches(p, (psz + sz) * PAGESIZE);
-        return (psz + sz) * PAGESIZE;
+        gcx.updateCaches(p, nsize);
+
+        size_t offset = cast(size_t)(p - pool.baseAddr);
+        size_t biti = cast(size_t)(offset >> pool.shiftBy);
+        if (!pool.noscan.test(biti))
+            setPointerBitmap(p, pool, nsize, nsize, ti, true);
+
+        return nsize;
     }
 
 
