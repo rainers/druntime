@@ -168,6 +168,10 @@ void mkBitmap(T)(size_t* p, size_t offset)
     {
         version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " basic type");
     }
+    else static if (is(T F == __vector(F[N]), size_t N))
+    {
+        version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " vector type");
+    }
     else static if (is(T F == F*) && is(F == function))
     {
         version(RTInfoPRINTF) pragma(msg,"      mkBitmap " ~ T.stringof ~ " function");
