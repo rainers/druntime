@@ -19,12 +19,14 @@ module gc.gc;
 
 //debug = PRINTF;               // turn on printf's
 //debug = COLLECT_PRINTF;       // turn on printf's
+//debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 //debug = LOGGING;              // log allocations / frees
 //debug = MEMSTOMP;             // stomp on memory
 //debug = SENTINEL;             // add underrun/overrrun protection
 //debug = PTRCHECK;             // more pointer checking
 //debug = PTRCHECK2;            // thorough but slow pointer checking
 //debug = PROFILING;            // measure performance of various steps.
+//debug = GCXINVARIANT;         // more invariants (not thread safe)
 
 /*************** Configuration *********************/
 
@@ -47,9 +49,21 @@ private alias BlkAttr = core.memory.GC.BlkAttr;
 
 version (GNU) import gcc.builtins;
 
-debug (PRINTF) import core.stdc.stdio : printf;
-debug (COLLECT_PRINTF) import core.stdc.stdio : printf;
+     debug(PRINTF_TO_FILE) import core.stdc.stdio : fprintf, fopen, fflush, FILE;
+else debug(COLLECT_PRINTF) import core.stdc.stdio : printf;
+else debug(PRINTF)         import core.stdc.stdio : printf;
 debug private import core.stdc.stdio;
+
+debug(PRINTF_TO_FILE) __gshared FILE* gcx_fh;
+
+debug(PRINTF_TO_FILE) int printf(ARGS...)(const char* fmt, ARGS args)
+{
+    if(!gcx_fh) 
+        gcx_fh = fopen("gcx.log", "w");
+    int len = fprintf(gcx_fh, fmt, args);
+    fflush(gcx_fh);
+    return len;
+}
 
 debug(PRINTF) void printFreeInfo(Pool* pool)
 {
@@ -71,6 +85,9 @@ debug(PROFILING)
     __gshared long sweepTime;
     __gshared long recoverTime;
 }
+
+alias void function(Gcx* gcx, bool start) fnProfileCollectionHook;
+__gshared fnProfileCollectionHook profileCollectionHook;
 
 private
 {
@@ -228,6 +245,23 @@ const uint GCVERSION = 2;       // increment every time we change interface
 
 // This just makes Mutex final to de-virtualize member function calls.
 final class GCMutex : Mutex {}
+
+debug(PRINTF)
+string debugTypeName(const(TypeInfo) ti)
+{
+    string name;
+    if(ti is null)
+        name = "null";
+    else if(auto ci = cast(TypeInfo_Class)ti)
+        name = ci.name;
+    else if(auto si = cast(TypeInfo_Struct)ti)
+        name = si.name;
+    else if(auto ci = cast(TypeInfo_Const)ti)
+        return debugTypeName(ti.next);
+    else
+        name = ti.classinfo.name;
+    return name;
+}
 
 class GC
 {
@@ -432,7 +466,14 @@ class GC
         void *p = null;
         Bins bin;
 
-        //debug(PRINTF) printf("GC::malloc(size = %d, gcx = %p)\n", size, gcx);
+        debug(PRINTF)
+        {
+            if (ti)
+                printf("GC::malloc(gcx = %p, %.*s size = %d bits = %x)\n", gcx,
+                       ti.classinfo.name.length, ti.classinfo.name.ptr, size, bits);
+            else
+                printf("GC::malloc(gcx = %p, size = %d, bits = %x)\n", gcx, size, bits);
+        }
         assert(gcx);
         //debug(PRINTF) printf("gcx.self = %x, pthread_self() = %x\n", gcx.self, pthread_self());
 
@@ -1416,6 +1457,7 @@ struct Gcx
     void Invariant() const { }
 
 
+    debug(GCXINVARIANT)
     invariant()
     {
         if (inited)
@@ -1461,8 +1503,12 @@ struct Gcx
 
             for (size_t i = 0; i < B_PAGE; i++)
             {
+                size_t j = 0;
+                List* prev, pprev, ppprev; // keep a short hitory to inspect in the debugger
                 for (auto list = cast(List*)bucket[i]; list; list = list.next)
                 {
+                    ppprev = pprev; pprev = prev; prev = list;
+                    j++;
                 }
             }
         }
@@ -2397,6 +2443,8 @@ struct Gcx
         size_t n;
         Pool*  pool;
 
+        if(profileCollectionHook)
+            profileCollectionHook(&this, true);
         debug(PROFILING)
         {
             clock_t start, stop;
@@ -2730,6 +2778,8 @@ struct Gcx
             stop = clock();
             recoverTime += (stop - start);
         }
+        if(profileCollectionHook)
+            profileCollectionHook(&this, false);
 
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
         debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
