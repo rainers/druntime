@@ -223,7 +223,7 @@ debug (LOGGING)
 /* ============================ GC =============================== */
 
 
-const uint GCVERSION = 1;       // increment every time we change interface
+const uint GCVERSION = 2;       // increment every time we change interface
                                 // to GC.
 
 // This just makes Mutex final to de-virtualize member function calls.
@@ -391,7 +391,7 @@ class GC
     /**
      *
      */
-    void *malloc(size_t size, uint bits = 0, size_t *alloc_size = null)
+    void *malloc(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
         if (!size)
         {
@@ -410,7 +410,7 @@ class GC
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
-            p = mallocNoSync(size, bits, alloc_size);
+            p = mallocNoSync(size, bits, alloc_size, ti);
         }
 
         if (!(bits & BlkAttr.NO_SCAN))
@@ -425,7 +425,7 @@ class GC
     //
     //
     //
-    private void *mallocNoSync(size_t size, uint bits = 0, size_t *alloc_size = null)
+    private void *mallocNoSync(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
         assert(size != 0);
 
@@ -512,7 +512,7 @@ class GC
     /**
      *
      */
-    void *calloc(size_t size, uint bits = 0, size_t *alloc_size = null)
+    void *calloc(size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
         if (!size)
         {
@@ -531,7 +531,7 @@ class GC
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
-            p = mallocNoSync(size, bits, alloc_size);
+            p = mallocNoSync(size, bits, alloc_size, ti);
         }
 
         memset(p, 0, size);
@@ -546,7 +546,7 @@ class GC
     /**
      *
      */
-    void *realloc(void *p, size_t size, uint bits = 0, size_t *alloc_size = null)
+    void *realloc(void *p, size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
         size_t localAllocSize = void;
         auto oldp = p;
@@ -558,7 +558,7 @@ class GC
         {
             gcLock.lock();
             scope(exit) gcLock.unlock();
-            p = reallocNoSync(p, size, bits, alloc_size);
+            p = reallocNoSync(p, size, bits, alloc_size, ti);
         }
 
         if (p !is oldp && !(bits & BlkAttr.NO_SCAN))
@@ -573,7 +573,7 @@ class GC
     //
     //
     //
-    private void *reallocNoSync(void *p, size_t size, uint bits = 0, size_t *alloc_size = null)
+    private void *reallocNoSync(void *p, size_t size, uint bits = 0, size_t *alloc_size = null, const TypeInfo ti = null)
     {
         if (gcx.running)
             onInvalidMemoryOperationError();
@@ -588,7 +588,7 @@ class GC
         }
         else if (!p)
         {
-            p = mallocNoSync(size, bits, alloc_size);
+            p = mallocNoSync(size, bits, alloc_size, ti);
         }
         else
         {   void *p2;
@@ -620,7 +620,7 @@ class GC
                             }
                         }
                     }
-                    p2 = mallocNoSync(size, bits, alloc_size);
+                    p2 = mallocNoSync(size, bits, alloc_size, ti);
                     if (psize < size)
                         size = psize;
                     //debug(PRINTF) printf("\tcopying %d bytes\n",size);
@@ -693,7 +693,7 @@ class GC
                             }
                         }
                     }
-                    p2 = mallocNoSync(size, bits, alloc_size);
+                    p2 = mallocNoSync(size, bits, alloc_size, ti);
                     if (psize < size)
                         size = psize;
                     //debug(PRINTF) printf("\tcopying %d bytes\n",size);
@@ -717,18 +717,18 @@ class GC
      *  0 if could not extend p,
      *  total size of entire memory block if successful.
      */
-    size_t extend(void* p, size_t minsize, size_t maxsize)
+    size_t extend(void* p, size_t minsize, size_t maxsize, const TypeInfo ti = null)
     {
         gcLock.lock();
         scope(exit) gcLock.unlock();
-        return extendNoSync(p, minsize, maxsize);
+        return extendNoSync(p, minsize, maxsize, ti);
     }
 
 
     //
     //
     //
-    private size_t extendNoSync(void* p, size_t minsize, size_t maxsize)
+    private size_t extendNoSync(void* p, size_t minsize, size_t maxsize, const TypeInfo ti = null)
     in
     {
         assert(minsize <= maxsize);
@@ -1046,6 +1046,30 @@ class GC
                 }
             }
         }
+    }
+
+
+    /**
+    * Tell the GC the type of the memory range
+    */
+    bool emplace(void *p, size_t len, const(TypeInfo) ti)
+    {
+        if (!p)
+            return false;
+
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        return emplaceNoSync(p, len, ti);
+    }
+
+
+    //
+    //
+    //
+    private bool emplaceNoSync(void *p, size_t len, const(TypeInfo) ti)
+    {
+        debug(PRINTF) printf("Emplacing %s at %p + %d\n", debugTypeName(ti).ptr, cast(size_t) p, len);
+        assert(false, "not impleented");
     }
 
 

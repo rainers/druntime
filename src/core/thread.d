@@ -87,7 +87,6 @@ private
     //
     extern (C) void  gc_enable();
     extern (C) void  gc_disable();
-    extern (C) void* gc_malloc(size_t sz, uint ba = 0);
 
     //
     // from core.stdc.string
