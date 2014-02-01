@@ -102,7 +102,7 @@ class TypeInfo_Entry : TypeInfo
     override @property size_t tsize() nothrow pure const @safe { return 0; }
     override @property uint flags() nothrow pure const @safe { return 1; }
 
-    override @property immutable(void)* rtInfo() nothrow pure const @safe { return m_rtInfo.ptr; }
+    override @property immutable(void)* rtInfo() nothrow pure const @trusted { return cast(immutable(void)*) m_rtInfo.ptr; }
 
     size_t m_rtInfo[2]; // assumes key+value not larger than 128/512 bytes for 32/64 bit
 }
