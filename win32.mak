@@ -473,7 +473,8 @@ errno_c.obj : src\core\stdc\errno.c
 	$(CC) -c $(CFLAGS) src\core\stdc\errno.c -oerrno_c.obj
 
 src\rt\minit.obj : src\rt\minit.asm
-	$(CC) -c $(CFLAGS) src\rt\minit.asm
+#	$(CC) -c $(CFLAGS) src\rt\minit.asm
+	ml -c -omf -Zm -Cp -D_WIN32 -DM_I386=1 -Ic:\l\dmc\include -Fo$@ src\rt\minit.asm
 
 ################### gcstub generation #########################
 

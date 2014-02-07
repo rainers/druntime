@@ -65,7 +65,14 @@ void scan(Data* data, scope ScanDg dg)
     rt.sections.scanTLSRanges(data.tlsRanges, dg);
 }
 
-alias int delegate(void* addr) IsMarkedDg;
+enum IsMarked : int
+{
+    no,
+    yes,
+    unknown, // memory is not managed by GC
+}
+
+alias IsMarked delegate(void* addr) IsMarkedDg;
 
 /**
  * GC sweep hook, called FOR each thread. Can be used to free
