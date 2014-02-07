@@ -45,18 +45,44 @@ struct SectionGroup
         return _gcRanges[];
     }
 
+    @property inout(void[])[] gcRanges_hp() inout
+    {
+        return _gcRanges_hp[];
+    }
+
+    @property inout(void[])[] gcRanges_hptls() inout
+    {
+        return _gcRanges_hptls[];
+    }
+
 private:
     ModuleGroup _moduleGroup;
     void[][1] _gcRanges;
+    void[][1] _gcRanges_hp;
+    void[][1] _gcRanges_hptls;
 }
+
+// from minit.asm
+extern(C) void[] _hparea();
+extern(C) void[] _tlshparea();
+
+// version = conservative_roots;
 
 void initSections()
 {
     _sections._moduleGroup = ModuleGroup(getModuleInfos());
 
-    auto pbeg = cast(void*)&_xi_a;
-    auto pend = cast(void*)&_end;
-    _sections._gcRanges[0] = pbeg[0 .. pend - pbeg];
+    version(conservative_roots)
+    {
+        auto pbeg = cast(void*)&_xi_a;
+        auto pend = cast(void*)&_end;
+        _sections._gcRanges[0] = pbeg[0 .. pend - pbeg];
+    }
+    else
+    {
+        _sections._gcRanges_hp[0] = _hparea();
+        _sections._gcRanges_hptls[0] = _tlshparea();
+    }
 }
 
 void finiSections()

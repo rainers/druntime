@@ -47,6 +47,9 @@ import core.bitop;
 import core.sync.mutex;
 static import core.memory;
 private alias BlkAttr = core.memory.GC.BlkAttr;
+private alias memcpy = core.stdc.string.memcpy;
+import core.thread;
+import rt.tlsgc;
 
 version (GNU) import gcc.builtins;
 
@@ -108,22 +111,6 @@ private
 private
 {
     extern (C) void rt_finalize2(void* p, bool det, bool resetMemory);
-
-    extern (C) void thread_suspendAll();
-    extern (C) void thread_resumeAll();
-
-    // core.thread
-    enum IsMarked : int
-    {
-        no,
-        yes,
-        unknown, // memory is not managed by GC
-    }
-    alias IsMarked delegate(void*) IsMarkedDg;
-    extern (C) void thread_processGCMarks(scope IsMarkedDg isMarked);
-
-    alias void delegate(void*, void*) scanFn;
-    extern (C) void thread_scanAll(scope scanFn fn);
 
     extern (C) void onOutOfMemoryError() @trusted /* pure dmd @@@BUG11461@@@ */ nothrow;
     extern (C) void onInvalidMemoryOperationError() @trusted /* pure dmd @@@BUG11461@@@ */ nothrow;
@@ -622,7 +609,6 @@ class GC
             // Return next item from free list
             gcx.bucket[bin] = (cast(List*)p).next;
             pool = (cast(List*)p).pool;
-            //debug(PRINTF) printf("\tmalloc => %p\n", p);
             debug (MEMSTOMP) memset(p, 0xF0, size);
         }
         else
@@ -642,6 +628,8 @@ class GC
         }
         if (gc_precise && !(bits & (BlkAttr.NO_SCAN | BlkAttr.NO_RTINFO)))
             setPointerBitmap(p, pool, size, *alloc_size, ti, (bits & BlkAttr.REP_RTINFO) != 0);
+
+        debug(PRINTF) printf("\tmalloc => %p\n", p);
         return p;
     }
 
@@ -1316,6 +1304,18 @@ class GC
         gcx.removeRange(p);
     }
 
+    void addRange_hp(void *p, size_t sz, bool tls)
+    {
+        if (!p || !sz)
+        {
+            return;
+        }
+
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.addRange_hp(p, p + sz, tls);
+    }
+
 
     /**
      *
@@ -1490,6 +1490,75 @@ struct Range
     void *ptop;
 }
 
+struct Ranges
+{
+    size_t nranges;
+    size_t rangedim;
+    Range* ranges;
+
+    void Invariant() const
+    {
+        if (ranges)
+        {
+            assert(rangedim != 0);
+            assert(nranges <= rangedim);
+
+            for (size_t i = 0; i < nranges; i++)
+            {
+                assert(ranges[i].pbot);
+                assert(ranges[i].ptop);
+                assert(ranges[i].pbot <= ranges[i].ptop);
+            }
+        }
+    }
+
+    void free()
+    {
+        if (ranges)
+            cstdlib.free(ranges);
+    }
+
+    void add(void* pbot, void* ptop)
+    {
+        if (nranges == rangedim)
+        {
+            size_t newdim = rangedim * 2 + 16;
+            Range *newranges;
+
+            newranges = cast(Range*)cstdlib.malloc(newdim * newranges[0].sizeof);
+            if (!newranges)
+                onOutOfMemoryError();
+            if (ranges)
+            {   memcpy(newranges, ranges, nranges * newranges[0].sizeof);
+                cstdlib.free(ranges);
+            }
+            ranges = newranges;
+            rangedim = newdim;
+        }
+        ranges[nranges].pbot = pbot;
+        ranges[nranges].ptop = ptop;
+        nranges++;
+    }
+
+    void remove(void* pbot)
+    {
+        for (size_t i = nranges; i--;)
+        {
+            if (ranges[i].pbot == pbot)
+            {
+                nranges--;
+                memmove(ranges + i, ranges + i + 1, (nranges - i) * ranges[0].sizeof);
+                return;
+            }
+        }
+        debug(PRINTF) printf("Wrong thread\n");
+
+        // This is a fatal error, but ignore it.
+        // The problem is that we can get a Close() call on a thread
+        // other than the one the range was allocated on.
+        //assert(zero);
+    }
+}
 
 immutable uint binsize[B_MAX] = [ 16,32,64,128,256,512,1024,2048,4096 ];
 immutable size_t notbinsize[B_MAX] = [ ~(16-1),~(32-1),~(64-1),~(128-1),~(256-1),
@@ -1510,9 +1579,9 @@ struct Gcx
     size_t rootdim;
     void **roots;
 
-    size_t nranges;
-    size_t rangedim;
-    Range *ranges;
+    Ranges ranges;
+    Ranges hp_ranges;
+    Ranges hptls_ranges;
 
     uint noStack;       // !=0 means don't scan stack
     uint log;           // turn on logging
@@ -1574,8 +1643,9 @@ struct Gcx
         if (roots)
             cstdlib.free(roots);
 
-        if (ranges)
-            cstdlib.free(ranges);
+        ranges.free();
+        hp_ranges.free();
+        hptls_ranges.free();
     }
 
 
@@ -1613,18 +1683,9 @@ struct Gcx
                 assert(nroots <= rootdim);
             }
 
-            if (ranges)
-            {
-                assert(rangedim != 0);
-                assert(nranges <= rangedim);
-
-                for (size_t i = 0; i < nranges; i++)
-                {
-                    assert(ranges[i].pbot);
-                    assert(ranges[i].ptop);
-                    assert(ranges[i].pbot <= ranges[i].ptop);
-                }
-            }
+            ranges.Invariant();
+            hp_ranges.Invariant();
+            hptls_ranges.Invariant();
 
             for (size_t i = 0; i < B_PAGE; i++)
             {
@@ -1705,25 +1766,8 @@ struct Gcx
     void addRange(void *pbot, void *ptop)
     {
         //debug(PRINTF) printf("Thread %x ", pthread_self());
-        debug(PRINTF) printf("%p.Gcx::addRange(%p, %p), nranges = %d\n", &this, pbot, ptop, nranges);
-        if (nranges == rangedim)
-        {
-            size_t newdim = rangedim * 2 + 16;
-            Range *newranges;
-
-            newranges = cast(Range*)cstdlib.malloc(newdim * newranges[0].sizeof);
-            if (!newranges)
-                onOutOfMemoryError();
-            if (ranges)
-            {   memcpy(newranges, ranges, nranges * newranges[0].sizeof);
-                cstdlib.free(ranges);
-            }
-            ranges = newranges;
-            rangedim = newdim;
-        }
-        ranges[nranges].pbot = pbot;
-        ranges[nranges].ptop = ptop;
-        nranges++;
+        debug(PRINTF) printf("%p.Gcx::addRange(%p, %p), nranges = %d\n", &this, pbot, ptop, ranges.nranges);
+        ranges.add(pbot, ptop);
     }
 
 
@@ -1733,22 +1777,26 @@ struct Gcx
     void removeRange(void *pbot)
     {
         //debug(PRINTF) printf("Thread %x ", pthread_self());
-        debug(PRINTF) printf("Gcx.removeRange(%p), nranges = %d\n", pbot, nranges);
-        for (size_t i = nranges; i--;)
-        {
-            if (ranges[i].pbot == pbot)
-            {
-                nranges--;
-                memmove(ranges + i, ranges + i + 1, (nranges - i) * ranges[0].sizeof);
-                return;
-            }
-        }
-        debug(PRINTF) printf("Wrong thread\n");
+        debug(PRINTF) printf("Gcx.removeRange(%p), nranges = %d\n", pbot, ranges.nranges);
+        ranges.remove(pbot);
+    }
 
-        // This is a fatal error, but ignore it.
-        // The problem is that we can get a Close() call on a thread
-        // other than the one the range was allocated on.
-        //assert(zero);
+    void addRange_hp(void *pbot, void *ptop, bool tls)
+    {
+        debug(PRINTF) printf("GC.addRange_hp(%p - %p, tls=%d)\n", pbot, ptop, tls);
+        if(!tls)
+            hp_ranges.add(pbot, ptop);
+        else
+            hptls_ranges.add(pbot, ptop);
+    }
+
+    void removeRange_hp(void *pbot, bool tls)
+    {
+        debug(PRINTF) printf("GC.removeRange_hp(%p, tls=%d)\n", pbot, tls);
+        if(!tls)
+            hp_ranges.remove(pbot);
+        else
+            hptls_ranges.remove(pbot);
     }
 
 
@@ -1758,9 +1806,9 @@ struct Gcx
     int rangeIter(int delegate(ref Range) dg)
     {
         int result = 0;
-        for (size_t i = 0; i < nranges; ++i)
+        for (size_t i = 0; i < ranges.nranges; ++i)
         {
-            result = dg(ranges[i]);
+            result = dg(ranges.ranges[i]);
             if (result)
                 break;
         }
@@ -2534,6 +2582,7 @@ struct Gcx
                     return;
                 }
 
+                debug(PRINTF) printf("\t\t@%p -> %p: mark(x%x) = %d\n", p1, p, biti, pool.mark.test(biti));
                 if(pool.nointerior.nbits && !pointsToBase && pool.nointerior.test(biti))
                 {
                     return;
@@ -2638,6 +2687,12 @@ struct Gcx
         anychanges |= changes;
     }
 
+    static struct hpInfo
+    {
+        void*    base;
+        TypeInfo ti;
+    }
+
     /**
     * Search an object with type info and mark any pointers into the GC pool.
     */
@@ -2680,6 +2735,38 @@ struct Gcx
         }
     }
 
+
+    void mark_hp()
+    {
+        for (size_t i = 0; i < hp_ranges.nranges; ++i)
+        {
+            auto pbot = cast(hpInfo*) hp_ranges.ranges[i].pbot;
+            auto ptop = cast(hpInfo*) hp_ranges.ranges[i].ptop;
+            debug(PRINTF) printf("marking hp range from %p to %p\n", pbot, ptop);
+            for(auto p = pbot; p < ptop; p++)
+                mark(p.base, p.ti);
+        }
+    }
+
+    void mark_tls(ScanType type, void* tlsbase, void* tlsend)
+    {
+        if( type != ScanType.tls || hptls_ranges.nranges == 0 )
+        {
+            debug(PRINTF) printf("marking tls range from %p to %p\n", tlsbase, tlsend);
+            markConservative( tlsbase, tlsend );
+        }
+        else
+        {
+            for (size_t i = 0; i < hptls_ranges.nranges; ++i)
+            {
+                auto pbot = cast(hpInfo*) hptls_ranges.ranges[i].pbot;
+                auto ptop = cast(hpInfo*) hptls_ranges.ranges[i].ptop;
+                debug(PRINTF) printf("marking tls hp range from %p to %p, base %p\n", pbot, ptop, tlsbase);
+                for(auto p = pbot; p < ptop; p++)
+                    mark(tlsbase + cast(size_t)p.base, p.ti);
+            }
+        }
+    }
 
     /**
      * Return number of full pages free'd.
@@ -2757,7 +2844,7 @@ struct Gcx
         {
             debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
             // Scan stacks and registers for each paused thread
-            thread_scanAll(&markConservative);
+            thread_scanAllType(&mark_tls);
         }
 
         // Scan roots[]
@@ -2767,12 +2854,15 @@ struct Gcx
         // Scan ranges[]
         debug(COLLECT_PRINTF) printf("\tscan ranges[]\n");
         //log++;
-        for (n = 0; n < nranges; n++)
+        for (n = 0; n < ranges.nranges; n++)
         {
-            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
-            markConservative(ranges[n].pbot, ranges[n].ptop);
+            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges.ranges[n].pbot, ranges.ranges[n].ptop);
+            markConservative(ranges.ranges[n].pbot, ranges.ranges[n].ptop);
         }
         //log--;
+
+        debug(COLLECT_PRINTF) printf("\tmark hasPointer area\n");
+        mark_hp();
 
         debug(COLLECT_PRINTF) printf("\tscan heap\n");
         int nTraversals;
