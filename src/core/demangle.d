@@ -1471,21 +1471,44 @@ private struct Demangle
         char[] name = null;
 
         eat( '_' );
-        match( 'D' );
+        // the demangler is called from the exception handler to create a stack trace
+        // so it is pretty bad to use exceptions for demangling
+        // avoid exceptions for the most common cases, i.e. anything not starting with D<digit>
+        if( tok() != 'D' )
+        {
+            copyBufToDst();
+            return;
+        }
+        next();
+        if( !isDigit( tok() ) )
+        {
+            copyBufToDst();
+            return;
+        }
+
         do
         {
             name = parseQualifiedName();
             debug(info) printf( "name (%.*s)\n", cast(int) name.length, name.ptr );
             if( 'M' == tok() )
                 next(); // has 'this' pointer
-            if( AddType.yes == addType )
-                parseType( name );
+            if( AddType.yes != addType )
+                break;
+            parseType( name );
             if( pos >= buf.length )
                 return;
             put( "." );
         } while( true );
     }
 
+    char[] copyBufToDst()
+    {
+        if( dst.length < buf.length )
+            dst.length = buf.length;
+        len = buf.length;
+        dst[0 .. len] = buf[];
+        return dst[0 .. len];
+    }
 
     char[] doDemangle(alias FUNC)()
     {
@@ -1515,10 +1538,7 @@ private struct Demangle
                     auto msg = e.toString();
                     printf( "error: %.*s\n", cast(int) msg.length, msg.ptr );
                 }
-                if( dst.length < buf.length )
-                    dst.length = buf.length;
-                dst[0 .. buf.length] = buf[];
-                return dst[0 .. buf.length];
+                return copyBufToDst();
             }
         }
     }
@@ -1554,6 +1574,24 @@ char[] demangle( const(char)[] buf, char[] dst = null )
     return d.demangleName();
 }
 
+/**
+ * Demangles D mangled names.  If it is not a D mangled name, it returns its
+ * argument name.
+ *
+ * Params:
+ *  buf = The string to demangle.
+ *  addType = if set the type is added, otherwise only the symbol name
+ *  dst = An optional destination buffer.
+ *
+ * Returns:
+ *  The demangled name or the original string if the name is not a mangled D
+ *  name.
+ */
+char[] demangle( const(char)[] buf, bool addType, char[] dst = null )
+{
+    auto d = Demangle(buf, addType ? Demangle.AddType.yes : Demangle.AddType.no, dst);
+    return d.demangleName();
+} 
 
 /**
  * Demangles a D mangled type.
