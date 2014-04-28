@@ -78,6 +78,7 @@ module core.time;
 import core.exception;
 import core.stdc.time;
 import core.stdc.stdio;
+import core.internal.traits : _Unqual = Unqual;
 
 version(Windows)
 {
@@ -138,19 +139,6 @@ ulong mach_absolute_time();
     years and months rather than creating a Duration of years or months and
     adding that to a $(XREF datetime, Date). But Duration is used when dealing
     with weeks or smaller.
-
-    Examples:
---------------------
-assert(dur!"days"(12) == Duration(10_368_000_000_000L));
-assert(dur!"hnsecs"(27) == Duration(27));
-assert(std.datetime.Date(2010, 9, 7) + dur!"days"(5) ==
-       std.datetime.Date(2010, 9, 12));
-
-assert(days(-12) == Duration(-10_368_000_000_000L));
-assert(hnsecs(-27) == Duration(-27));
-assert(std.datetime.Date(2010, 9, 7) - std.datetime.Date(2010, 10, 3) ==
-       days(-26));
---------------------
  +/
 struct Duration
 {
@@ -1354,6 +1342,23 @@ private:
     long _hnsecs;
 }
 
+///
+unittest
+{
+    import core.time;
+
+    // using the dur template
+    auto numDays = dur!"days"(12);
+
+    // using the days function
+    numDays = days(12);
+
+    // alternatively using UFCS syntax
+    numDays = 12.days;
+
+    auto myTime = 100.msecs + 20_000.usecs + 30_000.hnsecs;
+    assert(myTime == 123.msecs);
+}
 
 /++
     These allow you to construct a $(D Duration) from the given time units
@@ -3313,38 +3318,6 @@ string numToString(long value) @safe pure nothrow
     }
     catch(Exception e)
         assert(0, "Something threw when nothing can throw.");
-}
-
-
-/+ A copy of std.traits.Unqual. +/
-private template _Unqual(T)
-{
-    version (none) // Error: recursive alias declaration @@@BUG1308@@@
-    {
-             static if (is(T U ==     const U)) alias _Unqual!U _Unqual;
-        else static if (is(T U == immutable U)) alias _Unqual!U _Unqual;
-        else static if (is(T U ==    shared U)) alias _Unqual!U _Unqual;
-        else                                    alias        T _Unqual;
-    }
-    else // workaround
-    {
-             static if (is(T U == shared(const U))) alias U _Unqual;
-        else static if (is(T U ==        const U )) alias U _Unqual;
-        else static if (is(T U ==    immutable U )) alias U _Unqual;
-        else static if (is(T U ==       shared U )) alias U _Unqual;
-        else                                        alias T _Unqual;
-    }
-}
-
-unittest
-{
-    static assert(is(_Unqual!(int) == int));
-    static assert(is(_Unqual!(const int) == int));
-    static assert(is(_Unqual!(immutable int) == int));
-    static assert(is(_Unqual!(shared int) == int));
-    static assert(is(_Unqual!(shared(const int)) == int));
-    alias immutable(int[]) ImmIntArr;
-    static assert(is(_Unqual!(ImmIntArr) == immutable(int)[]));
 }
 
 

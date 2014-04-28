@@ -89,4 +89,13 @@ class TypeInfo_d : TypeInfo
     }
 
     override @property immutable(void)* rtInfo() nothrow pure const @safe { return rtinfoNoPointers; }
+
+    version (Windows)
+    {
+    }
+    else version (X86_64)
+    {
+        // 2 means arg to function is passed in XMM registers
+        override @property uint flags() nothrow pure const @safe { return 2; }
+    }
 }

@@ -33,8 +33,9 @@ MANIFEST=\
 	src\core\time.d \
 	src\core\vararg.d \
 	\
-	src\core\internal\hash.d \
 	src\core\internal\convert.d \
+	src\core\internal\hash.d \
+	src\core\internal\traits.d \
 	\
 	src\core\stdc\complex.d \
 	src\core\stdc\config.d \
@@ -186,7 +187,6 @@ MANIFEST=\
 	src\rt\deh_win64_posix.d \
 	src\rt\dmain2.d \
 	src\rt\dylib_fixes.c \
-	src\rt\image.d \
 	src\rt\invariant.d \
 	src\rt\lifetime.d \
 	src\rt\llmath.d \

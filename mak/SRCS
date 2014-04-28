@@ -14,8 +14,9 @@ SRCS=\
 	src\core\time.d \
 	src\core\vararg.d \
 	\
-	src\core\internal\hash.d \
 	src\core\internal\convert.d \
+	src\core\internal\hash.d \
+	src\core\internal\traits.d \
 	\
 	src\core\stdc\config.d \
 	src\core\stdc\ctype.d \
@@ -53,6 +54,7 @@ SRCS=\
 	src\core\sys\posix\sys\ioctl.d \
 	src\core\sys\posix\sys\utsname.d \
 	src\core\sys\posix\netinet\in_.d \
+	src\core\sys\posix\arpa\inet.d \
 	\
 	src\core\sys\windows\dbghelp.d \
 	src\core\sys\windows\dll.d \

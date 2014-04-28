@@ -1051,7 +1051,6 @@ class Thread
     // Thread Accessors
     ///////////////////////////////////////////////////////////////////////////
 
-
     /**
      * Provides a reference to the calling thread.
      *
@@ -1065,7 +1064,19 @@ class Thread
         // NOTE: This function may not be called until thread_init has
         //       completed.  See thread_suspendAll for more information
         //       on why this might occur.
-        return sm_this;
+        version( OSX )
+        {
+            return sm_this;
+        }
+        else version( Posix )
+        {
+            auto t = cast(Thread) pthread_getspecific( sm_this );
+            return t;
+        }
+        else
+        {
+            return sm_this;
+        }
     }
 
 
@@ -1224,7 +1235,22 @@ private:
     //
     // Local storage
     //
-    static Thread       sm_this;
+    version( OSX )
+    {
+        static Thread       sm_this;
+    }
+    else version( Posix )
+    {
+        // On Posix (excluding OSX), pthread_key_t is explicitly used to
+        // store and access thread reference. This is needed
+        // to avoid TLS access in signal handlers (malloc deadlock)
+        // when using shared libraries, see issue 11981.
+        __gshared pthread_key_t sm_this;
+    }
+    else
+    {
+        static Thread       sm_this;
+    }
 
 
     //
@@ -1273,7 +1299,18 @@ private:
     //
     static void setThis( Thread t )
     {
-        sm_this = t;
+        version( OSX )
+        {
+            sm_this = t;
+        }
+        else version( Posix )
+        { 
+            pthread_setspecific( sm_this, cast(void*) t );
+        }
+        else
+        {
+            sm_this = t;
+        }
     }
 
 
@@ -1753,6 +1790,9 @@ extern (C) void thread_init()
 
         status = sem_init( &suspendCount, 0, 0 );
         assert( status == 0 );
+
+        status = pthread_key_create( &Thread.sm_this, null );
+        assert( status == 0 );
     }
     Thread.sm_main = thread_attachThis();
 }
@@ -1765,6 +1805,14 @@ extern (C) void thread_init()
 extern (C) void thread_term()
 {
     Thread.termLocks();
+
+    version( OSX )
+    {
+    }
+    else version( Posix )
+    {
+        pthread_key_delete( Thread.sm_this );
+    }
 }
 
 
@@ -2619,21 +2667,26 @@ unittest
     import core.sync.semaphore;
 
     shared bool inCriticalRegion;
-    auto sem = new Semaphore();
+    auto sema = new Semaphore(),
+         semb = new Semaphore();
 
     auto thr = new Thread(
     {
         thread_enterCriticalRegion();
         inCriticalRegion = true;
-        sem.notify();
+        sema.notify();
+        semb.wait();
+
         Thread.sleep(dur!"msecs"(1));
         inCriticalRegion = false;
         thread_exitCriticalRegion();
     });
     thr.start();
 
-    sem.wait();
+    sema.wait();
     assert(inCriticalRegion);
+    semb.notify();
+
     thread_suspendAll();
     assert(!inCriticalRegion);
     thread_resumeAll();
@@ -2669,6 +2722,7 @@ extern (C)
     version (linux) int pthread_getattr_np(pthread_t thread, pthread_attr_t* attr);
     version (FreeBSD) int pthread_attr_get_np(pthread_t thread, pthread_attr_t* attr);
     version (Solaris) int thr_stksegment(stack_t* stk);
+    version (Android) int pthread_getattr_np(pthread_t thid, pthread_attr_t* attr);
 }
 
 
@@ -2733,6 +2787,16 @@ private void* getStackBottom()
 
         thr_stksegment(&stk);
         return stk.ss_sp;
+    }
+    else version (Android)
+    {
+        pthread_attr_t attr;
+        void* addr; size_t size;
+
+        pthread_getattr_np(pthread_self(), &attr);
+        pthread_attr_getstack(&attr, &addr, &size);
+        pthread_attr_destroy(&attr);
+        return addr + size;
     }
     else
         static assert(false, "Platform not supported.");

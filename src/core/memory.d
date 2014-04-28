@@ -102,7 +102,7 @@ private
     extern (C) size_t   gc_extend( void* p, size_t mx, size_t sz, const TypeInfo = null ) pure nothrow;
     extern (C) size_t   gc_reserve( size_t sz ) nothrow;
     extern (C) void     gc_free( void* p ) pure nothrow;
-    extern (C) bool     gc_emplace( void *p, size_t len, const TypeInfo ti );
+    extern (C) bool     gc_emplace( void *p, size_t len, const TypeInfo ti ) pure nothrow;
 
     extern (C) void*   gc_addrOf( void* p ) pure nothrow;
     extern (C) size_t  gc_sizeOf( void* p ) pure nothrow;
@@ -121,6 +121,7 @@ private
 
     extern (C) void gc_removeRoot( in void* p ) nothrow;
     extern (C) void gc_removeRange( in void* p ) nothrow;
+    extern (C) void gc_runFinalizers( in void[] segment );
 }
 
 
@@ -622,7 +623,7 @@ struct GC
     * Returns:
     *  true if p points to GC managed memory
     */
-    static bool emplace( void *p, size_t len, const TypeInfo ti )
+    static bool emplace( void *p, size_t len, const TypeInfo ti ) pure nothrow
     {
         return gc_emplace( p, len, ti );
     }
@@ -737,5 +738,21 @@ struct GC
     static void removeRange( in void* p ) nothrow /* FIXME pure */
     {
         gc_removeRange( p );
+    }
+
+
+    /**
+     * Runs any finalizer that is located in address range of the
+     * given code segment.  This is used before unloading shared
+     * libraries.  All matching objects which have a finalizer in this
+     * code segment are assumed to be dead, using them while or after
+     * calling this method has undefined behavior.
+     *
+     * Params:
+     *  segment = address range of a code segment.
+     */
+    static void runFinalizers( in void[] segment )
+    {
+        gc_runFinalizers( segment );
     }
 }

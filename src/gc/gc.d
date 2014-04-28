@@ -42,11 +42,14 @@ import gc.os;
 import gc.config;
 
 import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
-import core.stdc.string;
+import core.stdc.string : memcpy, memset, memmove;
 import core.bitop;
 import core.sync.mutex;
+import core.exception : onOutOfMemoryError, onInvalidMemoryOperationError;
+import core.thread;
 static import core.memory;
 private alias BlkAttr = core.memory.GC.BlkAttr;
+private alias BlkInfo = core.memory.GC.BlkInfo;
 
 version (GNU) import gcc.builtins;
 
@@ -99,35 +102,20 @@ private
     // D is the depth of the heap graph.
     enum MAX_MARK_RECURSIONS = 64;
 }
-    struct BlkInfo
-    {
-        void*  base;
-        size_t size;
-        uint   attr;
-    }
+
 private
 {
+    // to allow compilation of this module without access to the rt package,
+    //  make these functions available from rt.lifetime
     extern (C) void rt_finalize2(void* p, bool det, bool resetMemory);
+    extern (C) int rt_hasFinalizerInSegment(void* p, in void[] segment);
 
-    extern (C) void thread_suspendAll();
-    extern (C) void thread_resumeAll();
-
-    // core.thread
     enum IsMarked : int
     {
         no,
         yes,
-        unknown, // memory is not managed by GC
+        unknown, // memory is not managed by GC, treated as yes by lifetime.processGCMarks
     }
-    alias IsMarked delegate(void*) IsMarkedDg;
-    extern (C) void thread_processGCMarks(scope IsMarkedDg isMarked);
-
-    alias void delegate(void*, void*) scanFn;
-    extern (C) void thread_scanAll(scope scanFn fn);
-
-    extern (C) void onOutOfMemoryError() @trusted /* pure dmd @@@BUG11461@@@ */ nothrow;
-    extern (C) void onInvalidMemoryOperationError() @trusted /* pure dmd @@@BUG11461@@@ */ nothrow;
-
     enum
     {
         OPFAIL = ~cast(size_t)0
@@ -1316,6 +1304,15 @@ class GC
         gcx.removeRange(p);
     }
 
+    /**
+     * run finalizers
+     */
+    void runFinalizers(in void[] segment)
+    {
+        gcLock.lock();
+        scope(exit) gcLock.unlock();
+        gcx.runFinalizers(segment);
+    }
 
     /**
      *
@@ -1749,6 +1746,100 @@ struct Gcx
         // The problem is that we can get a Close() call on a thread
         // other than the one the range was allocated on.
         //assert(zero);
+    }
+
+
+    /**
+     *
+     */
+    void runFinalizers(in void[] segment)
+    {
+        foreach (pool; pooltable[0 .. npools])
+        {
+            if (!pool.finals.nbits) continue;
+
+            if (pool.isLargeObject)
+            {
+                foreach (ref pn; 0 .. pool.npages)
+                {
+                    Bins bin = cast(Bins)pool.pagetable[pn];
+                    if (bin > B_PAGE) continue;
+                    size_t biti = pn;
+
+                    auto p = pool.baseAddr + pn * PAGESIZE;
+
+                    if (!pool.finals.test(biti) ||
+                        !rt_hasFinalizerInSegment(sentinel_add(p), segment))
+                        continue;
+
+                    rt_finalize2(sentinel_add(p), false, false);
+                    clrBits(pool, biti, ~BlkAttr.NONE);
+
+                    if (pn < pool.searchStart) pool.searchStart = pn;
+
+                    debug(COLLECT_PRINTF) printf("\tcollecting big %p\n", p);
+                    log_free(sentinel_add(p));
+
+                    size_t n = 1;
+                    for (; pn + n < pool.npages; ++n)
+                        if (pool.pagetable[pn + n] != B_PAGEPLUS) break;
+                    debug (MEMSTOMP) memset(pool.baseAddr + pn * PAGESIZE, 0xF3, n * PAGESIZE);
+                    pool.freePages(pn, n);
+                }
+            }
+            else
+            {
+                foreach (ref pn; 0 .. pool.npages)
+                {
+                    Bins bin = cast(Bins)pool.pagetable[pn];
+
+                    if (bin >= B_PAGE) continue;
+
+                    immutable size = binsize[bin];
+                    auto p = pool.baseAddr + pn * PAGESIZE;
+                    const ptop = p + PAGESIZE;
+                    auto biti = pn * (PAGESIZE/16);
+                    immutable bitstride = size / 16;
+
+                    GCBits.wordtype toClear;
+                    size_t clearStart = (biti >> GCBits.BITS_SHIFT) + 1;
+                    size_t clearIndex;
+
+                    for (; p < ptop; p += size, biti += bitstride, clearIndex += bitstride)
+                    {
+                        if (clearIndex > GCBits.BITS_PER_WORD - 1)
+                        {
+                            if (toClear)
+                            {
+                                Gcx.clrBitsSmallSweep(pool, clearStart, toClear);
+                                toClear = 0;
+                            }
+
+                            clearStart = (biti >> GCBits.BITS_SHIFT) + 1;
+                            clearIndex = biti & GCBits.BITS_MASK;
+                        }
+
+                        if (!pool.finals.test(biti) ||
+                            !rt_hasFinalizerInSegment(sentinel_add(p), segment))
+                            continue;
+
+                        rt_finalize2(sentinel_add(p), false, false);
+                        toClear |= GCBits.BITS_1 << clearIndex;
+
+                        debug(COLLECT_PRINTF) printf("\tcollecting %p\n", p);
+                        log_free(sentinel_add(p));
+
+                        debug (MEMSTOMP) memset(p, 0xF3, size);
+                        pool.freebits.set(biti);
+                    }
+
+                    if (toClear)
+                    {
+                        Gcx.clrBitsSmallSweep(pool, clearStart, toClear);
+                    }
+                }
+            }
+        }
     }
 
 
@@ -3042,7 +3133,7 @@ struct Gcx
      * Warning! This should only be called while the world is stopped inside
      * the fullcollect function.
      */
-    IsMarked isMarked(void *addr)
+    int isMarked(void *addr)
     {
         // first, we find the Pool this block is in, then check to see if the
         // mark bit is clear.

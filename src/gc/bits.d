@@ -17,9 +17,7 @@ module gc.bits;
 import core.bitop;
 import core.stdc.string;
 import core.stdc.stdlib;
-
-
-private extern (C) void onOutOfMemoryError() @trusted /* pure dmd @@@BUG11461@@@ */ nothrow;
+import core.exception : onOutOfMemoryError;
 
 // use version bitwise to disable optimizations that use word operands 
 // on bulk operation copyRange, setRange, clrRange, etc.
