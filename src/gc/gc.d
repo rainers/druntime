@@ -33,6 +33,7 @@ module gc.gc;
 version = STACKGROWSDOWN;       // growing the stack means subtracting from the stack pointer
                                 // (use for Intel X86 CPUs)
                                 // else growing the stack means adding to the stack pointer
+version = BACK_GC;              // background GC running in a different process
 
 /***************************************************/
 
@@ -41,8 +42,6 @@ import gc.stats;
 import gc.os;
 
 import rt.util.container.treap;
-
-import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
 import core.stdc.string : memcpy, memset, memmove;
 import core.bitop;
 import core.sync.mutex;
@@ -147,7 +146,7 @@ debug (LOGGING)
         void Dtor()
         {
             if (data)
-                cstdlib.free(data);
+                heap.free(data);
             data = null;
         }
 
@@ -160,18 +159,18 @@ debug (LOGGING)
                 assert(dim + nentries <= allocdim);
                 if (!data)
                 {
-                    data = cast(Log*)cstdlib.malloc(allocdim * Log.sizeof);
+                    data = cast(Log*)heap.malloc(allocdim * Log.sizeof);
                     if (!data && allocdim)
                         onOutOfMemoryError();
                 }
                 else
                 {   Log *newdata;
 
-                    newdata = cast(Log*)cstdlib.malloc(allocdim * Log.sizeof);
+                    newdata = cast(Log*)heap.malloc(allocdim * Log.sizeof);
                     if (!newdata && allocdim)
                         onOutOfMemoryError();
                     memcpy(newdata, data, dim * Log.sizeof);
-                    cstdlib.free(data);
+                    heap.free(data);
                     data = newdata;
                 }
             }
@@ -220,7 +219,7 @@ const uint GCVERSION = 1;       // increment every time we change interface
                                 // to GC.
 
 // This just makes Mutex final to de-virtualize member function calls.
-final class GCMutex : Mutex 
+final class GCMutex : Mutex
 {
     // it doesn't make sense to use Exception throwing functions here, because allocating
     //  the exception will try to lock the mutex again, probably resulting in stack overflow
@@ -249,10 +248,14 @@ class GC
         mutexStorage[] = typeid(GCMutex).init[];
         gcLock = cast(GCMutex) mutexStorage.ptr;
         gcLock.__ctor();
-        gcx = cast(Gcx*)cstdlib.calloc(1, Gcx.sizeof);
+
+        gcx = cast(Gcx*)heap.calloc(1, Gcx.sizeof);
         if (!gcx)
             onOutOfMemoryError();
         gcx.initialize();
+
+        version(BACK_GC)
+            startGCProcess();
     }
 
 
@@ -267,11 +270,10 @@ class GC
         if (gcx)
         {
             gcx.Dtor();
-            cstdlib.free(gcx);
+            heap.free(gcx, Gcx.sizeof);
             gcx = null;
         }
     }
-
 
     /**
      *
@@ -1375,6 +1377,13 @@ struct Gcx
 
     List *bucket[B_MAX];        // free list for each size
 
+    version(BACK_GC)
+    {
+        uint fileMappings;
+        void **pScanRoots;
+        size_t nScanRoots;
+        size_t dimScanRoots;
+    }
 
     void initialize()
     {   int dummy;
@@ -1416,11 +1425,11 @@ struct Gcx
         {   Pool *pool = pooltable[i];
 
             pool.Dtor();
-            cstdlib.free(pool);
+			heap.free(pool, Pool.sizeof);
         }
         if (pooltable)
         {
-            cstdlib.free(pooltable);
+            heap.free(pooltable, npools * pooltable[0].sizeof);
             pooltable = null;
         }
 
@@ -1909,7 +1918,7 @@ struct Gcx
                 pool = pooltable[j];
                 debug(PRINTF) printFreeInfo(pool);
                 pool.Dtor();
-                cstdlib.free(pool);
+                heap.free(pool, Pool.sizeof);
             }
             npools = i;
         }
@@ -1931,6 +1940,18 @@ struct Gcx
         debug(PRINTF) printf("Done minimizing.\n");
     }
 
+    /**
+    * set's pool memory to copy-on-write
+    */
+    void writeProtectPools() nothrow
+    {
+		for (size_t i = 0; i < npools; ++i)
+		{
+			auto pool = pooltable[i];
+            os_mem_writeprotect(pool.baseAddr, pool.topAddr - pool.baseAddr);
+		}
+	}
+
     unittest
     {
         enum NPOOLS = 6;
@@ -1945,10 +1966,10 @@ struct Gcx
             assert(gcx.npools == 0);
 
             if (gcx.pooltable is null)
-                gcx.pooltable = cast(Pool**)cstdlib.malloc(NPOOLS * (Pool*).sizeof);
+                gcx.pooltable = cast(Pool**)heap.malloc(NPOOLS * (Pool*).sizeof);
             foreach(i; 0 .. NPOOLS)
             {
-                auto pool = cast(Pool*)cstdlib.malloc(Pool.sizeof);
+                auto pool = cast(Pool*)heap.malloc(Pool.sizeof);
                 *pool = Pool.init;
                 gcx.pooltable[i] = pool;
             }
@@ -1959,7 +1980,7 @@ struct Gcx
         {
             foreach(pool; gcx.pooltable[0 .. NPOOLS])
             {
-                pool.pagetable = cast(ubyte*)cstdlib.malloc(NPAGES);
+                pool.pagetable = cast(ubyte*)heap.malloc(NPAGES);
                 memset(pool.pagetable, B_FREE, NPAGES);
                 pool.npages = NPAGES;
                 pool.freepages = NPAGES / 2;
@@ -2011,11 +2032,12 @@ struct Gcx
             foreach(i; 0 .. NPOOLS)
                 mem[i] = cast(byte*)os_mem_map(NPAGES * PAGESIZE);
 
+            import core.stdc.stdlib : qsort;
             extern(C) static int compare(in void* p1, in void *p2)
             {
                 return p1 < p2 ? -1 : cast(int)(p2 > p1);
             }
-            cstdlib.qsort(mem.ptr, mem.length, (byte*).sizeof, &compare);
+            qsort(mem.ptr, mem.length, (byte*).sizeof, &compare);
 
             foreach(i, pool; gcx.pooltable[0 .. NPOOLS])
             {
@@ -2049,11 +2071,12 @@ struct Gcx
         assert(gcx.maxAddr == gcx.pooltable[NPOOLS - 4].topAddr);
 
         // free all
+        size_t pools = gcx.npools;
         foreach(pool; gcx.pooltable[0 .. gcx.npools])
             pool.freepages = NPAGES;
         gcx.minimize();
         assert(gcx.npools == 0);
-        cstdlib.free(gcx.pooltable);
+        heap.free(gcx.pooltable, pools * gcx.pooltable[0].sizeof);
         gcx.pooltable = null;
     }
 
@@ -2200,7 +2223,7 @@ struct Gcx
 
         //printf("npages = %d\n", npages);
 
-        pool = cast(Pool *)cstdlib.calloc(1, Pool.sizeof);
+        pool = cast(Pool *)heap.calloc(1, Pool.sizeof);
         if (pool)
         {
             pool.initialize(npages, isLargeObject);
@@ -2208,7 +2231,7 @@ struct Gcx
                 goto Lerr;
 
             newnpools = npools + 1;
-            newpooltable = cast(Pool **)cstdlib.realloc(pooltable, newnpools * (Pool *).sizeof);
+            newpooltable = cast(Pool **)heap.realloc(pooltable, npools * (Pool *).sizeof, newnpools * (Pool *).sizeof);
             if (!newpooltable)
                 goto Lerr;
 
@@ -2231,7 +2254,7 @@ struct Gcx
 
       Lerr:
         pool.Dtor();
-        cstdlib.free(pool);
+        heap.free(pool, Pool.sizeof);
         return null;
     }
 
@@ -2787,6 +2810,77 @@ struct Gcx
         return IsMarked.unknown;
     }
 
+    /**
+    * add a root to the array of possible roots to be processed by the background process
+    */
+    void addScanRoot(void* root) nothrow
+    {
+        version(BACK_GC)
+        {
+        if (nScanRoots == dimScanRoots)
+        {
+            size_t newdim = dimScanRoots * 2 + 0x1000;
+            size_t sizeelem = pScanRoots[0].sizeof;
+            void** newroots = cast(void**)heap.realloc(roots, dimScanRoots * sizeelem, newdim * sizeelem);
+            if (!newroots)
+                onOutOfMemoryError();
+            pScanRoots = newroots;
+            dimScanRoots = newdim;
+        }
+        pScanRoots[nScanRoots] = root;
+        nScanRoots++;
+        }
+    }
+
+    /**
+     * adds possible roots (values in the range minAddr - maxAddr)
+     * to the array of roots to scan in the background process
+     */
+    void collectRoots(void *pbot, void *ptop) nothrow
+    {
+        void **p1 = cast(void **)pbot;
+        void **p2 = cast(void **)ptop;
+
+        //printf("collecting roots in range: %p -> %p\n", pbot, ptop);
+        for (; p1 < p2; p1++)
+        {
+            auto p = cast(byte *)(*p1);
+            if (p >= minAddr && p < maxAddr)
+                addScanRoot(p);
+        }
+    }
+
+    void collectAllRoots() nothrow
+    {
+        size_t n;
+
+        debug(PROFILING)
+        {
+            clock_t start, stop;
+            start = clock();
+        }
+
+        debug(COLLECT_PRINTF) printf("Gcx.collectRoots()\n");
+
+        if (!noStack)
+        {
+            debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
+            // Scan stacks and registers for each paused thread
+            thread_scanAll(&collectRoots);
+        }
+
+        // Scan roots[]
+        debug(COLLECT_PRINTF) printf("\tscan roots[]\n");
+        collectRoots(roots, roots + nroots);
+
+        // Scan ranges[]
+        debug(COLLECT_PRINTF) printf("\tscan ranges[]\n");
+        for (n = 0; n < nranges; n++)
+        {
+            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
+            collectRoots(ranges[n].pbot, ranges[n].ptop);
+        }
+    }
 
     /**
      *
@@ -3075,7 +3169,7 @@ struct Pool
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
         assert(poolsize >= POOLSIZE);
-        baseAddr = cast(byte *)os_mem_map(poolsize);
+        baseAddr = cast(byte *)heap.newRegion(poolsize, true, false);
 
         // Some of the code depends on page alignment of memory pools
         assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
@@ -3106,13 +3200,13 @@ struct Pool
         noscan.alloc(nbits);
         appendable.alloc(nbits);
 
-        pagetable = cast(ubyte*)cstdlib.malloc(npages);
+        pagetable = cast(ubyte*)heap.malloc(npages);
         if (!pagetable)
             onOutOfMemoryError();
 
         if(isLargeObject)
         {
-            bPageOffsets = cast(uint*)cstdlib.malloc(npages * uint.sizeof);
+            bPageOffsets = cast(uint*)heap.malloc(npages * uint.sizeof);
             if (!bPageOffsets)
                 onOutOfMemoryError();
         }
@@ -3142,12 +3236,12 @@ struct Pool
         }
         if (pagetable)
         {
-            cstdlib.free(pagetable);
+            heap.free(pagetable, npages);
             pagetable = null;
         }
 
         if(bPageOffsets)
-            cstdlib.free(bPageOffsets);
+            heap.free(bPageOffsets, npages * uint.sizeof);
 
         mark.Dtor();
         scan.Dtor();
@@ -3404,3 +3498,392 @@ else
         return p;
     }
 }
+
+/* ============================ Background GC =============================== */
+
+version(BACK_GC):
+import core.sys.windows.windows;
+
+extern(Windows) HANDLE CreateMutexW(LPSECURITY_ATTRIBUTES lpMutexAttributes, BOOL bInitialOwner, LPCWSTR lpName);
+extern(Windows) HANDLE OpenMutexW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
+
+extern(Windows) HANDLE CreateEventW(LPSECURITY_ATTRIBUTES lpMutexAttributes, BOOL bManualReset, BOOL bInitialState, LPCWSTR lpName);
+extern(Windows) HANDLE OpenEventW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
+extern(Windows) BOOL SetEvent(HANDLE hEvent) nothrow;
+
+extern(Windows) HANDLE OpenProcess(DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwProcessId);
+extern(Windows) HANDLE OpenFileMappingW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
+
+extern(Windows) BOOL WriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress,
+										LPCVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesWritten) nothrow;
+
+extern(Windows) UINT GetWriteWatch(DWORD dwFlags, PVOID lpBaseAddress, SIZE_T dwRegionSize,
+								   PVOID *lpAddresses, PULONG_PTR lpdwCount, PULONG lpdwGranularity) nothrow;
+
+enum PROCESS_QUERY_INFORMATION = 0x400;
+
+enum MEM_WRITE_WATCH = 0x00200000;
+enum WRITE_WATCH_FLAG_RESET = 1;
+enum MUTEX_ALL_ACCESS = 0x1F0001;
+
+PROCESS_INFORMATION gcProcInfo = PROCESS_INFORMATION(INVALID_HANDLE_VALUE);
+HANDLE evCollection;
+
+void startGCProcess()
+{
+	version(Windows)
+	{
+		DWORD pid = GetCurrentProcessId();
+
+		wchar mtxname[32] = "D_GC_PID00000000";
+		for (int i = 0; i < 8; i++)
+			mtxname[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
+
+		evCollection = CreateEventW(null, false, false, mtxname.ptr);
+
+		wstring app = "gcback.exe";
+		wchar cmd[64];
+		FormatMessageW(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY, "gcback.exe PID=%1!d!"w.ptr, 0, 0,
+					   cmd.ptr, cmd.length, cast(void**)&pid);
+
+		STARTUPINFO_W info;
+		BOOL res = CreateProcessW(app.ptr, cmd.ptr, null, null, false, CREATE_NO_WINDOW, null, null, &info, &gcProcInfo);
+	}
+}
+
+void stopGCProcess()
+{
+	version(Windows)
+	{
+		if(gcProcInfo.hProcess != INVALID_HANDLE_VALUE)
+			TerminateProcess(gcProcInfo.hProcess, 0);
+		gcProcInfo.hProcess = INVALID_HANDLE_VALUE;
+	
+        if(evCollection)
+		    CloseHandle(evCollection);
+        evCollection = null;
+	}
+}
+
+__gshared wchar mapname[32] = "D_GC_PID00000000_0000";
+__gshared Regions* rgns;
+
+void updateMappings()
+{
+	for(size_t r = 0; r < rgns.count; r++)
+		if(!rgns.rgn[r].gc_addr && !rgns.rgn[r].noscan)
+		{
+			if(rgns.rgn[r].local_handle)
+			{
+				for (int i = 0; i < 4; i++)
+					mapname[20 - i] = toHexChar((r >> (4 * i)) & 0xf);
+
+				rgns.rgn[r].gc_handle = OpenFileMappingW(FILE_MAP_ALL_ACCESS, false, mapname.ptr);
+				if(rgns.rgn[r].gc_handle)
+				{
+					rgns.rgn[r].gc_addr = MapViewOfFile(rgns.rgn[r].gc_handle, FILE_MAP_ALL_ACCESS, 0, 0, rgns.rgn[r].size);
+				}
+			}
+			else
+			{
+				rgns.rgn[r].gc_addr = VirtualAlloc(null, rgns.rgn[r].size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+			}
+		}
+}
+
+import core.stdc.stdio;
+
+void copyModifiedMemory()
+{
+    printf("copyModifiedMemory()\n");
+
+	for(size_t r = 1; r < rgns.count; r++)
+		if(!rgns.rgn[r].noscan)
+	    {
+		    if(rgns.rgn[r].gc_handle)
+		    {
+				UnmapViewOfFile(rgns.rgn[r].gc_addr);
+
+			    rgns.rgn[r].gc_addr = MapViewOfFile(rgns.rgn[r].gc_handle, FILE_MAP_COPY, 0, 0, rgns.rgn[r].size);
+
+                ubyte* base = cast(ubyte*) rgns.rgn[r].gc_addr;
+                for(size_t p = 0; p < rgns.rgn[r].size; p += PAGESIZE)
+                    base[p] = base[p]; // write access to force copy-on-write
+		    }
+		}
+}
+
+extern (C) void gc_runBackground(uint pid)
+{
+    HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
+    if (!proc)
+        return;
+
+    for (int i = 0; i < 8; i++)
+        mapname[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
+
+    HANDLE hMapFile = OpenFileMappingW(FILE_MAP_ALL_ACCESS,   // read/write access
+                                       false,                 // do not inherit the name
+                                       mapname.ptr);          // name of mapping object
+
+    rgns = hMapFile ? cast(Regions*) MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, Gcx.sizeof) : null;
+    if (!rgns)
+        return;
+
+    rgns.rgn[0].gc_addr = rgns;
+    rgns.rgn[0].gc_handle = hMapFile;
+
+	wchar mtxname[32] = "D_GC_PID00000000";
+	for (int i = 0; i < 8; i++)
+		mtxname[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
+
+	evCollection = OpenEventW(MUTEX_ALL_ACCESS, false, mtxname.ptr);
+    if (!evCollection)
+        return;
+
+    DWORD exitCode = 0;
+    while(GetExitCodeProcess(proc, &exitCode) && exitCode == STILL_ACTIVE)
+    {
+        DWORD rc = WaitForSingleObject(evCollection, 100);
+        updateMappings();
+        if(rc == WAIT_OBJECT_0)
+		{
+            // run collection
+            copyModifiedMemory();
+		}
+
+        exitCode = 0;
+    }
+
+    CloseHandle(evCollection);
+    CloseHandle(hMapFile);
+    CloseHandle(proc);
+}
+
+enum kMaxRegions = 2048;
+enum kMinSizeRegion = 0x100000;
+
+struct Region
+{
+    size_t size;
+    void* local_addr;
+    void* gc_addr;
+    HANDLE local_handle;
+    HANDLE gc_handle;
+    bool noscan = true;
+}
+struct Regions
+{
+    size_t count = 1;
+    Region[kMaxRegions] rgn;
+}
+
+char toHexChar(int x) nothrow { return cast(char) (x < 10 ? x + '0' : x - 10 + 'A'); }
+
+struct Heap
+{
+    Regions* regions;
+
+    void* lastmem;
+    size_t available;
+
+    version (BACK_GC)
+    {
+        void* newRegion(size_t size, bool share, bool noscan) nothrow
+		{
+			__gshared wchar name[32] = "D_GC_PID00000000_0000";
+            HANDLE hMapFile;
+            void* p;
+            void* gc_p;
+            if (share)
+			{
+				if (!regions)
+				{
+					DWORD pid = GetCurrentProcessId();
+					for (int i = 0; i < 8; i++)
+						name[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
+				}
+				else
+				{
+					for (int i = 0; i < 4; i++)
+						name[20 - i] = toHexChar((regions.count >> (4 * i)) & 0xf);
+				}
+				hMapFile = CreateFileMappingW(INVALID_HANDLE_VALUE,    // use paging file
+											  null,                    // default security
+											  PAGE_READWRITE,          // read/write access
+											  0,                       // maximum object size (high-order DWORD)
+											  size,                    // maximum object size (low-order DWORD)
+											  name.ptr);               // name of mapping object
+
+				if (!hMapFile)
+					return null;
+
+				p = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, size);
+
+                version(none)
+				{
+				void* np = VirtualAlloc(p, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
+                if(np != p)
+				{
+                    VirtualFree(p, size, MEM_RELEASE);
+                    p = np;
+				}
+				}
+			}
+            else
+			{
+			    p = VirtualAlloc(null, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
+                if (p)
+			        gc_p = VirtualAllocEx(gcProcInfo.hProcess, null, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+			}
+			if (!p)
+				return null;
+
+            if (!regions)
+			{
+                regions = cast(Regions*) p;
+                regions.count = 0;
+			}
+			regions.rgn[regions.count].size = size;
+			regions.rgn[regions.count].local_addr = p;
+			regions.rgn[regions.count].gc_addr = gc_p;
+			regions.rgn[regions.count].local_handle = hMapFile;
+			regions.rgn[regions.count].gc_handle = null;
+			regions.rgn[regions.count].noscan = noscan;
+            regions.count++;
+            return p;
+		}
+
+        bool copyRegions() nothrow
+		{
+            if(!regions)
+                return true;
+
+            auto q1 = typeid(Region);
+            auto q2 = typeid(Regions);
+
+            size_t allpages = 0;
+            size_t copiedpages = 0;
+            for(size_t r = 0; r < regions.count; r++)
+                with(regions.rgn[r])
+				{
+                    SIZE_T written;
+                    if(!local_handle && gc_addr)
+					{
+						PVOID[4096] wraddr;
+						DWORD count = (size + PAGESIZE - 1) / PAGESIZE;
+						DWORD gran;
+                        allpages += count;
+						UINT res = GetWriteWatch(WRITE_WATCH_FLAG_RESET, local_addr, size, wraddr.ptr, &count, &gran);
+                        if(res != 0)
+                            return false;
+                        copiedpages += count;
+
+                        size_t off = gc_addr - local_addr;
+						for(int c = 0; c < count; c++)
+						{
+                            int d = c + 1;
+                            while(d < count && wraddr[d] == wraddr[d-1] + PAGESIZE)
+								d++;
+                            size_t tocopy = (d - c) * PAGESIZE;
+//							if (!WriteProcessMemory(gcProcInfo.hProcess, wraddr[c] + off, wraddr[c], tocopy, &written) || written != tocopy)
+//								return false;
+						}
+					}
+				}
+
+            printf("copyRegions: %d of %d pages copied\n", copiedpages, allpages);
+            SetEvent(evCollection);
+            return true;
+		}
+
+        void* malloc(size_t size) nothrow
+        {
+            if (!regions)
+            {
+                void* p = newRegion(kMinSizeRegion, true, false);
+                if (!p)
+                    return null;
+
+                available = kMinSizeRegion - Regions.sizeof;
+                lastmem = p + Regions.sizeof;
+            }
+            if (size >= kMinSizeRegion)
+                return newRegion(size, true, false);
+
+		    if(available < size)
+            {
+                void* p = newRegion(kMinSizeRegion, true, false);
+                if (!p)
+                    return null;
+                available = kMinSizeRegion;
+                lastmem = p;
+            }
+
+            void* np = lastmem;
+            lastmem += size;
+            available -= size;
+            return np;
+        }
+
+        void* realloc(void* p, size_t oldsize, size_t size) nothrow
+        {
+            if (size < oldsize)
+            {
+                if (size > 0)
+                    return p;
+                free(p, oldsize);
+                return null;
+            }
+            void* np = malloc(size);
+            if (!p || !np)
+                return np;
+
+            memcpy(np, p, oldsize);
+            free(p, oldsize);
+            return np;
+        }
+
+        void* calloc(size_t nmemb, size_t size) nothrow
+        {
+            void* p = malloc(nmemb * size);
+            if (p)
+                memset(p, 0, nmemb * size);
+            return p;
+        }
+
+        void free(void* p, size_t size) nothrow
+        {
+            //os_mem_unmap(p, size);
+        }
+    }
+    else
+    {
+        import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
+
+        static void* malloc(size_t size) nothrow
+        {
+            return cstdlib.malloc(size);
+        }
+        static void* realloc(void* p, size_t oldsize, size_t size) nothrow
+        {
+            return cstdlib.realloc(p, size);
+        }
+        static void* calloc(size_t nmemb, size_t size) nothrow
+        {
+            return cstdlib.calloc(nmemb, size);
+        }
+        static void free(void* p, size_t size) nothrow
+        {
+            cstdlib.free(p);
+        }
+    }
+}
+
+bool os_mem_writeprotect(void *base, size_t nbytes) nothrow
+{
+	return VirtualProtect(base, nbytes, PAGE_WRITECOPY, null) != 0;
+}
+
+__gshared Heap heap;
+

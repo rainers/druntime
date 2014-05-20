@@ -9,7 +9,8 @@ CC=dmc
 DOCDIR=doc
 IMPDIR=import
 
-DFLAGS=-m$(MODEL) -O -release -inline -w -Isrc -Iimport
+# -O -release -inline 
+DFLAGS=-m$(MODEL) -g -w -Isrc -Iimport
 UDFLAGS=-m$(MODEL) -O -release -w -Isrc -Iimport
 DDOCFLAGS=-c -w -o- -Isrc -Iimport -version=CoreDdoc
 
