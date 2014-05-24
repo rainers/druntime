@@ -180,6 +180,11 @@ struct GCBits
         memset(data + 1, 0, nwords * wordtype.sizeof);
     }
 
+    void fill() nothrow
+    {
+        memset(data + 1, 0xff, nwords * wordtype.sizeof);
+    }
+
     void copy(GCBits *f) nothrow
     in
     {

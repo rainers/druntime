@@ -18,7 +18,10 @@ module gc.gc;
 /************** Debugging ***************************/
 
 //debug = PRINTF;               // turn on printf's
-//debug = COLLECT_PRINTF;       // turn on printf's
+debug = COLLECT_PRINTF;       // turn on printf's for collection summary
+//debug = COLLECTELEM_PRINTF;   // turn on printf's for each collected object
+debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
+//debug = PRINTF_MALLOC;        // print calls to malloc/realloc/free
 //debug = LOGGING;              // log allocations / frees
 //debug = MEMSTOMP;             // stomp on memory
 //debug = SENTINEL;             // add underrun/overrrun protection
@@ -33,7 +36,7 @@ module gc.gc;
 version = STACKGROWSDOWN;       // growing the stack means subtracting from the stack pointer
                                 // (use for Intel X86 CPUs)
                                 // else growing the stack means adding to the stack pointer
-version = BACK_GC;              // background GC running in a different process
+//version = BACK_GC;              // background GC running in a different thread
 
 /***************************************************/
 
@@ -53,12 +56,48 @@ private alias BlkInfo = core.memory.GC.BlkInfo;
 
 version (GNU) import gcc.builtins;
 
-debug (PRINTF) import core.stdc.stdio : printf;
-debug (CACHE_HITRATE) import core.stdc.stdio : printf;
-debug (COLLECT_PRINTF) import core.stdc.stdio : printf;
+     debug (PRINTF_TO_FILE) import core.stdc.stdio : fprintf, fopen, fflush, FILE;
+else debug (COLLECT_PRINTF) import core.stdc.stdio : printf;
+else debug (CACHE_HITRATE)  import core.stdc.stdio : printf;
+else debug (PRINTF)         import core.stdc.stdio : printf;
 debug private import core.stdc.stdio;
 
-debug(PRINTF) void printFreeInfo(Pool* pool)
+debug(PRINTF_TO_FILE)
+{
+	__gshared FILE* gcx_fh;
+
+    import core.time;
+    double curTicks() nothrow 
+    {
+        __gshared double first = 0;
+	    double sec;
+
+        try // TickDuration.currSystemTick is not nothrow
+		{
+            TickDuration now = TickDuration.currSystemTick;
+	        sec = now.to!("seconds", double);
+            if(first == 0)
+                first = sec;
+		}
+        catch 
+		{
+            sec = first - 1;
+		}
+	    return sec - first;
+    }
+
+    int printf(ARGS...)(const char* fmt, ARGS args) nothrow
+    {
+        if(!gcx_fh) 
+            gcx_fh = fopen("gcx.log", "w");
+        int len = fprintf(gcx_fh, "%10.6lf: ", curTicks());
+        len += fprintf(gcx_fh, fmt, args);
+        fflush(gcx_fh);
+        return len;
+    }
+}
+
+debug(PRINTF) void printFreeInfo(Pool* pool) nothrow
 {
     uint nReallyFree;
     foreach(i; 0..pool.npages) {
@@ -77,6 +116,7 @@ debug(PROFILING)
     __gshared long markTime;
     __gshared long sweepTime;
     __gshared long recoverTime;
+    __gshared long collectRootsTime;
 }
 
 private
@@ -255,7 +295,7 @@ class GC
         gcx.initialize();
 
         version(BACK_GC)
-            startGCProcess();
+            startGCProcess(gcx);
     }
 
 
@@ -266,6 +306,9 @@ class GC
             //debug(PRINTF) printf("Thread %x ", pthread_self());
             //debug(PRINTF) printf("GC.Dtor()\n");
         }
+
+        version(BACK_GC)
+			stopGCProcess();
 
         if (gcx)
         {
@@ -437,12 +480,16 @@ class GC
         void *p = null;
         Bins bin;
 
-        //debug(PRINTF) printf("GC::malloc(size = %d, gcx = %p)\n", size, gcx);
+        debug(PRINTF_MALLOC) printf("GC::malloc(size = %d, gcx = %p)\n", size, gcx);
         assert(gcx);
         //debug(PRINTF) printf("gcx.self = %x, pthread_self() = %x\n", gcx.self, pthread_self());
 
         if (gcx.running)
             onInvalidMemoryOperationError();
+
+        version(BACK_GC)
+            if (gcx.canSweep && !gcx.bgCollecting)
+                gcx.fullcollectFinish();
 
         size += SENTINEL_EXTRA;
         bin = gcx.findBin(size);
@@ -492,8 +539,9 @@ class GC
             // Return next item from free list
             gcx.bucket[bin] = (cast(List*)p).next;
             pool = (cast(List*)p).pool;
-            //debug(PRINTF) printf("\tmalloc => %p\n", p);
-            debug (MEMSTOMP) memset(p, 0xF0, size);
+            debug(PRINTF_MALLOC) printf("\tmalloc => %p\n", p);
+            debug(MEMSTOMP) memset(p, 0xF0, size);
+            pool.freebits.clear(cast(size_t)(p - pool.baseAddr) >> pool.shiftBy);
         }
         else
         {
@@ -603,7 +651,7 @@ class GC
         {   void *p2;
             size_t psize;
 
-            //debug(PRINTF) printf("GC::realloc(p = %p, size = %zu)\n", p, size);
+            debug(PRINTF_MALLOC) printf("GC::realloc(p = %p, size = %zu)\n", p, size);
             debug (SENTINEL)
             {
                 sentinel_Invariant(p);
@@ -742,7 +790,7 @@ class GC
         if (gcx.running)
             onInvalidMemoryOperationError();
 
-        //debug(PRINTF) printf("GC::extend(p = %p, minsize = %zu, maxsize = %zu)\n", p, minsize, maxsize);
+        debug(PRINTF_MALLOC) printf("GC::extend(p = %p, minsize = %zu, maxsize = %zu)\n", p, minsize, maxsize);
         debug (SENTINEL)
         {
             return 0;
@@ -838,7 +886,7 @@ class GC
     //
     private void freeNoSync(void *p) nothrow
     {
-        debug(PRINTF) printf("Freeing %p\n", cast(size_t) p);
+        debug(PRINTF_MALLOC) printf("Freeing %p\n", cast(size_t) p);
         assert (p);
 
         if (gcx.running)
@@ -1383,6 +1431,8 @@ struct Gcx
         void **pScanRoots;
         size_t nScanRoots;
         size_t dimScanRoots;
+        bool bgCollecting;
+        bool canSweep;
     }
 
     void initialize()
@@ -1556,7 +1606,7 @@ struct Gcx
 
                     if (pn < pool.searchStart) pool.searchStart = pn;
 
-                    debug(COLLECT_PRINTF) printf("\tcollecting big %p\n", p);
+                    debug(COLLECTELEM_PRINTF) printf("\tcollecting big %p\n", p);
                     log_free(sentinel_add(p));
 
                     size_t n = 1;
@@ -1605,7 +1655,7 @@ struct Gcx
                         rt_finalize2(sentinel_add(p), false, false);
                         toClear |= GCBits.BITS_1 << clearIndex;
 
-                        debug(COLLECT_PRINTF) printf("\tcollecting %p\n", p);
+                        debug(COLLECTELEM_PRINTF) printf("\tcollecting %p\n", p);
                         log_free(sentinel_add(p));
 
                         debug (MEMSTOMP) memset(p, 0xF3, size);
@@ -1939,18 +1989,6 @@ struct Gcx
 
         debug(PRINTF) printf("Done minimizing.\n");
     }
-
-    /**
-    * set's pool memory to copy-on-write
-    */
-    void writeProtectPools() nothrow
-    {
-		for (size_t i = 0; i < npools; ++i)
-		{
-			auto pool = pooltable[i];
-            os_mem_writeprotect(pool.baseAddr, pool.topAddr - pool.baseAddr);
-		}
-	}
 
     unittest
     {
@@ -2298,6 +2336,7 @@ struct Gcx
             (cast(List *)p).next = *b;
             (cast(List *)p).pool = pool;
             *b = cast(List *)p;
+            assert(pool.freebits.test((p - pool.baseAddr) / 16));
         }
         return 1;
     }
@@ -2431,8 +2470,9 @@ struct Gcx
      */
     size_t fullcollect() nothrow
     {
-        size_t n;
-        Pool*  pool;
+        version(BACK_GC)
+            if(&this !is null)
+                return fullcollectTrigger();
 
         debug(PROFILING)
         {
@@ -2448,14 +2488,172 @@ struct Gcx
         running = 1;
 
         thread_suspendAll();
-        
+
+        prepare();
+
+        debug(PROFILING)
+        {
+            stop = clock();
+            prepTime += (stop - start);
+            start = stop;
+        }
+
+        markRoots();
+        markHeap();
+
+        cached_size_key = cached_size_key.init;
+        cached_size_val = cached_size_val.init;
+        cached_info_key = cached_info_key.init;
+        cached_info_val = cached_info_val.init;
+
+        thread_processGCMarks(&isMarked);
+        thread_resumeAll();
+
+        debug(PROFILING)
+        {
+            stop = clock();
+            markTime += (stop - start);
+            start = stop;
+        }
+
+        size_t freedpages = sweep();
+
+        debug(PROFILING)
+        {
+            stop = clock();
+            sweepTime += (stop - start);
+            start = stop;
+        }
+
+        size_t recoveredpages = recover();
+
+        debug(PROFILING)
+        {
+            stop = clock();
+            recoverTime += (stop - start);
+        }
+
+        running = 0; // only clear on success
+
+        return freedpages + recoveredpages;
+	}
+
+    version(BACK_GC)
+	size_t fullcollectTrigger() nothrow
+	{
+        debug(COLLECT_PRINTF) printf("++Gcx.fullcollectBack()\n");
+
+        if (bgCollecting)
+            return 0;
+
+        if (running)
+            onInvalidMemoryOperationError();
+        running = 1;
+
+        thread_suspendAll();
+
+        bgCollecting = true;
+
+        prepare();
+
+        collectAllRoots();
+        heap.resetWriteWatches();
+
+		canSweep = true;
+
+		SetEvent(evCollection);
+
+//        while(bgCollecting)
+//            Sleep(1);
+
+        thread_resumeAll();
+
+        running = 0; // only clear on success
+
+        debug(COLLECT_PRINTF) printf("--Gcx.fullcollectBack()\n");
+
+        return 0;
+	}
+
+	version(BACK_GC)
+	size_t fullcollectFinish() nothrow
+	{
+        debug(COLLECT_PRINTF) printf("++Gcx.fullcollectFinish()\n");
+
+        if (running)
+            onInvalidMemoryOperationError();
+        running = 1;
+
+        thread_suspendAll();
+
+        // continue from background collection
+        markRoots();
+		heap.markWrittenPages(&markPoolPages);
+
+		markHeap();
+
+		cached_size_key = cached_size_key.init;
+		cached_size_val = cached_size_val.init;
+		cached_info_key = cached_info_key.init;
+		cached_info_val = cached_info_val.init;
+
+		thread_processGCMarks(&isMarked);
+		thread_resumeAll();
+
+		size_t freedpages = sweep();
+		size_t recoveredpages = recover();
+
+		canSweep = false;
+        running = 0; // only clear on success
+
+        debug(COLLECT_PRINTF) printf("--Gcx.fullcollectFinish()\n");
+
+        return freedpages + recoveredpages;
+	}
+
+    void markPoolPages(void* p, size_t size) nothrow
+	{
+        Pool* pool = findPool(p);
+        if(!pool)
+            return;
+
+        // mark all live objects in this block for rescanning
+        if(pool.isLargeObject)
+		{
+            // pages have been written to, so they must have been alive
+            mark(p, p + size);
+		}
+        else
+		{
+            mark(p, p + size);
+		}
+	}
+
+	version(BACK_GC)
+	void fullmarkBack() nothrow
+	{
+        debug(COLLECT_PRINTF) printf("++Gcx.fullmarkBack()\n");
+
+        mark(pScanRoots, pScanRoots + nScanRoots);
+        markHeap();
+
+        debug(COLLECT_PRINTF) printf("--Gcx.fullmarkBack()\n");
+
+        bgCollecting = false;
+	}
+
+    void prepare() nothrow
+	{
+        size_t n;
+        Pool*  pool;
+
         anychanges = 0;
         for (n = 0; n < npools; n++)
         {
             pool = pooltable[n];
             pool.mark.zero();
             pool.scan.zero();
-            if(!pool.isLargeObject) pool.freebits.zero();
+            if(!pool.isLargeObject) pool.freebits.fill();
         }
 
         debug(COLLECT_PRINTF) printf("Set bits\n");
@@ -2467,7 +2665,7 @@ struct Gcx
             {
                 pool = list.pool;
                 assert(pool);
-                pool.freebits.set(cast(size_t)(cast(byte*)list - pool.baseAddr) / 16);
+                pool.mark.set(cast(size_t)(cast(byte*)list - pool.baseAddr) / 16);
             }
         }
 
@@ -2477,19 +2675,12 @@ struct Gcx
         {
             pool = pooltable[n];
             pool.newChanges = false;  // Some of these get set to true on stack scan.
-            if(!pool.isLargeObject)
-            {
-                pool.mark.copy(&pool.freebits);
-            }
         }
 
-        debug(PROFILING)
-        {
-            stop = clock();
-            prepTime += (stop - start);
-            start = stop;
-        }
+	}
 
+    void markRoots() nothrow
+	{
         if (!noStack)
         {
             debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
@@ -2513,6 +2704,12 @@ struct Gcx
             mark(range.pbot, range.ptop);
         }
         //log--;
+	}
+
+    void markHeap() nothrow
+	{
+        size_t n;
+        Pool*  pool;
 
         debug(COLLECT_PRINTF) printf("\tscan heap\n");
         int nTraversals;
@@ -2526,7 +2723,7 @@ struct Gcx
                 pool.newChanges = false;
             }
 
-            debug(COLLECT_PRINTF) printf("\t\tpass\n");
+            debug(COLLECTELEM_PRINTF) printf("\t\tpass\n");
             anychanges = 0;
             for (n = 0; n < npools; n++)
             {
@@ -2574,16 +2771,12 @@ struct Gcx
                 }
             }
         }
+	}
 
-        thread_processGCMarks(&isMarked);
-        thread_resumeAll();
-
-        debug(PROFILING)
-        {
-            stop = clock();
-            markTime += (stop - start);
-            start = stop;
-        }
+    size_t sweep() nothrow
+	{
+        size_t n;
+        Pool*  pool;
 
         // Free up everything not marked
         debug(COLLECT_PRINTF) printf("\tfree'ing\n");
@@ -2610,7 +2803,7 @@ struct Gcx
                             rt_finalize2(sentinel_add(p), false, false);
                         clrBits(pool, biti, ~BlkAttr.NONE ^ BlkAttr.FINALIZE);
 
-                        debug(COLLECT_PRINTF) printf("\tcollecting big %p\n", p);
+                        debug(COLLECTELEM_PRINTF) printf("\tcollecting big %p\n", p);
                         log_free(sentinel_add(p));
                         pool.pagetable[pn] = B_FREE;
                         if(pn < pool.searchStart) pool.searchStart = pn;
@@ -2671,17 +2864,18 @@ struct Gcx
                                 clearIndex = biti & GCBits.BITS_MASK;
                             }
 
-                            if (!pool.mark.test(biti))
+                            if (pool.mark.test(biti))
+                                pool.freebits.clear(biti);
+                            else if (pool.freebits.test(biti))
                             {
                                 sentinel_Invariant(sentinel_add(p));
 
-                                pool.freebits.set(biti);
                                 if (pool.finals.nbits && pool.finals.test(biti))
                                     rt_finalize2(sentinel_add(p), false, false);
                                 toClear |= GCBits.BITS_1 << clearIndex;
 
                                 List *list = cast(List *)p;
-                                debug(COLLECT_PRINTF) printf("\tcollecting %p\n", list);
+                                debug(COLLECTELEM_PRINTF) printf("\tcollecting %p\n", list);
                                 log_free(sentinel_add(list));
 
                                 debug (MEMSTOMP) memset(p, 0xF3, size);
@@ -2699,12 +2893,15 @@ struct Gcx
             }
         }
 
-        debug(PROFILING)
-        {
-            stop = clock();
-            sweepTime += (stop - start);
-            start = stop;
-        }
+        debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
+
+        return freedpages;
+	}
+
+    size_t recover() nothrow
+	{
+        size_t n;
+        Pool*  pool;
 
         // Zero buckets
         bucket[] = null;
@@ -2760,18 +2957,9 @@ struct Gcx
             }
         }
 
-        debug(PROFILING)
-        {
-            stop = clock();
-            recoverTime += (stop - start);
-        }
-
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
-        debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
 
-        running = 0; // only clear on success
-
-        return freedpages + recoveredpages;
+        return recoveredpages;
     }
 
     /**
@@ -2810,18 +2998,18 @@ struct Gcx
         return IsMarked.unknown;
     }
 
-    /**
+	version(BACK_GC)
+	{
+	/**
     * add a root to the array of possible roots to be processed by the background process
     */
     void addScanRoot(void* root) nothrow
     {
-        version(BACK_GC)
-        {
         if (nScanRoots == dimScanRoots)
         {
             size_t newdim = dimScanRoots * 2 + 0x1000;
             size_t sizeelem = pScanRoots[0].sizeof;
-            void** newroots = cast(void**)heap.realloc(roots, dimScanRoots * sizeelem, newdim * sizeelem);
+            void** newroots = cast(void**)heap.realloc(pScanRoots, dimScanRoots * sizeelem, newdim * sizeelem);
             if (!newroots)
                 onOutOfMemoryError();
             pScanRoots = newroots;
@@ -2829,7 +3017,6 @@ struct Gcx
         }
         pScanRoots[nScanRoots] = root;
         nScanRoots++;
-        }
     }
 
     /**
@@ -2862,6 +3049,7 @@ struct Gcx
 
         debug(COLLECT_PRINTF) printf("Gcx.collectRoots()\n");
 
+        nScanRoots = 0;
         if (!noStack)
         {
             debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
@@ -2880,8 +3068,14 @@ struct Gcx
             debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
             collectRoots(ranges[n].pbot, ranges[n].ptop);
         }
-    }
 
+        debug(PROFILING)
+        {
+            stop = clock();
+            collectRootsTime += (stop - start);
+        }
+    }
+	} // BACK_GC
     /**
      *
      */
@@ -3169,7 +3363,7 @@ struct Pool
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
         assert(poolsize >= POOLSIZE);
-        baseAddr = cast(byte *)heap.newRegion(poolsize, true, false);
+        baseAddr = cast(byte *)heap.newRegion(poolsize, false, false);
 
         // Some of the code depends on page alignment of memory pools
         assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
@@ -3195,6 +3389,7 @@ struct Pool
         if(!isLargeObject)
         {
             freebits.alloc(nbits);
+            freebits.fill();
         }
 
         noscan.alloc(nbits);
@@ -3501,7 +3696,8 @@ else
 
 /* ============================ Background GC =============================== */
 
-version(BACK_GC):
+version(BACK_GC)
+{
 import core.sys.windows.windows;
 
 extern(Windows) HANDLE CreateMutexW(LPSECURITY_ATTRIBUTES lpMutexAttributes, BOOL bInitialOwner, LPCWSTR lpName);
@@ -3519,6 +3715,25 @@ extern(Windows) BOOL WriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress,
 
 extern(Windows) UINT GetWriteWatch(DWORD dwFlags, PVOID lpBaseAddress, SIZE_T dwRegionSize,
 								   PVOID *lpAddresses, PULONG_PTR lpdwCount, PULONG lpdwGranularity) nothrow;
+extern(Windows) UINT ResetWriteWatch(LPVOID lpBaseAddress, SIZE_T dwRegionSize) nothrow;
+
+extern(Windows) BOOL TerminateThread(HANDLE hThread, DWORD dwExitCode);
+
+version (Windows)
+{
+    extern(C):
+	uint _beginthread(void function(void *),uint,void *);
+
+    extern (Windows) alias uint function (void *) stdfp;
+
+	uint _beginthreadex(void* security, uint stack_size,
+					stdfp start_addr, void* arglist, uint initflag,
+					uint* thrdaddr);
+    void _endthread();
+    void _endthreadex(uint);
+
+	const CREATE_SUSPENDED = 0x00000004;
+}
 
 enum PROCESS_QUERY_INFORMATION = 0x400;
 
@@ -3526,28 +3741,20 @@ enum MEM_WRITE_WATCH = 0x00200000;
 enum WRITE_WATCH_FLAG_RESET = 1;
 enum MUTEX_ALL_ACCESS = 0x1F0001;
 
-PROCESS_INFORMATION gcProcInfo = PROCESS_INFORMATION(INVALID_HANDLE_VALUE);
-HANDLE evCollection;
+__gshared HANDLE gcThread;
+__gshared HANDLE evCollection;
+__gshared bool stopGC;
 
-void startGCProcess()
+void startGCProcess(Gcx* gcx)
 {
 	version(Windows)
 	{
-		DWORD pid = GetCurrentProcessId();
+		evCollection = CreateEventW(null, false, false, null);
 
-		wchar mtxname[32] = "D_GC_PID00000000";
-		for (int i = 0; i < 8; i++)
-			mtxname[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
-
-		evCollection = CreateEventW(null, false, false, mtxname.ptr);
-
-		wstring app = "gcback.exe";
-		wchar cmd[64];
-		FormatMessageW(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY, "gcback.exe PID=%1!d!"w.ptr, 0, 0,
-					   cmd.ptr, cmd.length, cast(void**)&pid);
-
-		STARTUPINFO_W info;
-		BOOL res = CreateProcessW(app.ptr, cmd.ptr, null, null, false, CREATE_NO_WINDOW, null, null, &info, &gcProcInfo);
+        DWORD tid;
+		gcThread = cast(HANDLE) _beginthreadex( null, 0x100000, &gc_runBackground, cast(void*)gcx, 0, &tid );
+		if( !gcThread )
+			throw new ThreadException( "Error creating thread" );
 	}
 }
 
@@ -3555,9 +3762,13 @@ void stopGCProcess()
 {
 	version(Windows)
 	{
-		if(gcProcInfo.hProcess != INVALID_HANDLE_VALUE)
-			TerminateProcess(gcProcInfo.hProcess, 0);
-		gcProcInfo.hProcess = INVALID_HANDLE_VALUE;
+		if(gcThread)
+		{
+            stopGC = true;
+            if(WaitForSingleObject(gcThread, 1000) != WAIT_OBJECT_0)
+			    TerminateThread(gcThread, 0);
+		}
+		gcThread = null;
 	
         if(evCollection)
 		    CloseHandle(evCollection);
@@ -3565,99 +3776,23 @@ void stopGCProcess()
 	}
 }
 
-__gshared wchar mapname[32] = "D_GC_PID00000000_0000";
 __gshared Regions* rgns;
-
-void updateMappings()
-{
-	for(size_t r = 0; r < rgns.count; r++)
-		if(!rgns.rgn[r].gc_addr && !rgns.rgn[r].noscan)
-		{
-			if(rgns.rgn[r].local_handle)
-			{
-				for (int i = 0; i < 4; i++)
-					mapname[20 - i] = toHexChar((r >> (4 * i)) & 0xf);
-
-				rgns.rgn[r].gc_handle = OpenFileMappingW(FILE_MAP_ALL_ACCESS, false, mapname.ptr);
-				if(rgns.rgn[r].gc_handle)
-				{
-					rgns.rgn[r].gc_addr = MapViewOfFile(rgns.rgn[r].gc_handle, FILE_MAP_ALL_ACCESS, 0, 0, rgns.rgn[r].size);
-				}
-			}
-			else
-			{
-				rgns.rgn[r].gc_addr = VirtualAlloc(null, rgns.rgn[r].size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-			}
-		}
-}
 
 import core.stdc.stdio;
 
-void copyModifiedMemory()
+extern (Windows) uint gc_runBackground(void* _gcx)
 {
-    printf("copyModifiedMemory()\n");
-
-	for(size_t r = 1; r < rgns.count; r++)
-		if(!rgns.rgn[r].noscan)
-	    {
-		    if(rgns.rgn[r].gc_handle)
-		    {
-				UnmapViewOfFile(rgns.rgn[r].gc_addr);
-
-			    rgns.rgn[r].gc_addr = MapViewOfFile(rgns.rgn[r].gc_handle, FILE_MAP_COPY, 0, 0, rgns.rgn[r].size);
-
-                ubyte* base = cast(ubyte*) rgns.rgn[r].gc_addr;
-                for(size_t p = 0; p < rgns.rgn[r].size; p += PAGESIZE)
-                    base[p] = base[p]; // write access to force copy-on-write
-		    }
-		}
-}
-
-extern (C) void gc_runBackground(uint pid)
-{
-    HANDLE proc = OpenProcess(PROCESS_QUERY_INFORMATION, false, pid);
-    if (!proc)
-        return;
-
-    for (int i = 0; i < 8; i++)
-        mapname[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
-
-    HANDLE hMapFile = OpenFileMappingW(FILE_MAP_ALL_ACCESS,   // read/write access
-                                       false,                 // do not inherit the name
-                                       mapname.ptr);          // name of mapping object
-
-    rgns = hMapFile ? cast(Regions*) MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, Gcx.sizeof) : null;
-    if (!rgns)
-        return;
-
-    rgns.rgn[0].gc_addr = rgns;
-    rgns.rgn[0].gc_handle = hMapFile;
-
-	wchar mtxname[32] = "D_GC_PID00000000";
-	for (int i = 0; i < 8; i++)
-		mtxname[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
-
-	evCollection = OpenEventW(MUTEX_ALL_ACCESS, false, mtxname.ptr);
-    if (!evCollection)
-        return;
-
-    DWORD exitCode = 0;
-    while(GetExitCodeProcess(proc, &exitCode) && exitCode == STILL_ACTIVE)
+    Gcx* gcx = cast(Gcx*) _gcx;
+    while(!stopGC)
     {
         DWORD rc = WaitForSingleObject(evCollection, 100);
-        updateMappings();
         if(rc == WAIT_OBJECT_0)
 		{
             // run collection
-            copyModifiedMemory();
+            gcx.fullmarkBack();
 		}
-
-        exitCode = 0;
     }
-
-    CloseHandle(evCollection);
-    CloseHandle(hMapFile);
-    CloseHandle(proc);
+    return 0;
 }
 
 enum kMaxRegions = 2048;
@@ -3665,12 +3800,10 @@ enum kMinSizeRegion = 0x100000;
 
 struct Region
 {
-    size_t size;
-    void* local_addr;
-    void* gc_addr;
-    HANDLE local_handle;
-    HANDLE gc_handle;
-    bool noscan = true;
+    size_t size = 1;
+    void*  addr;
+    bool   noscan;   // contents do not contain references
+    bool   internal; // contains data structures used by the GC itself
 }
 struct Regions
 {
@@ -3678,64 +3811,20 @@ struct Regions
     Region[kMaxRegions] rgn;
 }
 
-char toHexChar(int x) nothrow { return cast(char) (x < 10 ? x + '0' : x - 10 + 'A'); }
+} // BACK_GC
 
 struct Heap
 {
-    Regions* regions;
-
-    void* lastmem;
-    size_t available;
-
     version (BACK_GC)
     {
-        void* newRegion(size_t size, bool share, bool noscan) nothrow
+		Regions* regions;
+
+		void* lastmem;
+		size_t available;
+
+        void* newRegion(size_t size, bool internal, bool noscan) nothrow
 		{
-			__gshared wchar name[32] = "D_GC_PID00000000_0000";
-            HANDLE hMapFile;
-            void* p;
-            void* gc_p;
-            if (share)
-			{
-				if (!regions)
-				{
-					DWORD pid = GetCurrentProcessId();
-					for (int i = 0; i < 8; i++)
-						name[15 - i] = toHexChar((pid >> (4 * i)) & 0xf);
-				}
-				else
-				{
-					for (int i = 0; i < 4; i++)
-						name[20 - i] = toHexChar((regions.count >> (4 * i)) & 0xf);
-				}
-				hMapFile = CreateFileMappingW(INVALID_HANDLE_VALUE,    // use paging file
-											  null,                    // default security
-											  PAGE_READWRITE,          // read/write access
-											  0,                       // maximum object size (high-order DWORD)
-											  size,                    // maximum object size (low-order DWORD)
-											  name.ptr);               // name of mapping object
-
-				if (!hMapFile)
-					return null;
-
-				p = MapViewOfFile(hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, size);
-
-                version(none)
-				{
-				void* np = VirtualAlloc(p, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
-                if(np != p)
-				{
-                    VirtualFree(p, size, MEM_RELEASE);
-                    p = np;
-				}
-				}
-			}
-            else
-			{
-			    p = VirtualAlloc(null, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
-                if (p)
-			        gc_p = VirtualAllocEx(gcProcInfo.hProcess, null, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-			}
+            void* p = VirtualAlloc(null, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
 			if (!p)
 				return null;
 
@@ -3745,56 +3834,61 @@ struct Heap
                 regions.count = 0;
 			}
 			regions.rgn[regions.count].size = size;
-			regions.rgn[regions.count].local_addr = p;
-			regions.rgn[regions.count].gc_addr = gc_p;
-			regions.rgn[regions.count].local_handle = hMapFile;
-			regions.rgn[regions.count].gc_handle = null;
+			regions.rgn[regions.count].addr = p;
+			regions.rgn[regions.count].internal = internal;
 			regions.rgn[regions.count].noscan = noscan;
             regions.count++;
             return p;
 		}
 
-        bool copyRegions() nothrow
+        void resetWriteWatches() nothrow
+		{
+            for(size_t r = 0; r < regions.count; r++)
+				ResetWriteWatch(regions.rgn[r].addr, regions.rgn[r].size);
+		}
+
+		size_t markWrittenPages(void delegate(void*, size_t) nothrow mark) nothrow
 		{
             if(!regions)
-                return true;
+                return 0;
 
-            auto q1 = typeid(Region);
+            auto q1 = typeid(Region);  // force inclusion of debug info
             auto q2 = typeid(Regions);
 
             size_t allpages = 0;
-            size_t copiedpages = 0;
+            size_t writtenpages = 0;
+			PVOID[4096] wraddr = void;
+			DWORD count = void;
+			DWORD gran = void;
             for(size_t r = 0; r < regions.count; r++)
                 with(regions.rgn[r])
 				{
-                    SIZE_T written;
-                    if(!local_handle && gc_addr)
+                    if(internal)
+                        continue;
+					allpages += (size + PAGESIZE - 1) / PAGESIZE;
+                    do
 					{
-						PVOID[4096] wraddr;
-						DWORD count = (size + PAGESIZE - 1) / PAGESIZE;
-						DWORD gran;
-                        allpages += count;
-						UINT res = GetWriteWatch(WRITE_WATCH_FLAG_RESET, local_addr, size, wraddr.ptr, &count, &gran);
+                        count = 4096;
+					    UINT res = GetWriteWatch(WRITE_WATCH_FLAG_RESET, addr, size, wraddr.ptr, &count, &gran);
                         if(res != 0)
-                            return false;
-                        copiedpages += count;
+                            onInvalidMemoryOperationError();
+                        writtenpages += count;
 
-                        size_t off = gc_addr - local_addr;
-						for(int c = 0; c < count; c++)
-						{
-                            int d = c + 1;
+					    for(int c = 0, d; c < count; c = d)
+					    {
+                            d = c + 1;
                             while(d < count && wraddr[d] == wraddr[d-1] + PAGESIZE)
-								d++;
-                            size_t tocopy = (d - c) * PAGESIZE;
-//							if (!WriteProcessMemory(gcProcInfo.hProcess, wraddr[c] + off, wraddr[c], tocopy, &written) || written != tocopy)
-//								return false;
+							    d++;
+                            size_t tocheck = (d - c) * PAGESIZE;
+
+                            mark(wraddr[c], tocheck);
 						}
-					}
+					} 
+					while(count == wraddr.length);
 				}
 
-            printf("copyRegions: %d of %d pages copied\n", copiedpages, allpages);
-            SetEvent(evCollection);
-            return true;
+            debug(COLLECT_PRINTF) printf("markWrittenPages: %d of %d pages written\n", writtenpages, allpages);
+            return writtenpages;
 		}
 
         void* malloc(size_t size) nothrow
@@ -3859,8 +3953,12 @@ struct Heap
     }
     else
     {
-        import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
+        static import cstdlib = core.stdc.stdlib; // : calloc, free, malloc, realloc;
 
+		void* newRegion(size_t size, bool internal, bool noscan) nothrow
+		{
+            return os_mem_map(size);
+		}
         static void* malloc(size_t size) nothrow
         {
             return cstdlib.malloc(size);
@@ -3878,11 +3976,6 @@ struct Heap
             cstdlib.free(p);
         }
     }
-}
-
-bool os_mem_writeprotect(void *base, size_t nbytes) nothrow
-{
-	return VirtualProtect(base, nbytes, PAGE_WRITECOPY, null) != 0;
 }
 
 __gshared Heap heap;
