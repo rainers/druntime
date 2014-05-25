@@ -27,7 +27,7 @@ debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 //debug = SENTINEL;             // add underrun/overrrun protection
 //debug = PTRCHECK;             // more pointer checking
 //debug = PTRCHECK2;            // thorough but slow pointer checking
-//debug = PROFILING;            // measure performance of various steps.
+debug = PROFILING;            // measure performance of various steps.
 //debug = INVARIANT;            // enable invariants
 //debug = CACHE_HITRATE;        // enable hit rate measure
 
@@ -36,7 +36,7 @@ debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 version = STACKGROWSDOWN;       // growing the stack means subtracting from the stack pointer
                                 // (use for Intel X86 CPUs)
                                 // else growing the stack means adding to the stack pointer
-//version = BACK_GC;              // background GC running in a different thread
+version = BACK_GC;              // background GC running in a different thread
 
 /***************************************************/
 
@@ -45,6 +45,7 @@ import gc.stats;
 import gc.os;
 
 import rt.util.container.treap;
+import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
 import core.stdc.string : memcpy, memset, memmove;
 import core.bitop;
 import core.sync.mutex;
@@ -64,31 +65,31 @@ debug private import core.stdc.stdio;
 
 debug(PRINTF_TO_FILE)
 {
-	__gshared FILE* gcx_fh;
+    __gshared FILE* gcx_fh;
 
     import core.time;
-    double curTicks() nothrow 
+    double curTicks() nothrow
     {
         __gshared double first = 0;
-	    double sec;
+        double sec;
 
         try // TickDuration.currSystemTick is not nothrow
-		{
+        {
             TickDuration now = TickDuration.currSystemTick;
-	        sec = now.to!("seconds", double);
+            sec = now.to!("seconds", double);
             if(first == 0)
                 first = sec;
-		}
-        catch 
-		{
+        }
+        catch
+        {
             sec = first - 1;
-		}
-	    return sec - first;
+        }
+        return sec - first;
     }
 
     int printf(ARGS...)(const char* fmt, ARGS args) nothrow
     {
-        if(!gcx_fh) 
+        if(!gcx_fh)
             gcx_fh = fopen("gcx.log", "w");
         int len = fprintf(gcx_fh, "%10.6lf: ", curTicks());
         len += fprintf(gcx_fh, fmt, args);
@@ -114,6 +115,7 @@ debug(PROFILING)
     import core.stdc.stdio, core.stdc.time;
     __gshared long prepTime;
     __gshared long markTime;
+    __gshared long bgmarkTime;
     __gshared long sweepTime;
     __gshared long recoverTime;
     __gshared long collectRootsTime;
@@ -186,7 +188,7 @@ debug (LOGGING)
         void Dtor()
         {
             if (data)
-                heap.free(data);
+                cstdlib.free(data);
             data = null;
         }
 
@@ -199,18 +201,18 @@ debug (LOGGING)
                 assert(dim + nentries <= allocdim);
                 if (!data)
                 {
-                    data = cast(Log*)heap.malloc(allocdim * Log.sizeof);
+                    data = cast(Log*)cstdlib.malloc(allocdim * Log.sizeof);
                     if (!data && allocdim)
                         onOutOfMemoryError();
                 }
                 else
                 {   Log *newdata;
 
-                    newdata = cast(Log*)heap.malloc(allocdim * Log.sizeof);
+                    newdata = cast(Log*)cstdlib.malloc(allocdim * Log.sizeof);
                     if (!newdata && allocdim)
                         onOutOfMemoryError();
                     memcpy(newdata, data, dim * Log.sizeof);
-                    heap.free(data);
+                    cstdlib.free(data);
                     data = newdata;
                 }
             }
@@ -289,31 +291,33 @@ class GC
         gcLock = cast(GCMutex) mutexStorage.ptr;
         gcLock.__ctor();
 
-        gcx = cast(Gcx*)heap.calloc(1, Gcx.sizeof);
+        gcx = cast(Gcx*)cstdlib.calloc(1, Gcx.sizeof);
         if (!gcx)
             onOutOfMemoryError();
         gcx.initialize();
-
-        version(BACK_GC)
-            startGCProcess(gcx);
     }
 
 
     void Dtor()
     {
+        debug(PROFILING)
+        {
+            GCStats stats;
+            getStatsNoSync(stats);
+            printf("poolsize = %llx, usedsize = %llx, freelistsize = %llx\n",
+                   cast(long)stats.poolsize, cast(long)stats.usedsize, cast(long)stats.freelistsize);
+        }
+
         version (linux)
         {
             //debug(PRINTF) printf("Thread %x ", pthread_self());
             //debug(PRINTF) printf("GC.Dtor()\n");
         }
 
-        version(BACK_GC)
-			stopGCProcess();
-
         if (gcx)
         {
             gcx.Dtor();
-            heap.free(gcx, Gcx.sizeof);
+            cstdlib.free(gcx);
             gcx = null;
         }
     }
@@ -1427,12 +1431,16 @@ struct Gcx
 
     version(BACK_GC)
     {
-        uint fileMappings;
         void **pScanRoots;
         size_t nScanRoots;
         size_t dimScanRoots;
         bool bgCollecting;
         bool canSweep;
+        bool stopGC;
+        bool bgEnable;
+
+        HANDLE gcThread;
+        HANDLE evCollection;
     }
 
     void initialize()
@@ -1443,6 +1451,12 @@ struct Gcx
         roots.initialize();
         ranges.initialize();
         //printf("gcx = %p, self = %x\n", &this, self);
+
+        version(BACK_GC)
+        {
+            bgEnable = true;
+            startGCProcess();
+        }
         inited = 1;
     }
 
@@ -1451,17 +1465,21 @@ struct Gcx
     {
         debug(PROFILING)
         {
-            printf("\tTotal GC prep time:  %d milliseconds\n",
+            printf("\tTotal GC prep time:  %lld milliseconds\n",
                 prepTime * 1000 / CLOCKS_PER_SEC);
-            printf("\tTotal mark time:  %d milliseconds\n",
-                markTime * 1000 / CLOCKS_PER_SEC);
-            printf("\tTotal sweep time:  %d milliseconds\n",
+            printf("\tTotal mark time:  %lld milliseconds\n",
+                   markTime * 1000 / CLOCKS_PER_SEC);
+            printf("\tTotal bg mark time:  %lld milliseconds\n",
+                   bgmarkTime * 1000 / CLOCKS_PER_SEC);
+            printf("\tTotal sweep time:  %lld milliseconds\n",
                 sweepTime * 1000 / CLOCKS_PER_SEC);
-            printf("\tTotal page recovery time:  %d milliseconds\n",
-                recoverTime * 1000 / CLOCKS_PER_SEC);
-            printf("\tGrand total GC time:  %d milliseconds\n",
-                1000 * (recoverTime + sweepTime + markTime + prepTime)
-                / CLOCKS_PER_SEC);
+            printf("\tTotal page recovery time:  %lld milliseconds\n",
+                   recoverTime * 1000 / CLOCKS_PER_SEC);
+            printf("\tTotal collect roots time:  %lld milliseconds\n",
+                   collectRootsTime * 1000 / CLOCKS_PER_SEC);
+            printf("\tGrand total GC time:  %lld milliseconds + %lld milliseonds in bg\n",
+                1000 * (recoverTime + sweepTime + markTime + prepTime + collectRootsTime)
+                / CLOCKS_PER_SEC, bgmarkTime * 1000 / CLOCKS_PER_SEC);
         }
 
         debug(CACHE_HITRATE)
@@ -1471,15 +1489,18 @@ struct Gcx
 
         inited = 0;
 
+        version(BACK_GC)
+            stopGCProcess();
+
         for (size_t i = 0; i < npools; i++)
         {   Pool *pool = pooltable[i];
 
             pool.Dtor();
-			heap.free(pool, Pool.sizeof);
+            cstdlib.free(pool);
         }
         if (pooltable)
         {
-            heap.free(pooltable, npools * pooltable[0].sizeof);
+            cstdlib.free(pooltable);
             pooltable = null;
         }
 
@@ -1968,7 +1989,7 @@ struct Gcx
                 pool = pooltable[j];
                 debug(PRINTF) printFreeInfo(pool);
                 pool.Dtor();
-                heap.free(pool, Pool.sizeof);
+                cstdlib.free(pool);
             }
             npools = i;
         }
@@ -2004,10 +2025,10 @@ struct Gcx
             assert(gcx.npools == 0);
 
             if (gcx.pooltable is null)
-                gcx.pooltable = cast(Pool**)heap.malloc(NPOOLS * (Pool*).sizeof);
+                gcx.pooltable = cast(Pool**)cstdlib.malloc(NPOOLS * (Pool*).sizeof);
             foreach(i; 0 .. NPOOLS)
             {
-                auto pool = cast(Pool*)heap.malloc(Pool.sizeof);
+                auto pool = cast(Pool*)cstdlib.malloc(Pool.sizeof);
                 *pool = Pool.init;
                 gcx.pooltable[i] = pool;
             }
@@ -2018,7 +2039,7 @@ struct Gcx
         {
             foreach(pool; gcx.pooltable[0 .. NPOOLS])
             {
-                pool.pagetable = cast(ubyte*)heap.malloc(NPAGES);
+                pool.pagetable = cast(ubyte*)cstdlib.malloc(NPAGES);
                 memset(pool.pagetable, B_FREE, NPAGES);
                 pool.npages = NPAGES;
                 pool.freepages = NPAGES / 2;
@@ -2109,12 +2130,11 @@ struct Gcx
         assert(gcx.maxAddr == gcx.pooltable[NPOOLS - 4].topAddr);
 
         // free all
-        size_t pools = gcx.npools;
         foreach(pool; gcx.pooltable[0 .. gcx.npools])
             pool.freepages = NPAGES;
         gcx.minimize();
         assert(gcx.npools == 0);
-        heap.free(gcx.pooltable, pools * gcx.pooltable[0].sizeof);
+        cstdlib.free(gcx.pooltable);
         gcx.pooltable = null;
     }
 
@@ -2261,7 +2281,7 @@ struct Gcx
 
         //printf("npages = %d\n", npages);
 
-        pool = cast(Pool *)heap.calloc(1, Pool.sizeof);
+        pool = cast(Pool *)cstdlib.calloc(1, Pool.sizeof);
         if (pool)
         {
             pool.initialize(npages, isLargeObject);
@@ -2269,7 +2289,18 @@ struct Gcx
                 goto Lerr;
 
             newnpools = npools + 1;
-            newpooltable = cast(Pool **)heap.realloc(pooltable, npools * (Pool *).sizeof, newnpools * (Pool *).sizeof);
+            version(BACK_GC)
+            {
+                // a preallocated pool table is necessary because it is accessed from the background thread, too
+                if (pooltable)
+                    newpooltable = pooltable;
+                else
+                    newpooltable = cast(Pool **)cstdlib.malloc(4096 * (Pool *).sizeof); // enough for 128 GB (pools mostly 32 MB)
+            }
+            else
+            {
+                newpooltable = cast(Pool **)cstdlib.realloc(pooltable, newnpools * (Pool *).sizeof);
+            }
             if (!newpooltable)
                 goto Lerr;
 
@@ -2292,7 +2323,7 @@ struct Gcx
 
       Lerr:
         pool.Dtor();
-        heap.free(pool, Pool.sizeof);
+        cstdlib.free(pool);
         return null;
     }
 
@@ -2471,7 +2502,7 @@ struct Gcx
     size_t fullcollect() nothrow
     {
         version(BACK_GC)
-            if(&this !is null)
+            if(bgEnable)
                 return fullcollectTrigger();
 
         debug(PROFILING)
@@ -2500,11 +2531,6 @@ struct Gcx
 
         markRoots();
         markHeap();
-
-        cached_size_key = cached_size_key.init;
-        cached_size_val = cached_size_val.init;
-        cached_info_key = cached_info_key.init;
-        cached_info_val = cached_info_val.init;
 
         thread_processGCMarks(&isMarked);
         thread_resumeAll();
@@ -2536,12 +2562,13 @@ struct Gcx
         running = 0; // only clear on success
 
         return freedpages + recoveredpages;
-	}
+    }
 
     version(BACK_GC)
-	size_t fullcollectTrigger() nothrow
-	{
-        debug(COLLECT_PRINTF) printf("++Gcx.fullcollectBack()\n");
+    {
+    size_t fullcollectTrigger() nothrow
+    {
+        debug(COLLECT_PRINTF) printf("++Gcx.fullcollectTrigger()\n");
 
         if (bgCollecting)
             return 0;
@@ -2550,18 +2577,40 @@ struct Gcx
             onInvalidMemoryOperationError();
         running = 1;
 
+        debug(PROFILING)
+        {
+            clock_t start, stop;
+            start = clock();
+        }
+
         thread_suspendAll();
 
         bgCollecting = true;
 
         prepare();
 
+        debug(PROFILING)
+        {
+            stop = clock();
+            prepTime += (stop - start);
+            start = stop;
+        }
+
         collectAllRoots();
-        heap.resetWriteWatches();
 
-		canSweep = true;
+        debug(PROFILING)
+        {
+            stop = clock();
+            collectRootsTime += (stop - start);
+        }
 
-		SetEvent(evCollection);
+        static if(hasMemWriteWatch)
+            for (size_t n = 0; n < npools; n++)
+                os_mem_resetWriteWatch(pooltable[n].baseAddr, pooltable[n].topAddr - pooltable[n].baseAddr);
+
+        canSweep = true;
+
+        SetEvent(evCollection);
 
 //        while(bgCollecting)
 //            Sleep(1);
@@ -2570,14 +2619,13 @@ struct Gcx
 
         running = 0; // only clear on success
 
-        debug(COLLECT_PRINTF) printf("--Gcx.fullcollectBack()\n");
+        debug(COLLECT_PRINTF) printf("--Gcx.fullcollectTrigger()\n");
 
         return 0;
-	}
+    }
 
-	version(BACK_GC)
-	size_t fullcollectFinish() nothrow
-	{
+    size_t fullcollectFinish() nothrow
+    {
         debug(COLLECT_PRINTF) printf("++Gcx.fullcollectFinish()\n");
 
         if (running)
@@ -2586,64 +2634,262 @@ struct Gcx
 
         thread_suspendAll();
 
+        debug(PROFILING)
+        {
+            clock_t start, stop;
+            start = clock();
+        }
+
         // continue from background collection
         markRoots();
-		heap.markWrittenPages(&markPoolPages);
+        markWrittenPages();
 
-		markHeap();
+        markHeap();
 
-		cached_size_key = cached_size_key.init;
-		cached_size_val = cached_size_val.init;
-		cached_info_key = cached_info_key.init;
-		cached_info_val = cached_info_val.init;
+        debug(PROFILING)
+        {
+            stop = clock();
+            markTime += (stop - start);
+            start = stop;
+        }
 
-		thread_processGCMarks(&isMarked);
-		thread_resumeAll();
+        thread_processGCMarks(&isMarked);
+        thread_resumeAll();
 
-		size_t freedpages = sweep();
-		size_t recoveredpages = recover();
+        size_t freedpages = sweep();
 
-		canSweep = false;
+        debug(PROFILING)
+        {
+            stop = clock();
+            sweepTime += (stop - start);
+            start = stop;
+        }
+
+        size_t recoveredpages = recover();
+
+        debug(PROFILING)
+        {
+            stop = clock();
+            recoverTime += (stop - start);
+        }
+
+        canSweep = false;
         running = 0; // only clear on success
 
         debug(COLLECT_PRINTF) printf("--Gcx.fullcollectFinish()\n");
 
         return freedpages + recoveredpages;
-	}
+    }
 
-    void markPoolPages(void* p, size_t size) nothrow
-	{
-        Pool* pool = findPool(p);
-        if(!pool)
-            return;
+    void markWrittenPages() nothrow
+    {
+        size_t allmem = 0;
+        size_t writtenmem = 0;
+        void*[1024] wraddr = void;
+        size_t count = void;
+        uint gran = void;
 
+        for (size_t n = 0; n < npools; n++)
+        {
+            Pool* pool = pooltable[n];
+            void* addr = pool.baseAddr;
+            size_t size = pool.topAddr - addr;
+            allmem += size;
+
+            do
+            {
+                count = wraddr.length;
+                if (!os_mem_getWriteWatch(true, addr, size, wraddr.ptr, &count, &gran))
+                    onInvalidMemoryOperationError();
+
+                for(int c = 0, d; c < count; c = d)
+                {
+                    d = c + 1;
+                    while(d < count && wraddr[d] == wraddr[d-1] + gran)
+                        d++;
+                    size_t tocheck = (d - c) * gran;
+
+                    markPoolPages(pool, wraddr[c], tocheck);
+                    writtenmem += tocheck;
+                }
+            }
+            while(count == wraddr.length);
+        }
+
+        debug(COLLECT_PRINTF) printf("markWrittenPages: %d of %d pages written\n", writtenmem / PAGESIZE, allmem / PAGESIZE);
+    }
+
+    void markPoolPages(Pool* pool, void* p, size_t size) nothrow
+    {
         // mark all live objects in this block for rescanning
-        if(pool.isLargeObject)
-		{
+        if (pool.isLargeObject)
+        {
             // pages have been written to, so they must have been alive
             mark(p, p + size);
-		}
+        }
+        else if (true)
+        {
+            // only rescan objects we have scanned before
+            // (new live objects should have new references elsewhere)
+            void* base = pool.baseAddr;
+            size_t pn = (p - base) / PAGESIZE;
+            for (void* end = p + size; p < end; p += PAGESIZE, pn++)
+            {
+                auto bin = cast(Bins)pool.pagetable[pn];
+                auto bsize = binsize[bin];
+                size_t bitstride = bsize / 16;
+                auto bitsPerPage = PAGESIZE >> pool.shiftBy;
+                auto biti = pn * bitsPerPage;
+                for (auto b = 0; b < bitsPerPage; b += bitstride)
+                    if (pool.mark.test(biti + b) && !pool.noscan.test(biti + b))
+                        mark(p + b * 16, p + b * 16 + bsize);
+                    else
+                        bin = bin;
+
+            }
+        }
         else
-		{
-            mark(p, p + size);
-		}
-	}
+		    mark(p, p + size);
+    }
 
-	version(BACK_GC)
-	void fullmarkBack() nothrow
-	{
-        debug(COLLECT_PRINTF) printf("++Gcx.fullmarkBack()\n");
+    void startGCProcess()
+    {
+        version(Windows)
+        {
+            evCollection = CreateEventW(null, false, false, null);
 
-        mark(pScanRoots, pScanRoots + nScanRoots);
-        markHeap();
+            DWORD tid;
+            gcThread = cast(HANDLE) _beginthreadex( null, 0x100000, &gc_runBackground, cast(void*)&this, 0, &tid );
+            if( !gcThread )
+                throw new ThreadException( "Error creating thread" );
+        }
+    }
 
-        debug(COLLECT_PRINTF) printf("--Gcx.fullmarkBack()\n");
+    void stopGCProcess()
+    {
+        version(Windows)
+        {
+            if(gcThread)
+            {
+                stopGC = true;
+                if(WaitForSingleObject(gcThread, 1000) != WAIT_OBJECT_0)
+                    TerminateThread(gcThread, 0);
+            }
+            gcThread = null;
 
-        bgCollecting = false;
-	}
+            if(evCollection)
+                CloseHandle(evCollection);
+            evCollection = null;
+        }
+    }
+
+    static extern (Windows) uint gc_runBackground(void* _gcx)
+    {
+        Gcx* gcx = cast(Gcx*) _gcx;
+        gcx.fullmarkBack();
+        return 0;
+    }
+
+    void fullmarkBack() nothrow
+    {
+        while(!stopGC)
+        {
+            DWORD rc = WaitForSingleObject(evCollection, 100);
+            if(rc == WAIT_OBJECT_0)
+            {
+                debug(COLLECT_PRINTF) printf("++Gcx.fullmarkBack()\n");
+
+				debug(PROFILING)
+				{
+					clock_t start, stop;
+					start = clock();
+				}
+
+                mark(pScanRoots, pScanRoots + nScanRoots);
+                markHeap();
+
+				debug(PROFILING)
+				{
+					stop = clock();
+					bgmarkTime += (stop - start);
+				}
+
+                debug(COLLECT_PRINTF) printf("--Gcx.fullmarkBack()\n");
+
+                bgCollecting = false;
+            }
+        }
+    }
+    /**
+    * add a root to the array of possible roots to be processed by the background process
+    */
+    void addScanRoot(void* root) nothrow
+    {
+        if (nScanRoots == dimScanRoots)
+        {
+            size_t newdim = dimScanRoots * 2 + 0x1000;
+            size_t sizeelem = pScanRoots[0].sizeof;
+            void** newroots = cast(void**)cstdlib.realloc(pScanRoots, newdim * sizeelem);
+            if (!newroots)
+                onOutOfMemoryError();
+            pScanRoots = newroots;
+            dimScanRoots = newdim;
+        }
+        pScanRoots[nScanRoots] = root;
+        nScanRoots++;
+    }
+
+    /**
+    * adds possible roots (values in the range minAddr - maxAddr)
+    * to the array of roots to scan in the background process
+    */
+    void collectRoots(void *pbot, void *ptop) nothrow
+    {
+        void **p1 = cast(void **)pbot;
+        void **p2 = cast(void **)ptop;
+
+        //printf("collecting roots in range: %p -> %p\n", pbot, ptop);
+        for (; p1 < p2; p1++)
+        {
+            auto p = cast(byte *)(*p1);
+            if (p >= minAddr && p < maxAddr)
+                addScanRoot(p);
+        }
+    }
+
+    void collectAllRoots() nothrow
+    {
+        size_t n;
+
+        debug(COLLECT_PRINTF) printf("Gcx.collectRoots()\n");
+
+        nScanRoots = 0;
+        if (!noStack)
+        {
+            debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
+            // Scan stacks and registers for each paused thread
+            thread_scanAll(&collectRoots);
+        }
+
+        // Scan roots[]
+        debug(COLLECT_PRINTF) printf("\tscan roots[]\n");
+        foreach (root; roots)
+        {
+            addScanRoot(root.proot);
+        }
+
+        // Scan ranges[]
+        debug(COLLECT_PRINTF) printf("\tscan ranges[]\n");
+        foreach (range; ranges)
+        {
+            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", range.pbot, range.ptop);
+            collectRoots(range.pbot, range.ptop);
+        }
+    }
+    } // BACK_GC
 
     void prepare() nothrow
-	{
+    {
         size_t n;
         Pool*  pool;
 
@@ -2677,10 +2923,10 @@ struct Gcx
             pool.newChanges = false;  // Some of these get set to true on stack scan.
         }
 
-	}
+    }
 
     void markRoots() nothrow
-	{
+    {
         if (!noStack)
         {
             debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
@@ -2704,10 +2950,10 @@ struct Gcx
             mark(range.pbot, range.ptop);
         }
         //log--;
-	}
+    }
 
     void markHeap() nothrow
-	{
+    {
         size_t n;
         Pool*  pool;
 
@@ -2771,10 +3017,10 @@ struct Gcx
                 }
             }
         }
-	}
+    }
 
     size_t sweep() nothrow
-	{
+    {
         size_t n;
         Pool*  pool;
 
@@ -2896,10 +3142,10 @@ struct Gcx
         debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
 
         return freedpages;
-	}
+    }
 
     size_t recover() nothrow
-	{
+    {
         size_t n;
         Pool*  pool;
 
@@ -2998,84 +3244,7 @@ struct Gcx
         return IsMarked.unknown;
     }
 
-	version(BACK_GC)
-	{
-	/**
-    * add a root to the array of possible roots to be processed by the background process
-    */
-    void addScanRoot(void* root) nothrow
-    {
-        if (nScanRoots == dimScanRoots)
-        {
-            size_t newdim = dimScanRoots * 2 + 0x1000;
-            size_t sizeelem = pScanRoots[0].sizeof;
-            void** newroots = cast(void**)heap.realloc(pScanRoots, dimScanRoots * sizeelem, newdim * sizeelem);
-            if (!newroots)
-                onOutOfMemoryError();
-            pScanRoots = newroots;
-            dimScanRoots = newdim;
-        }
-        pScanRoots[nScanRoots] = root;
-        nScanRoots++;
-    }
 
-    /**
-     * adds possible roots (values in the range minAddr - maxAddr)
-     * to the array of roots to scan in the background process
-     */
-    void collectRoots(void *pbot, void *ptop) nothrow
-    {
-        void **p1 = cast(void **)pbot;
-        void **p2 = cast(void **)ptop;
-
-        //printf("collecting roots in range: %p -> %p\n", pbot, ptop);
-        for (; p1 < p2; p1++)
-        {
-            auto p = cast(byte *)(*p1);
-            if (p >= minAddr && p < maxAddr)
-                addScanRoot(p);
-        }
-    }
-
-    void collectAllRoots() nothrow
-    {
-        size_t n;
-
-        debug(PROFILING)
-        {
-            clock_t start, stop;
-            start = clock();
-        }
-
-        debug(COLLECT_PRINTF) printf("Gcx.collectRoots()\n");
-
-        nScanRoots = 0;
-        if (!noStack)
-        {
-            debug(COLLECT_PRINTF) printf("\tscan stacks.\n");
-            // Scan stacks and registers for each paused thread
-            thread_scanAll(&collectRoots);
-        }
-
-        // Scan roots[]
-        debug(COLLECT_PRINTF) printf("\tscan roots[]\n");
-        collectRoots(roots, roots + nroots);
-
-        // Scan ranges[]
-        debug(COLLECT_PRINTF) printf("\tscan ranges[]\n");
-        for (n = 0; n < nranges; n++)
-        {
-            debug(COLLECT_PRINTF) printf("\t\t%p .. %p\n", ranges[n].pbot, ranges[n].ptop);
-            collectRoots(ranges[n].pbot, ranges[n].ptop);
-        }
-
-        debug(PROFILING)
-        {
-            stop = clock();
-            collectRootsTime += (stop - start);
-        }
-    }
-	} // BACK_GC
     /**
      *
      */
@@ -3363,7 +3532,7 @@ struct Pool
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
         assert(poolsize >= POOLSIZE);
-        baseAddr = cast(byte *)heap.newRegion(poolsize, false, false);
+        baseAddr = cast(byte *)os_mem_map(poolsize);
 
         // Some of the code depends on page alignment of memory pools
         assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
@@ -3395,13 +3564,13 @@ struct Pool
         noscan.alloc(nbits);
         appendable.alloc(nbits);
 
-        pagetable = cast(ubyte*)heap.malloc(npages);
+        pagetable = cast(ubyte*)cstdlib.malloc(npages);
         if (!pagetable)
             onOutOfMemoryError();
 
         if(isLargeObject)
         {
-            bPageOffsets = cast(uint*)heap.malloc(npages * uint.sizeof);
+            bPageOffsets = cast(uint*)cstdlib.malloc(npages * uint.sizeof);
             if (!bPageOffsets)
                 onOutOfMemoryError();
         }
@@ -3431,12 +3600,12 @@ struct Pool
         }
         if (pagetable)
         {
-            heap.free(pagetable, npages);
+            cstdlib.free(pagetable);
             pagetable = null;
         }
 
         if(bPageOffsets)
-            heap.free(bPageOffsets, npages * uint.sizeof);
+            cstdlib.free(bPageOffsets);
 
         mark.Dtor();
         scan.Dtor();
@@ -3700,283 +3869,24 @@ version(BACK_GC)
 {
 import core.sys.windows.windows;
 
-extern(Windows) HANDLE CreateMutexW(LPSECURITY_ATTRIBUTES lpMutexAttributes, BOOL bInitialOwner, LPCWSTR lpName);
-extern(Windows) HANDLE OpenMutexW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
-
-extern(Windows) HANDLE CreateEventW(LPSECURITY_ATTRIBUTES lpMutexAttributes, BOOL bManualReset, BOOL bInitialState, LPCWSTR lpName);
-extern(Windows) HANDLE OpenEventW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
-extern(Windows) BOOL SetEvent(HANDLE hEvent) nothrow;
-
-extern(Windows) HANDLE OpenProcess(DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwProcessId);
-extern(Windows) HANDLE OpenFileMappingW(DWORD dwDesiredAccess, BOOL bInheritHandle, LPCWSTR lpName);
-
-extern(Windows) BOOL WriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress,
-										LPCVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesWritten) nothrow;
-
-extern(Windows) UINT GetWriteWatch(DWORD dwFlags, PVOID lpBaseAddress, SIZE_T dwRegionSize,
-								   PVOID *lpAddresses, PULONG_PTR lpdwCount, PULONG lpdwGranularity) nothrow;
-extern(Windows) UINT ResetWriteWatch(LPVOID lpBaseAddress, SIZE_T dwRegionSize) nothrow;
-
-extern(Windows) BOOL TerminateThread(HANDLE hThread, DWORD dwExitCode);
-
 version (Windows)
 {
+    extern(Windows) HANDLE CreateEventW(LPSECURITY_ATTRIBUTES lpMutexAttributes, BOOL bManualReset, BOOL bInitialState, LPCWSTR lpName);
+    extern(Windows) BOOL SetEvent(HANDLE hEvent) nothrow;
+
+    extern(Windows) BOOL TerminateThread(HANDLE hThread, DWORD dwExitCode);
+
     extern(C):
-	uint _beginthread(void function(void *),uint,void *);
+    uint _beginthread(void function(void *),uint,void *);
 
     extern (Windows) alias uint function (void *) stdfp;
 
-	uint _beginthreadex(void* security, uint stack_size,
-					stdfp start_addr, void* arglist, uint initflag,
-					uint* thrdaddr);
+    uint _beginthreadex(void* security, uint stack_size,
+                    stdfp start_addr, void* arglist, uint initflag,
+                    uint* thrdaddr);
     void _endthread();
     void _endthreadex(uint);
-
-	const CREATE_SUSPENDED = 0x00000004;
-}
-
-enum PROCESS_QUERY_INFORMATION = 0x400;
-
-enum MEM_WRITE_WATCH = 0x00200000;
-enum WRITE_WATCH_FLAG_RESET = 1;
-enum MUTEX_ALL_ACCESS = 0x1F0001;
-
-__gshared HANDLE gcThread;
-__gshared HANDLE evCollection;
-__gshared bool stopGC;
-
-void startGCProcess(Gcx* gcx)
-{
-	version(Windows)
-	{
-		evCollection = CreateEventW(null, false, false, null);
-
-        DWORD tid;
-		gcThread = cast(HANDLE) _beginthreadex( null, 0x100000, &gc_runBackground, cast(void*)gcx, 0, &tid );
-		if( !gcThread )
-			throw new ThreadException( "Error creating thread" );
-	}
-}
-
-void stopGCProcess()
-{
-	version(Windows)
-	{
-		if(gcThread)
-		{
-            stopGC = true;
-            if(WaitForSingleObject(gcThread, 1000) != WAIT_OBJECT_0)
-			    TerminateThread(gcThread, 0);
-		}
-		gcThread = null;
-	
-        if(evCollection)
-		    CloseHandle(evCollection);
-        evCollection = null;
-	}
-}
-
-__gshared Regions* rgns;
-
-import core.stdc.stdio;
-
-extern (Windows) uint gc_runBackground(void* _gcx)
-{
-    Gcx* gcx = cast(Gcx*) _gcx;
-    while(!stopGC)
-    {
-        DWORD rc = WaitForSingleObject(evCollection, 100);
-        if(rc == WAIT_OBJECT_0)
-		{
-            // run collection
-            gcx.fullmarkBack();
-		}
-    }
-    return 0;
-}
-
-enum kMaxRegions = 2048;
-enum kMinSizeRegion = 0x100000;
-
-struct Region
-{
-    size_t size = 1;
-    void*  addr;
-    bool   noscan;   // contents do not contain references
-    bool   internal; // contains data structures used by the GC itself
-}
-struct Regions
-{
-    size_t count = 1;
-    Region[kMaxRegions] rgn;
 }
 
 } // BACK_GC
-
-struct Heap
-{
-    version (BACK_GC)
-    {
-		Regions* regions;
-
-		void* lastmem;
-		size_t available;
-
-        void* newRegion(size_t size, bool internal, bool noscan) nothrow
-		{
-            void* p = VirtualAlloc(null, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
-			if (!p)
-				return null;
-
-            if (!regions)
-			{
-                regions = cast(Regions*) p;
-                regions.count = 0;
-			}
-			regions.rgn[regions.count].size = size;
-			regions.rgn[regions.count].addr = p;
-			regions.rgn[regions.count].internal = internal;
-			regions.rgn[regions.count].noscan = noscan;
-            regions.count++;
-            return p;
-		}
-
-        void resetWriteWatches() nothrow
-		{
-            for(size_t r = 0; r < regions.count; r++)
-				ResetWriteWatch(regions.rgn[r].addr, regions.rgn[r].size);
-		}
-
-		size_t markWrittenPages(void delegate(void*, size_t) nothrow mark) nothrow
-		{
-            if(!regions)
-                return 0;
-
-            auto q1 = typeid(Region);  // force inclusion of debug info
-            auto q2 = typeid(Regions);
-
-            size_t allpages = 0;
-            size_t writtenpages = 0;
-			PVOID[4096] wraddr = void;
-			DWORD count = void;
-			DWORD gran = void;
-            for(size_t r = 0; r < regions.count; r++)
-                with(regions.rgn[r])
-				{
-                    if(internal)
-                        continue;
-					allpages += (size + PAGESIZE - 1) / PAGESIZE;
-                    do
-					{
-                        count = 4096;
-					    UINT res = GetWriteWatch(WRITE_WATCH_FLAG_RESET, addr, size, wraddr.ptr, &count, &gran);
-                        if(res != 0)
-                            onInvalidMemoryOperationError();
-                        writtenpages += count;
-
-					    for(int c = 0, d; c < count; c = d)
-					    {
-                            d = c + 1;
-                            while(d < count && wraddr[d] == wraddr[d-1] + PAGESIZE)
-							    d++;
-                            size_t tocheck = (d - c) * PAGESIZE;
-
-                            mark(wraddr[c], tocheck);
-						}
-					} 
-					while(count == wraddr.length);
-				}
-
-            debug(COLLECT_PRINTF) printf("markWrittenPages: %d of %d pages written\n", writtenpages, allpages);
-            return writtenpages;
-		}
-
-        void* malloc(size_t size) nothrow
-        {
-            if (!regions)
-            {
-                void* p = newRegion(kMinSizeRegion, true, false);
-                if (!p)
-                    return null;
-
-                available = kMinSizeRegion - Regions.sizeof;
-                lastmem = p + Regions.sizeof;
-            }
-            if (size >= kMinSizeRegion)
-                return newRegion(size, true, false);
-
-		    if(available < size)
-            {
-                void* p = newRegion(kMinSizeRegion, true, false);
-                if (!p)
-                    return null;
-                available = kMinSizeRegion;
-                lastmem = p;
-            }
-
-            void* np = lastmem;
-            lastmem += size;
-            available -= size;
-            return np;
-        }
-
-        void* realloc(void* p, size_t oldsize, size_t size) nothrow
-        {
-            if (size < oldsize)
-            {
-                if (size > 0)
-                    return p;
-                free(p, oldsize);
-                return null;
-            }
-            void* np = malloc(size);
-            if (!p || !np)
-                return np;
-
-            memcpy(np, p, oldsize);
-            free(p, oldsize);
-            return np;
-        }
-
-        void* calloc(size_t nmemb, size_t size) nothrow
-        {
-            void* p = malloc(nmemb * size);
-            if (p)
-                memset(p, 0, nmemb * size);
-            return p;
-        }
-
-        void free(void* p, size_t size) nothrow
-        {
-            //os_mem_unmap(p, size);
-        }
-    }
-    else
-    {
-        static import cstdlib = core.stdc.stdlib; // : calloc, free, malloc, realloc;
-
-		void* newRegion(size_t size, bool internal, bool noscan) nothrow
-		{
-            return os_mem_map(size);
-		}
-        static void* malloc(size_t size) nothrow
-        {
-            return cstdlib.malloc(size);
-        }
-        static void* realloc(void* p, size_t oldsize, size_t size) nothrow
-        {
-            return cstdlib.realloc(p, size);
-        }
-        static void* calloc(size_t nmemb, size_t size) nothrow
-        {
-            return cstdlib.calloc(nmemb, size);
-        }
-        static void free(void* p, size_t size) nothrow
-        {
-            cstdlib.free(p);
-        }
-    }
-}
-
-__gshared Heap heap;
 

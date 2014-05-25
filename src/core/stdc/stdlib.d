@@ -72,10 +72,8 @@ ulong   strtoull(in char* nptr, char** endptr, int base);
 
 version (Win64)
 {
-    real strtold(in char* nptr, char** endptr)
-    {   // Fake it 'till we make it
-        return strtod(nptr, endptr);
-    }
+    // Fake it 'till we make it
+    alias strtold = strtod;
 }
 else version (MinGW)
 {

@@ -16,9 +16,8 @@ module gc.bits;
 
 import core.bitop;
 import core.stdc.string;
+import core.stdc.stdlib;
 import core.exception : onOutOfMemoryError;
-
-import gc.gc;
 
 
 version (DigitalMars)
@@ -51,7 +50,7 @@ struct GCBits
     {
         if (data)
         {
-            heap.free(data, (((nbits + (BITS_PER_WORD - 1)) >> BITS_SHIFT) + 2) * data[0].sizeof);
+            free(data);
             data = null;
         }
     }
@@ -68,7 +67,7 @@ struct GCBits
     {
         this.nbits = nbits;
         nwords = (nbits + (BITS_PER_WORD - 1)) >> BITS_SHIFT;
-        data = cast(typeof(data[0])*)heap.calloc(nwords + 2, data[0].sizeof);
+        data = cast(typeof(data[0])*)calloc(nwords + 2, data[0].sizeof);
         if (!data)
             onOutOfMemoryError();
     }

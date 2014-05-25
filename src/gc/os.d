@@ -56,12 +56,16 @@ else static assert(false, "No supported allocation methods available.");
 
 static if (is(typeof(VirtualAlloc))) // version (GC_Use_Alloc_Win32)
 {
+    enum hasMemWriteWatch = true;
+
+    enum MEM_WRITE_WATCH = 0x00200000;
+
     /**
      * Map memory.
      */
     void *os_mem_map(size_t nbytes) nothrow
     {
-        return VirtualAlloc(null, nbytes, MEM_RESERVE | MEM_COMMIT,
+        return VirtualAlloc(null, nbytes, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH,
                 PAGE_READWRITE);
     }
 
@@ -76,9 +80,28 @@ static if (is(typeof(VirtualAlloc))) // version (GC_Use_Alloc_Win32)
     {
         return cast(int)(VirtualFree(base, 0, MEM_RELEASE) == 0);
     }
+
+	extern(Windows) UINT GetWriteWatch(DWORD dwFlags, PVOID lpBaseAddress, SIZE_T dwRegionSize,
+									   PVOID *lpAddresses, PULONG_PTR lpdwCount, PULONG lpdwGranularity) nothrow;
+	extern(Windows) UINT ResetWriteWatch(LPVOID lpBaseAddress, SIZE_T dwRegionSize) nothrow;
+
+    enum WRITE_WATCH_FLAG_RESET = 1;
+
+    void os_mem_resetWriteWatch(void *base, size_t nbytes) nothrow
+    {
+        ResetWriteWatch(base, nbytes);
+    }
+
+    bool os_mem_getWriteWatch(bool reset, void *base, size_t nbytes, void** wraddr, size_t* count, uint* granularity) nothrow
+    {
+		UINT res = GetWriteWatch(reset ? WRITE_WATCH_FLAG_RESET : false, base, nbytes, wraddr, count, granularity);
+		return (res == 0);
+    }
 }
 else static if (is(typeof(mmap)))  // else version (GC_Use_Alloc_MMap)
 {
+    enum hasMemWriteWatch = false;
+
     void *os_mem_map(size_t nbytes) nothrow
     {   void *p;
 
@@ -94,6 +117,8 @@ else static if (is(typeof(mmap)))  // else version (GC_Use_Alloc_MMap)
 }
 else static if (is(typeof(valloc))) // else version (GC_Use_Alloc_Valloc)
 {
+    enum hasMemWriteWatch = false;
+
     void *os_mem_map(size_t nbytes) nothrow
     {
         return valloc(nbytes);
@@ -108,6 +133,8 @@ else static if (is(typeof(valloc))) // else version (GC_Use_Alloc_Valloc)
 }
 else static if (is(typeof(malloc))) // else version (GC_Use_Alloc_Malloc)
 {
+    enum hasMemWriteWatch = false;
+
     // NOTE: This assumes malloc granularity is at least (void*).sizeof.  If
     //       (req_size + PAGESIZE) is allocated, and the pointer is rounded up
     //       to PAGESIZE alignment, there will be space for a void* at the end
