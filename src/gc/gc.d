@@ -63,35 +63,27 @@ else debug (CACHE_HITRATE)  import core.stdc.stdio : printf;
 else debug (PRINTF)         import core.stdc.stdio : printf;
 debug private import core.stdc.stdio;
 
+debug (PRINTF_TO_FILE) version = NEEDS_TICKS;
+else debug(PROFILING)  version = NEEDS_TICKS;
+
+version(NEEDS_TICKS)
+{
+    import core.time;
+
+    extern(C) TickDuration curTick() nothrow; // fake nothrow
+    extern(C) TickDuration curTick(int) { return TickDuration.currSystemTick; }
+}
+
 debug(PRINTF_TO_FILE)
 {
+    __gshared TickDuration gcStartTick;
     __gshared FILE* gcx_fh;
-
-    import core.time;
-    double curTicks() nothrow
-    {
-        __gshared double first = 0;
-        double sec;
-
-        try // TickDuration.currSystemTick is not nothrow
-        {
-            TickDuration now = TickDuration.currSystemTick;
-            sec = now.to!("seconds", double);
-            if(first == 0)
-                first = sec;
-        }
-        catch
-        {
-            sec = first - 1;
-        }
-        return sec - first;
-    }
 
     int printf(ARGS...)(const char* fmt, ARGS args) nothrow
     {
         if(!gcx_fh)
             gcx_fh = fopen("gcx.log", "w");
-        int len = fprintf(gcx_fh, "%10.6lf: ", curTicks());
+        int len = fprintf(gcx_fh, "%10.6lf: ", (curTick - gcStartTick).to!("seconds", double));
         len += fprintf(gcx_fh, fmt, args);
         fflush(gcx_fh);
         return len;
@@ -113,12 +105,14 @@ debug(PROFILING)
     // Track total time spent preparing for GC,
     // marking, sweeping and recovering pages.
     import core.stdc.stdio, core.stdc.time;
-    __gshared long prepTime;
-    __gshared long markTime;
-    __gshared long bgmarkTime;
-    __gshared long sweepTime;
-    __gshared long recoverTime;
-    __gshared long collectRootsTime;
+    __gshared TickDuration prepTime;
+    __gshared TickDuration markTime;
+    __gshared TickDuration bgmarkTime;
+    __gshared TickDuration sweepTime;
+    __gshared TickDuration recoverTime;
+    __gshared TickDuration finishTime;
+    __gshared TickDuration triggerTime;
+    __gshared TickDuration collectRootsTime;
 }
 
 private
@@ -287,6 +281,8 @@ class GC
 
     void initialize()
     {
+        debug(PRINTF_TO_FILE)
+            gcStartTick = curTick;
         mutexStorage[] = typeid(GCMutex).init[];
         gcLock = cast(GCMutex) mutexStorage.ptr;
         gcLock.__ctor();
@@ -1465,21 +1461,19 @@ struct Gcx
     {
         debug(PROFILING)
         {
-            printf("\tTotal GC prep time:  %lld milliseconds\n",
-                prepTime * 1000 / CLOCKS_PER_SEC);
-            printf("\tTotal mark time:  %lld milliseconds\n",
-                   markTime * 1000 / CLOCKS_PER_SEC);
-            printf("\tTotal bg mark time:  %lld milliseconds\n",
-                   bgmarkTime * 1000 / CLOCKS_PER_SEC);
+            printf("\tTotal GC prep time:  %lld milliseconds\n", 
+                   prepTime.to!("msecs", long));
+            printf("\tTotal mark time:  %lld milliseconds + %lld milliseonds in bg\n",
+                   markTime.to!("msecs", long), bgmarkTime.to!("msecs", long));
             printf("\tTotal sweep time:  %lld milliseconds\n",
-                sweepTime * 1000 / CLOCKS_PER_SEC);
+                   sweepTime.to!("msecs", long));
             printf("\tTotal page recovery time:  %lld milliseconds\n",
-                   recoverTime * 1000 / CLOCKS_PER_SEC);
+                   recoverTime.to!("msecs", long));
             printf("\tTotal collect roots time:  %lld milliseconds\n",
-                   collectRootsTime * 1000 / CLOCKS_PER_SEC);
+                   collectRootsTime.to!("msecs", long));
             printf("\tGrand total GC time:  %lld milliseconds + %lld milliseonds in bg\n",
-                1000 * (recoverTime + sweepTime + markTime + prepTime + collectRootsTime)
-                / CLOCKS_PER_SEC, bgmarkTime * 1000 / CLOCKS_PER_SEC);
+                   (recoverTime + sweepTime + markTime + prepTime + collectRootsTime).to!("msecs", long),
+                   bgmarkTime.to!("msecs", long));
         }
 
         debug(CACHE_HITRATE)
@@ -2507,8 +2501,8 @@ struct Gcx
 
         debug(PROFILING)
         {
-            clock_t start, stop;
-            start = clock();
+            TickDuration start, stop;
+            start = curTick();
         }
 
         debug(COLLECT_PRINTF) printf("Gcx.fullcollect()\n");
@@ -2524,7 +2518,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick();
             prepTime += (stop - start);
             start = stop;
         }
@@ -2537,7 +2531,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             markTime += (stop - start);
             start = stop;
         }
@@ -2546,7 +2540,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             sweepTime += (stop - start);
             start = stop;
         }
@@ -2555,7 +2549,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             recoverTime += (stop - start);
         }
 
@@ -2579,8 +2573,8 @@ struct Gcx
 
         debug(PROFILING)
         {
-            clock_t start, stop;
-            start = clock();
+            TickDuration start, stop;
+            start = curTick;
         }
 
         thread_suspendAll();
@@ -2591,7 +2585,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             prepTime += (stop - start);
             start = stop;
         }
@@ -2600,7 +2594,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             collectRootsTime += (stop - start);
         }
 
@@ -2636,8 +2630,8 @@ struct Gcx
 
         debug(PROFILING)
         {
-            clock_t start, stop;
-            start = clock();
+            TickDuration start, stop;
+            start = curTick;
         }
 
         // continue from background collection
@@ -2648,7 +2642,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             markTime += (stop - start);
             start = stop;
         }
@@ -2660,7 +2654,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             sweepTime += (stop - start);
             start = stop;
         }
@@ -2669,7 +2663,7 @@ struct Gcx
 
         debug(PROFILING)
         {
-            stop = clock();
+            stop = curTick;
             recoverTime += (stop - start);
         }
 
@@ -2749,7 +2743,7 @@ struct Gcx
             }
         }
         else
-		    mark(p, p + size);
+            mark(p, p + size);
     }
 
     void startGCProcess()
@@ -2799,20 +2793,20 @@ struct Gcx
             {
                 debug(COLLECT_PRINTF) printf("++Gcx.fullmarkBack()\n");
 
-				debug(PROFILING)
-				{
-					clock_t start, stop;
-					start = clock();
-				}
+                debug(PROFILING)
+                {
+                    TickDuration start, stop;
+                    start = curTick;
+                }
 
                 mark(pScanRoots, pScanRoots + nScanRoots);
                 markHeap();
 
-				debug(PROFILING)
-				{
-					stop = clock();
-					bgmarkTime += (stop - start);
-				}
+                debug(PROFILING)
+                {
+                    stop = curTick;
+                    bgmarkTime += (stop - start);
+                }
 
                 debug(COLLECT_PRINTF) printf("--Gcx.fullmarkBack()\n");
 
