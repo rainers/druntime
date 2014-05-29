@@ -70,7 +70,7 @@ version(NEEDS_TICKS)
 {
     import core.time;
 
-    extern(C) TickDuration curTick() nothrow; // fake nothrow
+    extern(C) TickDuration curTick() nothrow; // fake nothrow, we don't want the runtime overhead
     extern(C) TickDuration curTick(int) { return TickDuration.currSystemTick; }
 }
 
@@ -113,6 +113,7 @@ debug(PROFILING)
     __gshared TickDuration finishTime;
     __gshared TickDuration triggerTime;
     __gshared TickDuration collectRootsTime;
+    __gshared size_t maxPoolSize;
 }
 
 private
@@ -302,6 +303,28 @@ class GC
             getStatsNoSync(stats);
             printf("poolsize = %llx, usedsize = %llx, freelistsize = %llx\n",
                    cast(long)stats.poolsize, cast(long)stats.usedsize, cast(long)stats.freelistsize);
+            version(Windows)
+            {
+                import core.sys.windows.windows;
+                static struct PROCESS_MEMORY_COUNTERS {
+                    DWORD  cb;
+                    DWORD  PageFaultCount;
+                    SIZE_T PeakWorkingSetSize;
+                    SIZE_T WorkingSetSize;
+                    SIZE_T QuotaPeakPagedPoolUsage;
+                    SIZE_T QuotaPagedPoolUsage;
+                    SIZE_T QuotaPeakNonPagedPoolUsage;
+                    SIZE_T QuotaNonPagedPoolUsage;
+                    SIZE_T PagefileUsage;
+                    SIZE_T PeakPagefileUsage;
+                }
+                extern(Windows) BOOL GetProcessMemoryInfo(HANDLE Process, PROCESS_MEMORY_COUNTERS* ppsmemCounters, DWORD cb);
+                PROCESS_MEMORY_COUNTERS counters;
+                GetProcessMemoryInfo(GetCurrentProcess(), &counters, PROCESS_MEMORY_COUNTERS.sizeof);
+                printf("maxPoolSize = %llx, peakWorkingSet = %llx\n", maxPoolSize, counters.PeakWorkingSetSize);
+            }
+            else
+                printf("maxPoolSize = %llx\n", maxPoolSize);
         }
 
         version (linux)
@@ -1963,6 +1986,10 @@ struct Gcx
             // find first unused pool
             if (isUsed(pool)) continue;
 
+            version(BACK_GC)
+                if (bgCollecting)
+                    continue; // do not delete a pool during a background collection (optimize to "old" pools only)
+
             // move used pools before unused ones
             size_t j = i + 1;
             for (; j < npools; ++j)
@@ -2312,6 +2339,15 @@ struct Gcx
 
             minAddr = pooltable[0].baseAddr;
             maxAddr = pooltable[npools - 1].topAddr;
+        }
+
+        debug(PROFILING)
+        {
+            size_t poolsize = 0;
+            for(i = 0; i < npools; i++)
+                poolsize += pooltable[i].topAddr - pooltable[i].baseAddr;
+            if(poolsize > maxPoolSize)
+                maxPoolSize = poolsize;
         }
         return pool;
 
