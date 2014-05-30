@@ -37,6 +37,7 @@ version = STACKGROWSDOWN;       // growing the stack means subtracting from the 
                                 // (use for Intel X86 CPUs)
                                 // else growing the stack means adding to the stack pointer
 version = BACK_GC;              // background GC running in a different thread
+// version = GETPROCESSMEMORYINFO; // report peak memory usage as reported by the OS
 
 /***************************************************/
 
@@ -70,16 +71,16 @@ version(NEEDS_TICKS)
 {
     import core.time;
 
-    extern(C) TickDuration curTick() nothrow; // fake nothrow, we don't want the runtime overhead
-    extern(C) TickDuration curTick(int) { return TickDuration.currSystemTick; }
+    extern(C) private TickDuration curTick() nothrow; // fake nothrow, we don't want the runtime overhead
+    extern(C) private TickDuration curTick(int) { return TickDuration.currSystemTick; }
 }
 
 debug(PRINTF_TO_FILE)
 {
-    __gshared TickDuration gcStartTick;
-    __gshared FILE* gcx_fh;
+    private __gshared TickDuration gcStartTick;
+    private __gshared FILE* gcx_fh;
 
-    int printf(ARGS...)(const char* fmt, ARGS args) nothrow
+    private int printf(ARGS...)(const char* fmt, ARGS args) nothrow
     {
         if(!gcx_fh)
             gcx_fh = fopen("gcx.log", "w");
@@ -114,6 +115,25 @@ debug(PROFILING)
     __gshared TickDuration triggerTime;
     __gshared TickDuration collectRootsTime;
     __gshared size_t maxPoolSize;
+
+    version(GETPROCESSMEMORYINFO)
+    {
+        import core.sys.windows.windows;
+        static struct PROCESS_MEMORY_COUNTERS {
+            DWORD  cb;
+            DWORD  PageFaultCount;
+            SIZE_T PeakWorkingSetSize;
+            SIZE_T WorkingSetSize;
+            SIZE_T QuotaPeakPagedPoolUsage;
+            SIZE_T QuotaPagedPoolUsage;
+            SIZE_T QuotaPeakNonPagedPoolUsage;
+            SIZE_T QuotaNonPagedPoolUsage;
+            SIZE_T PagefileUsage;
+            SIZE_T PeakPagefileUsage;
+        }
+        extern(Windows) BOOL GetProcessMemoryInfo(HANDLE Process, PROCESS_MEMORY_COUNTERS* ppsmemCounters, DWORD cb);
+        pragma(lib,"psapi");
+    }
 }
 
 private
@@ -303,28 +323,14 @@ class GC
             getStatsNoSync(stats);
             printf("poolsize = %llx, usedsize = %llx, freelistsize = %llx\n",
                    cast(long)stats.poolsize, cast(long)stats.usedsize, cast(long)stats.freelistsize);
-            version(Windows)
+            version(GETPROCESSMEMORYINFO)
             {
-                import core.sys.windows.windows;
-                static struct PROCESS_MEMORY_COUNTERS {
-                    DWORD  cb;
-                    DWORD  PageFaultCount;
-                    SIZE_T PeakWorkingSetSize;
-                    SIZE_T WorkingSetSize;
-                    SIZE_T QuotaPeakPagedPoolUsage;
-                    SIZE_T QuotaPagedPoolUsage;
-                    SIZE_T QuotaPeakNonPagedPoolUsage;
-                    SIZE_T QuotaNonPagedPoolUsage;
-                    SIZE_T PagefileUsage;
-                    SIZE_T PeakPagefileUsage;
-                }
-                extern(Windows) BOOL GetProcessMemoryInfo(HANDLE Process, PROCESS_MEMORY_COUNTERS* ppsmemCounters, DWORD cb);
                 PROCESS_MEMORY_COUNTERS counters;
                 GetProcessMemoryInfo(GetCurrentProcess(), &counters, PROCESS_MEMORY_COUNTERS.sizeof);
-                printf("maxPoolSize = %llx, peakWorkingSet = %llx\n", maxPoolSize, counters.PeakWorkingSetSize);
+                printf("maxPoolSize = %lld MB, peakWorkingSet = %lld MB\n", cast(long)maxPoolSize >> 20, cast(long)counters.PeakWorkingSetSize >> 20);
             }
             else
-                printf("maxPoolSize = %llx\n", maxPoolSize);
+                printf("maxPoolSize = %lld MB\n", maxPoolSize >> 20);
         }
 
         version (linux)
@@ -1484,7 +1490,7 @@ struct Gcx
     {
         debug(PROFILING)
         {
-            printf("\tTotal GC prep time:  %lld milliseconds\n", 
+            printf("\tTotal GC prep time:  %lld milliseconds\n",
                    prepTime.to!("msecs", long));
             printf("\tTotal mark time:  %lld milliseconds + %lld milliseonds in bg\n",
                    markTime.to!("msecs", long), bgmarkTime.to!("msecs", long));
@@ -2746,7 +2752,7 @@ struct Gcx
             while(count == wraddr.length);
         }
 
-        debug(COLLECT_PRINTF) printf("markWrittenPages: %d of %d pages written\n", writtenmem / PAGESIZE, allmem / PAGESIZE);
+        debug(COLLECT_PRINTF) printf("\tmarkWrittenPages: %d of %d pages written\n", writtenmem / PAGESIZE, allmem / PAGESIZE);
     }
 
     void markPoolPages(Pool* pool, void* p, size_t size) nothrow
