@@ -76,7 +76,7 @@ __gshared long prepTime;
 __gshared long markTime;
 __gshared long sweepTime;
 __gshared long recoverTime;
-__gshared size_t maxGCMemory;
+__gshared size_t maxPoolMemory;
 
 private
 {
@@ -256,8 +256,10 @@ class GC
             onOutOfMemoryError();
         gcx.initialize();
 
-        if(config.initReserve)
+        if (config.initReserve)
             gcx.reserve(config.initReserve << 20);
+        if (config.disable)
+            gcx.disabled++;
     }
 
 
@@ -1408,8 +1410,8 @@ struct Gcx
             long pauseTime = recoverTime + sweepTime + markTime + prepTime;
             printf("\tGrand total GC time:  %d milliseconds\n",
                 pauseTime * 1000 / CLOCKS_PER_SEC);
-            printf("maxGCMemory = %lld MB, pause time = %lld ms\n", 
-                   cast(long) maxGCMemory >> 20, 1000 * pauseTime / CLOCKS_PER_SEC);
+            printf("maxPoolMemory = %lld MB, pause time = %lld ms\n", 
+                   cast(long) maxPoolMemory >> 20, 1000 * pauseTime / CLOCKS_PER_SEC);
         }
 
         debug(CACHE_HITRATE)
@@ -2182,7 +2184,7 @@ struct Gcx
         //debug(PRINTF) printf("************Gcx::newPool(npages = %d)****************\n", npages);
 
         // Minimum of POOLSIZE
-        size_t minPages = (POOLSIZE/PAGESIZE) * GC.config.minPoolSize;
+        size_t minPages = (GC.config.minPoolSize << 20) / PAGESIZE;
         if (npages < minPages)
             npages = minPages;
         else if (npages > minPages)
@@ -2199,7 +2201,7 @@ struct Gcx
             n = GC.config.minPoolSize + GC.config.incPoolSize * npools;
             if (n > GC.config.maxPoolSize)
                 n = GC.config.maxPoolSize;                 // cap pool size
-            n *= (POOLSIZE / PAGESIZE);
+            n *= (1 << 20) / PAGESIZE;                     // convert MB to pages
             if (npages < n)
                 npages = n;
         }
@@ -2239,8 +2241,8 @@ struct Gcx
             size_t gcmem = 0;
             for(i = 0; i < npools; i++)
                 gcmem += pooltable[i].topAddr - pooltable[i].baseAddr;
-            if(gcmem > maxGCMemory)
-                maxGCMemory = gcmem;
+            if(gcmem > maxPoolMemory)
+                maxPoolMemory = gcmem;
         }
         return pool;
 
