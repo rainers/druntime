@@ -22,6 +22,7 @@ version(initGCFromCommandLine)
 import core.stdc.stdlib;
 import core.stdc.stdio;
 import core.stdc.ctype;
+import core.vararg;
 
 extern (C) string[] rt_args();
 
