@@ -1463,7 +1463,12 @@ struct Gcx
         bool canSweep;
         bool stopGC;
         bool bgEnable;
-
+        
+        byte *bgminAddr;      // min(baseAddr)
+        byte *bgmaxAddr;      // max(topAddr)
+        size_t bgnpools;
+        Pool **bgpooltable;
+    
         HANDLE gcThread;
         HANDLE evCollection;
     }
@@ -1513,7 +1518,14 @@ struct Gcx
         inited = 0;
 
         version(BACK_GC)
+        {
             stopGCProcess();
+            if (bgpooltable)
+            {
+                cstdlib.free(bgpooltable);
+                bgpooltable = null;
+            }
+        }
 
         for (size_t i = 0; i < npools; i++)
         {   Pool *pool = pooltable[i];
@@ -1715,6 +1727,19 @@ struct Gcx
         }
     }
 
+    void snapshotPooltable() nothrow
+    {
+        bgminAddr = minAddr;
+        bgmaxAddr = maxAddr;
+        if (npools > bgnpools)
+        {
+            auto pt = realloc(bgpooltable, npools * (Pool*).sizeof);
+            if (!pt)
+                onOutOfMemoryError();
+        }
+        memcpy(bgpooltable, pooltable, npools * (Pool*).sizeof);
+        bgnpools = npools;
+    }
 
     /**
      * Find Pool that pointer is in.
@@ -1723,6 +1748,21 @@ struct Gcx
      */
     Pool *findPool(bool bypassCache = !USE_CACHE)(void *p) nothrow
     {
+        auto _pooltable = pooltable;
+        auto _npools = npools;
+        auto _minAddr = minAddr;
+        auto _maxAddr = maxAddr;
+        
+        static if (bypassCache) version(BACK_GC)
+        {
+            if (bgEnable)
+            {
+                _pooltable = bgpooltable;
+                _npools = bgnpools;
+                _minAddr = bgminAddr;
+                _maxAddr = bgmaxAddr;
+            }
+        }
         static if (!bypassCache && USE_CACHE)
         {
             debug (CACHE_HITRATE) cached_pool_queries++;
@@ -1733,18 +1773,18 @@ struct Gcx
                 return cached_pool;
             }
         }
-        if (p >= minAddr && p < maxAddr)
+        if (p >= _minAddr && p < _maxAddr)
         {
-            if (npools <= 1)
+            if (_npools <= 1)
             {
-                return npools == 0 ? null : pooltable[0];
+                return _npools == 0 ? null : _pooltable[0];
             }
 
             /* The pooltable[] is sorted by address, so do a binary search
              */
-            auto pt = pooltable;
+            auto pt = _pooltable;
             size_t low = 0;
-            size_t high = npools - 1;
+            size_t high = _npools - 1;
             while (low <= high)
             {
                 size_t mid = (low + high) >> 1;
@@ -2316,18 +2356,7 @@ struct Gcx
                 goto Lerr;
 
             newnpools = npools + 1;
-            version(BACK_GC)
-            {
-                // a preallocated pool table is necessary because it is accessed from the background thread, too
-                if (pooltable)
-                    newpooltable = pooltable;
-                else
-                    newpooltable = cast(Pool **)cstdlib.malloc(4096 * (Pool *).sizeof); // enough for 128 GB (pools mostly 32 MB)
-            }
-            else
-            {
-                newpooltable = cast(Pool **)cstdlib.realloc(pooltable, newnpools * (Pool *).sizeof);
-            }
+            newpooltable = cast(Pool **)cstdlib.realloc(pooltable, newnpools * (Pool *).sizeof);
             if (!newpooltable)
                 goto Lerr;
 
@@ -2619,6 +2648,8 @@ struct Gcx
             start = curTick;
         }
 
+        snapshotPooltable();
+        
         thread_suspendAll();
 
         bgCollecting = true;
