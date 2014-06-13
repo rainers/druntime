@@ -22,6 +22,7 @@ version(initGCFromCommandLine)
 import core.stdc.stdlib;
 import core.stdc.stdio;
 import core.stdc.ctype;
+import core.stdc.string;
 import core.vararg;
 
 extern (C) string[] rt_args();
@@ -51,9 +52,9 @@ struct Config
         {
             auto args = rt_args();
             foreach (a; args)
-                if(a.length > 8 && a[0..6] == "--gcx=")
+                if(a.length > 8 && a[0..8] == "--gcopt=")
                 {
-                    if (!parseOptions(a[6 .. $]))
+                    if (!parseOptions(a[8 .. $]))
                         return false;
                     // TODO: remove argument from args passed to main
                 }
