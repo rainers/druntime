@@ -204,7 +204,7 @@ string genTempFilename(string result_path)
 
 int system(string command)
 {
-    if (!command) return std.c.process.system(null);
+    if (command.empty) return std.c.process.system(null);
     const commandz = toStringz(command);
     auto status = std.c.process.system(commandz);
     if (status == -1) return status;
@@ -243,7 +243,7 @@ string execute(ref File f, string command, bool expectpass, string result_path)
     if (WIFSIGNALED(rc))
     {
         auto value = WTERMSIG(rc);
-        enforce(0 == value, "caught signal: " ~ to!string(value));
+        enforceEx!Error(0 == value, "caught signal: " ~ to!string(value));
     }
     else if (WIFEXITED(rc))
     {
@@ -427,7 +427,7 @@ int runTest(const ref EnvData envData, string tst, string test_args)
     }
     writef(" . %-16s ", input_file);
     fflush(core.stdc.stdio.stdout);
-    
+
     if (testArgs.disabled)
         writefln("!!! [DISABLED: %s]", testArgs.disabled_reason);
 
@@ -514,7 +514,7 @@ int runTest(const ref EnvData envData, string tst, string test_args)
                     }
 
                 string command = test_app_dmd;
-                if (test_args)
+                if (!test_args.empty)
                     command ~= " " ~ test_args;
                 else if (testArgs.executeArgs)
                     command ~= " " ~ testArgs.executeArgs;
@@ -595,4 +595,3 @@ int runTest(const ref EnvData envData, string tst, string test_args)
 
     return 0;
 }
-
