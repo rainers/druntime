@@ -330,7 +330,7 @@ class GC
                 printf("maxPoolSize = %lld MB, peakWorkingSet = %lld MB\n", cast(long)maxPoolSize >> 20, cast(long)counters.PeakWorkingSetSize >> 20);
             }
             else
-                printf("maxPoolSize = %lld MB\n", maxPoolSize >> 20);
+                printf("maxPoolMemory = %lld MB\n", cast(long)maxPoolSize >> 20);
         }
 
         version (linux)
@@ -1736,6 +1736,7 @@ struct Gcx
             auto pt = realloc(bgpooltable, npools * (Pool*).sizeof);
             if (!pt)
                 onOutOfMemoryError();
+            bgpooltable = cast(Pool**) pt;
         }
         memcpy(bgpooltable, pooltable, npools * (Pool*).sizeof);
         bgnpools = npools;
