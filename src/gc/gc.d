@@ -44,6 +44,7 @@ version = BACK_GC;              // background GC running in a different thread
 import gc.bits;
 import gc.stats;
 import gc.os;
+import gc.config;
 
 import rt.util.container.treap;
 import cstdlib = core.stdc.stdlib : calloc, free, malloc, realloc;
@@ -300,10 +301,12 @@ class GC
     __gshared GCMutex gcLock;    // global lock
     __gshared byte[__traits(classInstanceSize, GCMutex)] mutexStorage;
 
+    __gshared Config config;
+
     void initialize()
     {
-        debug(PRINTF_TO_FILE)
-            gcStartTick = curTick;
+        config.initialize();
+
         mutexStorage[] = typeid(GCMutex).init[];
         gcLock = cast(GCMutex) mutexStorage.ptr;
         gcLock.__ctor();
@@ -312,6 +315,11 @@ class GC
         if (!gcx)
             onOutOfMemoryError();
         gcx.initialize();
+
+        if (config.initReserve)
+            gcx.reserve(config.initReserve << 20);
+        if (config.disable)
+            gcx.disabled++;
     }
 
 
@@ -1493,7 +1501,7 @@ struct Gcx
 
     void Dtor()
     {
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             printf("\tTotal GC prep time:  %lld milliseconds\n",
                    prepTime.to!("msecs", long));
@@ -2324,9 +2332,10 @@ struct Gcx
         //debug(PRINTF) printf("************Gcx::newPool(npages = %d)****************\n", npages);
 
         // Minimum of POOLSIZE
-        if (npages < POOLSIZE/PAGESIZE)
-            npages = POOLSIZE/PAGESIZE;
-        else if (npages > POOLSIZE/PAGESIZE)
+        size_t minPages = (GC.config.minPoolSize << 20) / PAGESIZE;
+        if (npages < minPages)
+            npages = minPages;
+        else if (npages > minPages)
         {   // Give us 150% of requested size, so there's room to extend
             auto n = npages + (npages >> 1);
             if (n < size_t.max/PAGESIZE)
@@ -2337,12 +2346,10 @@ struct Gcx
         if (npools)
         {   size_t n;
 
-            n = npools;
-            if (n > 32)
-                n = 32;                 // cap pool size at 32 megs
-            else if (n > 8)
-                n = 16;
-            n *= (POOLSIZE / PAGESIZE);
+            n = GC.config.minPoolSize + GC.config.incPoolSize * npools;
+            if (n > GC.config.maxPoolSize)
+                n = GC.config.maxPoolSize;                 // cap pool size
+            n *= (1 << 20) / PAGESIZE;                     // convert MB to pages
             if (npages < n)
                 npages = n;
         }
@@ -2377,13 +2384,13 @@ struct Gcx
             maxAddr = pooltable[npools - 1].topAddr;
         }
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
-            size_t poolsize = 0;
+            size_t gcmem = 0;
             for(i = 0; i < npools; i++)
-                poolsize += pooltable[i].topAddr - pooltable[i].baseAddr;
-            if(poolsize > maxPoolSize)
-                maxPoolSize = poolsize;
+                gcmem += pooltable[i].topAddr - pooltable[i].baseAddr;
+            if(gcmem > maxPoolMemory)
+                maxPoolMemory = gcmem;
         }
         return pool;
 
@@ -2570,8 +2577,9 @@ struct Gcx
         version(BACK_GC)
             if(bgEnable)
                 return fullcollectTrigger();
+        clock_t start, stop;
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             TickDuration start, stop;
             start = curTick();
@@ -2991,7 +2999,12 @@ struct Gcx
             pool.newChanges = false;  // Some of these get set to true on stack scan.
         }
 
-    }
+        if (GC.config.profile)
+        {
+            stop = clock();
+            prepTime += (stop - start);
+            start = stop;
+        }
 
     void markRoots() nothrow
     {
@@ -3091,6 +3104,13 @@ struct Gcx
     {
         size_t n;
         Pool*  pool;
+
+        if (GC.config.profile)
+        {
+            stop = clock();
+            markTime += (stop - start);
+            start = stop;
+        }
 
         // Free up everything not marked
         debug(COLLECT_PRINTF) printf("\tfree'ing\n");
@@ -3207,7 +3227,12 @@ struct Gcx
             }
         }
 
-        debug(COLLECT_PRINTF) printf("\tfree'd %u bytes, %u pages from %u pools\n", freed, freedpages, npools);
+        if (GC.config.profile)
+        {
+            stop = clock();
+            sweepTime += (stop - start);
+            start = stop;
+        }
 
         return freedpages;
     }
@@ -3269,6 +3294,12 @@ struct Gcx
                     }
                 }
             }
+        }
+
+        if (GC.config.profile)
+        {
+            stop = clock();
+            recoverTime += (stop - start);
         }
 
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
