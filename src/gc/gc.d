@@ -27,7 +27,7 @@ debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 //debug = SENTINEL;             // add underrun/overrrun protection
 //debug = PTRCHECK;             // more pointer checking
 //debug = PTRCHECK2;            // thorough but slow pointer checking
-debug = PROFILING;            // measure performance of various steps.
+//debug = PROFILING;            // measure performance of various steps.
 //debug = INVARIANT;            // enable invariants
 //debug = CACHE_HITRATE;        // enable hit rate measure
 
@@ -65,16 +65,8 @@ else debug (CACHE_HITRATE)  import core.stdc.stdio : printf;
 else debug (PRINTF)         import core.stdc.stdio : printf;
 debug private import core.stdc.stdio;
 
-debug (PRINTF_TO_FILE) version = NEEDS_TICKS;
-else debug(PROFILING)  version = NEEDS_TICKS;
-
-version(NEEDS_TICKS)
-{
-    import core.time;
-
-    extern(C) private TickDuration curTick() nothrow; // fake nothrow, we don't want the runtime overhead
-    extern(C) private TickDuration curTick(int) { return TickDuration.currSystemTick; }
-}
+import core.time;
+alias curTick = TickDuration.currSystemTick;
 
 debug(PRINTF_TO_FILE)
 {
@@ -102,39 +94,36 @@ debug(PRINTF) void printFreeInfo(Pool* pool) nothrow
     printf("Pool %p:  %d really free, %d supposedly free\n", pool, nReallyFree, pool.freepages);
 }
 
-debug(PROFILING)
-{
-    // Track total time spent preparing for GC,
-    // marking, sweeping and recovering pages.
-    import core.stdc.stdio, core.stdc.time;
-    __gshared TickDuration prepTime;
-    __gshared TickDuration markTime;
-    __gshared TickDuration bgmarkTime;
-    __gshared TickDuration sweepTime;
-    __gshared TickDuration recoverTime;
-    __gshared TickDuration finishTime;
-    __gshared TickDuration triggerTime;
-    __gshared TickDuration collectRootsTime;
-    __gshared size_t maxPoolSize;
+// Track total time spent preparing for GC,
+// marking, sweeping and recovering pages.
+import core.stdc.stdio, core.stdc.time;
+__gshared TickDuration prepTime;
+__gshared TickDuration markTime;
+__gshared TickDuration bgmarkTime;
+__gshared TickDuration sweepTime;
+__gshared TickDuration recoverTime;
+__gshared TickDuration finishTime;
+__gshared TickDuration triggerTime;
+__gshared TickDuration collectRootsTime;
+__gshared size_t maxPoolMemory;
 
-    version(GETPROCESSMEMORYINFO)
-    {
-        import core.sys.windows.windows;
-        static struct PROCESS_MEMORY_COUNTERS {
-            DWORD  cb;
-            DWORD  PageFaultCount;
-            SIZE_T PeakWorkingSetSize;
-            SIZE_T WorkingSetSize;
-            SIZE_T QuotaPeakPagedPoolUsage;
-            SIZE_T QuotaPagedPoolUsage;
-            SIZE_T QuotaPeakNonPagedPoolUsage;
-            SIZE_T QuotaNonPagedPoolUsage;
-            SIZE_T PagefileUsage;
-            SIZE_T PeakPagefileUsage;
-        }
-        extern(Windows) BOOL GetProcessMemoryInfo(HANDLE Process, PROCESS_MEMORY_COUNTERS* ppsmemCounters, DWORD cb);
-        pragma(lib,"psapi");
+version(GETPROCESSMEMORYINFO)
+{
+    import core.sys.windows.windows;
+    static struct PROCESS_MEMORY_COUNTERS {
+        DWORD  cb;
+        DWORD  PageFaultCount;
+        SIZE_T PeakWorkingSetSize;
+        SIZE_T WorkingSetSize;
+        SIZE_T QuotaPeakPagedPoolUsage;
+        SIZE_T QuotaPagedPoolUsage;
+        SIZE_T QuotaPeakNonPagedPoolUsage;
+        SIZE_T QuotaNonPagedPoolUsage;
+        SIZE_T PagefileUsage;
+        SIZE_T PeakPagefileUsage;
     }
+    extern(Windows) BOOL GetProcessMemoryInfo(HANDLE Process, PROCESS_MEMORY_COUNTERS* ppsmemCounters, DWORD cb);
+    pragma(lib,"psapi");
 }
 
 private
@@ -306,6 +295,7 @@ class GC
     void initialize()
     {
         config.initialize();
+        debug(PROFILING) config.profile = true;
 
         mutexStorage[] = typeid(GCMutex).init[];
         gcLock = cast(GCMutex) mutexStorage.ptr;
@@ -325,7 +315,7 @@ class GC
 
     void Dtor()
     {
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             GCStats stats;
             getStatsNoSync(stats);
@@ -335,10 +325,10 @@ class GC
             {
                 PROCESS_MEMORY_COUNTERS counters;
                 GetProcessMemoryInfo(GetCurrentProcess(), &counters, PROCESS_MEMORY_COUNTERS.sizeof);
-                printf("maxPoolSize = %lld MB, peakWorkingSet = %lld MB\n", cast(long)maxPoolSize >> 20, cast(long)counters.PeakWorkingSetSize >> 20);
+                printf("maxPoolMemory = %lld MB, peakWorkingSet = %lld MB\n", cast(long)maxPoolMemory >> 20, cast(long)counters.PeakWorkingSetSize >> 20);
             }
             else
-                printf("maxPoolMemory = %lld MB\n", cast(long)maxPoolSize >> 20);
+                printf("maxPoolMemory = %lld MB\n", cast(long)maxPoolMemory >> 20);
         }
 
         version (linux)
@@ -2577,11 +2567,10 @@ struct Gcx
         version(BACK_GC)
             if(bgEnable)
                 return fullcollectTrigger();
-        clock_t start, stop;
 
+        TickDuration start, stop;
         if (GC.config.profile)
         {
-            TickDuration start, stop;
             start = curTick();
         }
 
@@ -2596,7 +2585,7 @@ struct Gcx
 
         prepare();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick();
             prepTime += (stop - start);
@@ -2609,7 +2598,7 @@ struct Gcx
         thread_processGCMarks(&isMarked);
         thread_resumeAll();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             markTime += (stop - start);
@@ -2618,7 +2607,7 @@ struct Gcx
 
         size_t freedpages = sweep();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             sweepTime += (stop - start);
@@ -2627,7 +2616,7 @@ struct Gcx
 
         size_t recoveredpages = recover();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             recoverTime += (stop - start);
@@ -2651,9 +2640,9 @@ struct Gcx
             onInvalidMemoryOperationError();
         running = 1;
 
-        debug(PROFILING)
+        TickDuration start, stop;
+        if (GC.config.profile)
         {
-            TickDuration start, stop;
             start = curTick;
         }
 
@@ -2665,7 +2654,7 @@ struct Gcx
 
         prepare();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             prepTime += (stop - start);
@@ -2674,7 +2663,7 @@ struct Gcx
 
         collectAllRoots();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             collectRootsTime += (stop - start);
@@ -2710,9 +2699,9 @@ struct Gcx
 
         thread_suspendAll();
 
-        debug(PROFILING)
+        TickDuration start, stop;
+        if (GC.config.profile)
         {
-            TickDuration start, stop;
             start = curTick;
         }
 
@@ -2722,7 +2711,7 @@ struct Gcx
 
         markHeap();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             markTime += (stop - start);
@@ -2734,7 +2723,7 @@ struct Gcx
 
         size_t freedpages = sweep();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             sweepTime += (stop - start);
@@ -2743,7 +2732,7 @@ struct Gcx
 
         size_t recoveredpages = recover();
 
-        debug(PROFILING)
+        if (GC.config.profile)
         {
             stop = curTick;
             recoverTime += (stop - start);
@@ -2875,16 +2864,16 @@ struct Gcx
             {
                 debug(COLLECT_PRINTF) printf("++Gcx.fullmarkBack()\n");
 
-                debug(PROFILING)
+                TickDuration start, stop;
+                if (GC.config.profile)
                 {
-                    TickDuration start, stop;
                     start = curTick;
                 }
 
                 mark(pScanRoots, pScanRoots + nScanRoots);
                 markHeap();
 
-                debug(PROFILING)
+                if (GC.config.profile)
                 {
                     stop = curTick;
                     bgmarkTime += (stop - start);
@@ -2998,13 +2987,7 @@ struct Gcx
             pool = pooltable[n];
             pool.newChanges = false;  // Some of these get set to true on stack scan.
         }
-
-        if (GC.config.profile)
-        {
-            stop = clock();
-            prepTime += (stop - start);
-            start = stop;
-        }
+    }
 
     void markRoots() nothrow
     {
@@ -3104,13 +3087,6 @@ struct Gcx
     {
         size_t n;
         Pool*  pool;
-
-        if (GC.config.profile)
-        {
-            stop = clock();
-            markTime += (stop - start);
-            start = stop;
-        }
 
         // Free up everything not marked
         debug(COLLECT_PRINTF) printf("\tfree'ing\n");
@@ -3227,13 +3203,6 @@ struct Gcx
             }
         }
 
-        if (GC.config.profile)
-        {
-            stop = clock();
-            sweepTime += (stop - start);
-            start = stop;
-        }
-
         return freedpages;
     }
 
@@ -3294,12 +3263,6 @@ struct Gcx
                     }
                 }
             }
-        }
-
-        if (GC.config.profile)
-        {
-            stop = clock();
-            recoverTime += (stop - start);
         }
 
         debug(COLLECT_PRINTF) printf("\trecovered pages = %d\n", recoveredpages);
@@ -3988,4 +3951,3 @@ version (Windows)
 }
 
 } // BACK_GC
-
