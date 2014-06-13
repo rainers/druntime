@@ -1482,8 +1482,11 @@ struct Gcx
 
         version(BACK_GC)
         {
-            bgEnable = true;
-            startGCProcess();
+            if (GC.config.concurrent)
+            {
+                bgEnable = true;
+                startGCProcess();
+            }
         }
         inited = 1;
     }
@@ -2033,7 +2036,10 @@ struct Gcx
 
             version(BACK_GC)
                 if (bgCollecting)
-                    continue; // do not delete a pool during a background collection (optimize to "old" pools only)
+                {
+                    // do not delete a pool during a background collection (optimize to "old" pools only)
+                    continue; 
+                }
 
             // move used pools before unused ones
             size_t j = i + 1;

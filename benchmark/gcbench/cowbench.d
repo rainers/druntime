@@ -1,3 +1,5 @@
+// DISABLED: not part of benchmark suite
+
 import std.stdio;
 import std.string;
 import core.stdc.string;
