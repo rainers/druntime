@@ -20,6 +20,7 @@ module gc.gc;
 //debug = PRINTF;               // turn on printf's
 debug = COLLECT_PRINTF;       // turn on printf's for collection summary
 //debug = COLLECTELEM_PRINTF;   // turn on printf's for each collected object
+//debug = MARK_PRINTF;          // turn on printf's for marking
 debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 //debug = PRINTF_MALLOC;        // print calls to malloc/realloc/free
 //debug = LOGGING;              // log allocations / frees
@@ -39,6 +40,7 @@ version = STACKGROWSDOWN;       // growing the stack means subtracting from the 
 version = BACK_GC;              // background GC running in a different thread
 // version = GETPROCESSMEMORYINFO; // report peak memory usage as reported by the OS
 version = SCAN_NOSCAN;          // segragate scan/no-scan pools
+version = COW;                  // protect memory with CoW during collection
 
 /***************************************************/
 
@@ -2543,7 +2545,7 @@ struct Gcx
             }
         }
 
-        //printf("marking range: %p -> %p\n", pbot, ptop);
+        debug(MARK_PRINTF) printf("\tmarking range: %p -> %p\n", pbot, ptop);
         for (; p1 < p2; p1++)
         {
             auto p = cast(byte *)(*p1);
@@ -2568,7 +2570,7 @@ struct Gcx
                     // base address of a block.
                     bool pointsToBase = false;
 
-                    //debug(PRINTF) printf("\t\tfound pool %p, base=%p, pn = %zd, bin = %d, biti = x%x\n", pool, pool.baseAddr, pn, bin, biti);
+                    debug(MARK_PRINTF) printf("\t\t@%p %p: found pool %p, base=%p, pn = %lld, bin = %d, biti = x%x\n", p1, p, pool, pool.baseAddr, cast(long)pn, bin, biti);
 
                     // Adjust bit to be at start of allocated memory block
                     if (bin < B_PAGE)
@@ -2631,14 +2633,18 @@ struct Gcx
                                 // Directly recurse mark() to prevent having
                                 // to traverse the heap O(D) times where D
                                 // is the max depth of the heap graph.
+                                version(COW)
+                                    auto obase = base + pool.bgBaseOff;
+                                else
+                                    auto obase = base;
                                 if (bin < B_PAGE)
                                 {
-                                    mark(base, base + binsize[bin], nRecurse - 1);
+                                    mark(obase, obase + binsize[bin], nRecurse - 1);
                                 }
                                 else
                                 {
                                     auto u = pool.bPageOffsets[pn];
-                                    mark(base, base + u * PAGESIZE, nRecurse - 1);
+                                    mark(obase, obase + u * PAGESIZE, nRecurse - 1);
                                 }
                             }
                         }
@@ -2768,7 +2774,26 @@ struct Gcx
             collectRootsTime += (stop - start);
         }
 
-        static if(hasMemWriteWatch)
+        version(COW)
+        {
+            for (size_t n = 0; n < npools; n++)
+            {
+                Pool* pool = pooltable[n];
+                if (pool.bgMapHandle)
+                {
+                    size_t nbytes = pool.topAddr - pool.baseAddr;
+                    assert(!pool.bgBaseAddr);
+                    pool.bgBaseAddr = cast(byte*) os_mem_mapview(pool.bgMapHandle, nbytes, null);
+                    assert(pool.bgBaseAddr);
+                    pool.bgBaseOff = pool.bgBaseAddr - pool.baseAddr;
+                    DWORD prot;
+                    BOOL res = VirtualProtect(pool.baseAddr, nbytes, PAGE_WRITECOPY, &prot);
+                    assert(res);
+                    debug(COLLECT_PRINTF) printf("\tmapping range: %p + %x -> %p\n", pool.baseAddr, nbytes, pool.bgBaseAddr);
+                }
+            }
+        }
+        else static if(hasMemWriteWatch)
             for (size_t n = 0; n < npools; n++)
                 os_mem_resetWriteWatch(pooltable[n].baseAddr, pooltable[n].topAddr - pooltable[n].baseAddr);
 
@@ -2810,23 +2835,30 @@ struct Gcx
             begin = start = curTick();
         }
 
-        snapshotPooltable();
+        version(COW) {} else
+            snapshotPooltable();
 
         thread_suspendAll();
 
-        // continue from background collection
-        markRoots();
-        markWrittenPages();
-
-        markHeap();
-
-        if (GC.config.profile)
+        version(COW)
         {
-            stop = curTick();
-            markTime += (stop - start);
-            start = stop;
+            copyModifiedPages();
         }
+        else
+        {
+            // continue from background collection
+            markRoots();
+            markWrittenPages();
 
+            markHeap();
+
+            if (GC.config.profile)
+            {
+                stop = curTick();
+                markTime += (stop - start);
+                start = stop;
+            }
+        }
         thread_processGCMarks(&isMarked);
         thread_resumeAll();
 
@@ -2859,6 +2891,73 @@ struct Gcx
         debug(COLLECT_PRINTF) printf("--Gcx.fullcollectFinish()\n");
 
         return freedpages + recoveredpages;
+    }
+
+    version(COW)
+    void copyModifiedPages() nothrow
+    {
+        static struct PSAPI_WORKING_SET_EX_INFORMATION
+        {
+            PVOID     VirtualAddress;
+            ULONG_PTR VirtualAttributes;
+        }
+
+        for (size_t n = 0; n < bgnpools; n++)
+        {
+            Pool* pool = bgpooltable[n];
+            if (pool.bgMapHandle)
+            {
+                assert(pool.bgBaseAddr);
+
+                byte* addr = pool.baseAddr;
+                size_t nbytes = pool.topAddr - pool.baseAddr;
+                size_t copied = 0;
+                version(all)
+                {
+                    MEMORY_BASIC_INFORMATION mem = void;
+                    for(size_t off = 0; off < nbytes; off += mem.RegionSize)
+                    {
+                        size_t written = VirtualQuery(addr + off, &mem, mem.sizeof);
+                        assert(written);
+
+                        if(mem.Protect != PAGE_WRITECOPY)
+                        {
+                            memcpy(pool.bgBaseAddr + off, addr + off, mem.RegionSize);
+                            copied += mem.RegionSize;
+                        }
+                    }
+                }
+                else
+                {
+                    enum PAGES = 512;
+                    PSAPI_WORKING_SET_EX_INFORMATION[PAGES] info = void;
+                    for(uint p = 0; p < pool.npages; p += PAGES)
+                    {
+                        foreach(i, ref inf; info)
+                            inf.VirtualAddress = pool.baseAddr + (p + i) * PAGESIZE;
+                        if (!QueryWorkingSetEx(GetCurrentProcess(), info.ptr, info.sizeof))
+                            throw new Exception(format("Could not query info (%d).\n", GetLastError()));
+
+                        foreach(i, ref inf; info)
+                            if((inf.VirtualAttributes & 0xf) == 1) // valid and share-count = 0
+                            {
+                                size_t off = inf.VirtualAddress - heap;
+                                memcpy(pool.bgBaseAddr + off, addr + off, PAGESIZE);
+                            }
+                    }
+                }
+                bool rc = os_mem_unmapview(addr, nbytes);
+                assert(rc);
+                void* ptr = os_mem_mapview(pool.bgMapHandle, nbytes, addr);
+                assert(ptr is addr);
+                rc = os_mem_unmapview(pool.bgBaseAddr, nbytes);
+                assert(rc);
+                pool.bgBaseAddr = null;
+                pool.bgBaseOff = 0;
+
+                debug(COLLECT_PRINTF) printf("\tunmapped %p + %llx, %llx pages copied\n", addr, cast(long) nbytes, cast(long) copied / PAGESIZE);
+            }
+        }
     }
 
     void markWrittenPages() nothrow
@@ -3089,6 +3188,16 @@ struct Gcx
             pool = pooltable[n];
             pool.mark.zero();
             pool.scan.zero();
+
+            for (size_t pn = 0; pn < pool.npages; pn++)
+                if (pool.pagetable[pn] == B_FREE)
+                {
+                    if (pool.isLargeObject)
+                        pool.mark.set(pn);
+                    else
+                        pool.mark.setRange(pn * PAGESIZE / 16, PAGESIZE / 16);
+                }
+
         }
 
         debug(COLLECT_PRINTF) printf("Set bits\n");
@@ -3188,6 +3297,10 @@ struct Gcx
                     {
                         auto pn = cast(size_t)(o - pool.baseAddr) / PAGESIZE;
                         auto bin = cast(Bins)pool.pagetable[pn];
+                        version(COW)
+                            auto op = o + pool.bgBaseOff;
+                        else
+                            auto op = o;
                         if (bin < B_PAGE)
                         {
                             mark(o, o + binsize[bin]);
@@ -3311,7 +3424,7 @@ struct Gcx
 
                             if (pool.mark.test(biti))
                             {
-                                // could have been free'd manually 
+                                // could have been free'd manually, so don't touch
                             }
                             else if (!pool.freebits.test(biti))
                             {
@@ -3708,6 +3821,12 @@ struct Pool
 {
     byte* baseAddr;
     byte* topAddr;
+    version(COW)
+    {
+        byte* bgBaseAddr;
+        void* bgMapHandle;
+        size_t bgBaseOff;
+    }
     GCBits mark;        // entries already scanned, or should not be scanned
     GCBits scan;        // entries that need to be scanned
     GCBits freebits;    // entries that are on the free list
@@ -3744,10 +3863,24 @@ struct Pool
         this.isLargeObject = isLargeObject;
         size_t poolsize;
 
+        version(SCAN_NOSCAN) {} else _noscan = false;
+
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
         assert(poolsize >= POOLSIZE);
-        baseAddr = cast(byte *)os_mem_map(poolsize);
+        version(COW)
+        {
+            if (_noscan)
+                baseAddr = cast(byte *)os_mem_map(poolsize);
+            else
+            {
+                bgMapHandle = os_mem_filemap(poolsize);
+                if (bgMapHandle)
+                    baseAddr = cast(byte*) os_mem_mapview(bgMapHandle, poolsize, null);
+            }
+        }
+        else
+            baseAddr = cast(byte *)os_mem_map(poolsize);
 
         // Some of the code depends on page alignment of memory pools
         assert((cast(size_t)baseAddr & (PAGESIZE - 1)) == 0);
@@ -3808,7 +3941,18 @@ struct Pool
 
             if (npages)
             {
-                result = os_mem_unmap(baseAddr, npages * PAGESIZE);
+                version(COW)
+                {
+                    if (bgMapHandle)
+                    {
+                        os_mem_unmapview(baseAddr, npages * PAGESIZE);
+                        result = !os_mem_filemap(bgMapHandle, npages * PAGESIZE);
+                    }
+                    else
+                        result = os_mem_unmap(baseAddr, npages * PAGESIZE);
+                }
+                else
+                    result = os_mem_unmap(baseAddr, npages * PAGESIZE);
                 assert(result == 0);
                 npages = 0;
             }

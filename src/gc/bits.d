@@ -19,6 +19,9 @@ import core.stdc.string;
 import core.stdc.stdlib;
 import core.exception : onOutOfMemoryError;
 
+// use version bitwise to disable optimizations that use word operands
+// on bulk operation copyRange, setRange, clrRange, etc.
+// version = bitwise;
 
 version (DigitalMars)
 {
@@ -40,7 +43,10 @@ struct GCBits
     enum BITS_PER_WORD = (wordtype.sizeof * 8);
     enum BITS_SHIFT = (wordtype.sizeof == 8 ? 6 : 5);
     enum BITS_MASK = (BITS_PER_WORD - 1);
+    enum BITS_0 = cast(wordtype)0;
     enum BITS_1 = cast(wordtype)1;
+    enum BITS_2 = cast(wordtype)2;
+    enum sentinelWords = 1; // before and after data to allow accesses without checking boundaries
 
     wordtype*  data = null;
     size_t nwords = 0;    // allocated words in data[] excluding sentinals
@@ -67,7 +73,7 @@ struct GCBits
     {
         this.nbits = nbits;
         nwords = (nbits + (BITS_PER_WORD - 1)) >> BITS_SHIFT;
-        data = cast(typeof(data[0])*)calloc(nwords + 2, data[0].sizeof);
+        data = cast(typeof(data[0])*)calloc(nwords + 2 * sentinelWords, data[0].sizeof);
         if (!data)
             onOutOfMemoryError();
     }
@@ -81,12 +87,12 @@ struct GCBits
     {
         version (none)
         {
-            return core.bitop.bt(data + 1, i);   // this is actually slower! don't use
+            return core.bitop.bt(data + sentinelWords, i);   // this is actually slower! don't use
         }
         else
         {
             //return (cast(bit *)(data + 1))[i];
-            return data[1 + (i >> BITS_SHIFT)] & (BITS_1 << (i & BITS_MASK));
+            return data[sentinelWords + (i >> BITS_SHIFT)] & (BITS_1 << (i & BITS_MASK));
         }
     }
 
@@ -98,7 +104,7 @@ struct GCBits
     body
     {
         //(cast(bit *)(data + 1))[i] = 1;
-        data[1 + (i >> BITS_SHIFT)] |= (BITS_1 << (i & BITS_MASK));
+        data[sentinelWords + (i >> BITS_SHIFT)] |= (BITS_1 << (i & BITS_MASK));
     }
 
     void clear(size_t i) nothrow
@@ -109,14 +115,14 @@ struct GCBits
     body
     {
         //(cast(bit *)(data + 1))[i] = 0;
-        data[1 + (i >> BITS_SHIFT)] &= ~(BITS_1 << (i & BITS_MASK));
+        data[sentinelWords + (i >> BITS_SHIFT)] &= ~(BITS_1 << (i & BITS_MASK));
     }
 
     wordtype testClear(size_t i) nothrow
     {
         version (bitops)
         {
-            return core.bitop.btr(data + 1, i);   // this is faster!
+            return core.bitop.btr(data + sentinelWords, i);   // this is faster!
         }
         else version (Asm86)
         {
@@ -125,7 +131,7 @@ struct GCBits
                 naked                   ;
                 mov     EAX,data[EAX]   ;
                 mov     ECX,i-4[ESP]    ;
-                btr     4[EAX],ECX      ;
+                btr     4[EAX],ECX      ; //4*sentinelWords
                 sbb     EAX,EAX         ;
                 ret     4               ;
             }
@@ -135,7 +141,7 @@ struct GCBits
             //result = (cast(bit *)(data + 1))[i];
             //(cast(bit *)(data + 1))[i] = 0;
 
-            auto p = &data[1 + (i >> BITS_SHIFT)];
+            auto p = &data[sentinelWords + (i >> BITS_SHIFT)];
             auto mask = (BITS_1 << (i & BITS_MASK));
             auto result = *p & mask;
             *p &= ~mask;
@@ -147,7 +153,7 @@ struct GCBits
     {
         version (bitops)
         {
-            return core.bitop.bts(data + 1, i);   // this is faster!
+            return core.bitop.bts(data + sentinelWords, i);   // this is faster!
         }
         else version (Asm86)
         {
@@ -156,7 +162,7 @@ struct GCBits
                 naked                   ;
                 mov     EAX,data[EAX]   ;
                 mov     ECX,i-4[ESP]    ;
-                bts     4[EAX],ECX      ;
+                bts     4[EAX],ECX      ; // 4*sentinelWords
                 sbb     EAX,EAX         ;
                 ret     4               ;
             }
@@ -166,7 +172,7 @@ struct GCBits
             //result = (cast(bit *)(data + 1))[i];
             //(cast(bit *)(data + 1))[i] = 0;
 
-            auto p = &data[1 + (i >> BITS_SHIFT)];
+            auto p = &data[sentinelWords + (i >> BITS_SHIFT)];
             auto  mask = (BITS_1 << (i & BITS_MASK));
             auto result = *p & mask;
             *p |= mask;
@@ -174,14 +180,208 @@ struct GCBits
         }
     }
 
+    mixin template RangeVars()
+    {
+        size_t firstWord = (target >> BITS_SHIFT) + sentinelWords;
+        size_t firstOff  = target &  BITS_MASK;
+        size_t last      = target + len - 1;
+        size_t lastWord  = (last >> BITS_SHIFT) + sentinelWords;
+        size_t lastOff   = last &  BITS_MASK;
+    }
+
+    // target = the biti to start the copy to
+    // destlen = the number of bits to copy from source
+    void copyRange(size_t target, size_t len, const(wordtype)* source) nothrow
+    {
+        version(bitwise)
+        {
+            for (size_t i = 0; i < len; i++)
+                if(source[(i >> BITS_SHIFT)] & (BITS_1 << (i & BITS_MASK)))
+                    set(target+i);
+                else
+                    clear(target+i);
+        }
+        else
+        {
+            if(len == 0)
+                return;
+
+            mixin RangeVars!();
+
+            if(firstWord == lastWord)
+            {
+                wordtype mask = ((BITS_2 << (lastOff - firstOff)) - 1) << firstOff;
+                data[firstWord] = (data[firstWord] & ~mask) | ((source[0] << firstOff) & mask);
+            }
+            else if(firstOff == 0)
+            {
+                for(size_t w = firstWord; w < lastWord; w++)
+                    data[w] = source[w - firstWord];
+
+                wordtype mask = (BITS_2 << lastOff) - 1;
+                data[lastWord] = (data[lastWord] & ~mask) | (source[lastWord - firstWord] & mask);
+            }
+            else
+            {
+                size_t cntWords = lastWord - firstWord;
+                wordtype mask = ~BITS_0 << firstOff;
+                data[firstWord] = (data[firstWord] & ~mask) | (source[0] << firstOff);
+                for(size_t w = 1; w < cntWords; w++)
+                    data[firstWord + w] = (source[w - 1] >> (BITS_PER_WORD - firstOff)) | (source[w] << firstOff);
+
+                wordtype src = (source[cntWords - 1] >> (BITS_PER_WORD - firstOff)) | (source[cntWords] << firstOff);
+                mask = (BITS_2 << lastOff) - 1;
+                data[lastWord] = (data[lastWord] & ~mask) | (src & mask);
+            }
+        }
+    }
+
+    void copyRangeRepeating(size_t target, size_t destlen, const(wordtype)* source, size_t sourcelen) nothrow
+    {
+        version(bitwise)
+        {
+            for (size_t i=0; i < destlen; i++)
+            {
+                bool b;
+                size_t j = i % sourcelen;
+                b = (source[j >> BITS_SHIFT] & (BITS_1 << (j & BITS_MASK))) != 0;
+                if (b) set(target+i);
+                else clear(target+i);
+            }
+        }
+        else
+        {
+            while (destlen > sourcelen)
+            {
+                copyRange(target, sourcelen, source);
+                target += sourcelen;
+                destlen -= sourcelen;
+            }
+            copyRange(target, destlen, source);
+        }
+    }
+
+    void setRange(size_t target, size_t len) nothrow
+    {
+        version(bitwise)
+        {
+            for (size_t i = 0; i < len; i++)
+                set(target+i);
+        }
+        else
+        {
+            if(len == 0)
+                return;
+
+            mixin RangeVars!();
+
+            if(firstWord == lastWord)
+            {
+                wordtype mask = ((BITS_2 << (lastOff - firstOff)) - 1) << firstOff;
+                data[firstWord] |= mask;
+            }
+            else
+            {
+                data[firstWord] |= ~BITS_0 << firstOff;
+                for(size_t w = firstWord + 1; w < lastWord; w++)
+                    data[w] = ~0;
+                wordtype mask = (BITS_2 << lastOff) - 1;
+                data[lastWord] |= mask;
+            }
+        }
+    }
+
+    void clrRange(size_t target, size_t len) nothrow
+    {
+        version(bitwise)
+        {
+            for (size_t i = 0; i < len; i++)
+                clear(target+i);
+        }
+        else
+        {
+            if(len == 0)
+                return;
+
+            mixin RangeVars!();
+
+            if(firstWord == lastWord)
+            {
+                wordtype mask = ((BITS_2 << (lastOff - firstOff)) - 1) << firstOff;
+                data[firstWord] &= ~mask;
+            }
+            else
+            {
+                data[firstWord] &= ~(~BITS_0 << firstOff);
+                for(size_t w = firstWord + 1; w < lastWord; w++)
+                    data[w] = 0;
+                wordtype mask = (BITS_2 << lastOff) - 1;
+                data[lastWord] &= ~mask;
+            }
+        }
+    }
+
+    unittest
+    {
+        GCBits bits;
+        bits.alloc(1000);
+        auto data = bits.data + sentinelWords;
+
+        bits.setRange(0,1);
+        assert(data[0] == 1);
+
+        bits.clrRange(0,1);
+        assert(data[0] == 0);
+
+        bits.setRange(BITS_PER_WORD-1,1);
+        assert(data[0] == BITS_1 << (BITS_PER_WORD-1));
+
+        bits.clrRange(BITS_PER_WORD-1,1);
+        assert(data[0] == 0);
+
+        bits.setRange(12,7);
+        assert(data[0] == 0b0111_1111_0000_0000_0000);
+
+        bits.clrRange(14,4);
+        assert(data[0] == 0b0100_0011_0000_0000_0000);
+
+        bits.clrRange(0,BITS_PER_WORD);
+        assert(data[0] == 0);
+
+        bits.setRange(0,BITS_PER_WORD);
+        assert(data[0] == ~0);
+        assert(data[1] == 0);
+
+        bits.setRange(BITS_PER_WORD,BITS_PER_WORD);
+        assert(data[0] == ~0);
+        assert(data[1] == ~0);
+        assert(data[2] == 0);
+        bits.clrRange(BITS_PER_WORD/2,BITS_PER_WORD);
+        assert(data[0] == (BITS_1 << (BITS_PER_WORD/2)) - 1);
+        assert(data[1] == ~data[0]);
+        assert(data[2] == 0);
+
+        bits.setRange(8*BITS_PER_WORD+1,4*BITS_PER_WORD-2);
+        assert(data[8] == ~0 << 1);
+        assert(data[9] == ~0);
+        assert(data[10] == ~0);
+        assert(data[11] == cast(wordtype)~0 >> 1);
+
+        bits.clrRange(9*BITS_PER_WORD+1,2*BITS_PER_WORD);
+        assert(data[8] == ~0 << 1);
+        assert(data[9] == 1);
+        assert(data[10] == 0);
+        assert(data[11] == ((cast(wordtype)~0 >> 1) & ~1));
+    }
+
     void zero() nothrow
     {
-        memset(data + 1, 0, nwords * wordtype.sizeof);
+        memset(data + sentinelWords, 0, nwords * wordtype.sizeof);
     }
 
     void fill() nothrow
     {
-        memset(data + 1, 0xff, nwords * wordtype.sizeof);
+        memset(data + sentinelWords, 0xff, nwords * wordtype.sizeof);
     }
 
     void copy(GCBits *f) nothrow
@@ -191,7 +391,7 @@ struct GCBits
     }
     body
     {
-        memcpy(data + 1, f.data + 1, nwords * wordtype.sizeof);
+        memcpy(data + sentinelWords, f.data + sentinelWords, nwords * wordtype.sizeof);
     }
 
     wordtype* base() nothrow
@@ -201,7 +401,7 @@ struct GCBits
     }
     body
     {
-        return data + 1;
+        return data + sentinelWords;
     }
 }
 

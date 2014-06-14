@@ -69,6 +69,34 @@ static if (is(typeof(VirtualAlloc))) // version (GC_Use_Alloc_Win32)
                 PAGE_READWRITE);
     }
 
+    void* os_mem_filemap(size_t nbytes) nothrow
+    {
+        HANDLE hMapFile;
+        uint hwBytes = cast(uint)((nbytes >> 16) >> 16);
+        hMapFile = CreateFileMappingW(INVALID_HANDLE_VALUE,    // use paging file
+                                      null,                    // default security
+                                      PAGE_READWRITE| SEC_COMMIT, // read/write access
+                                      hwBytes,                 // maximum object size (high-order DWORD)
+                                      cast(uint)nbytes,        // maximum object size (low-order DWORD)
+                                      null);                   // name of mapping object
+        return cast(void*)hMapFile;
+    }
+
+    void* os_mem_mapview(void* mapfile, size_t nbytes, void* addr) nothrow
+    {
+        void* p = MapViewOfFileEx(cast(HANDLE)mapfile, FILE_MAP_ALL_ACCESS, 0, 0, nbytes, addr);
+        return p;
+    }
+
+    bool os_mem_unmapview(void* p, size_t nbytes) nothrow
+    {
+        return UnmapViewOfFile(p) != 0;
+    }
+
+    bool os_mem_filemap(void* mapfile, size_t nbytes) nothrow
+    {
+        return CloseHandle(cast(HANDLE)mapfile) != 0;
+    }
 
     /**
      * Unmap memory allocated with os_mem_map().
