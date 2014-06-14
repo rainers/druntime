@@ -39,7 +39,7 @@ version = STACKGROWSDOWN;       // growing the stack means subtracting from the 
                                 // else growing the stack means adding to the stack pointer
 version = BACK_GC;              // background GC running in a different thread
 // version = GETPROCESSMEMORYINFO; // report peak memory usage as reported by the OS
-version = SCAN_NOSCAN;          // segragate scan/no-scan pools
+version = POOL_NOSCAN;          // segregate scan/no-scan pools
 version = COW;                  // protect memory with CoW during collection
 
 /***************************************************/
@@ -142,7 +142,7 @@ private
     // D is the depth of the heap graph.
     enum MAX_MARK_RECURSIONS = 64;
 
-    version(SCAN_NOSCAN)
+    version(POOL_NOSCAN)
     {
         enum NUM_BUCKETS = 2;
         size_t bucketIndex(bool noscan) nothrow { return noscan ? 1 : 0; }
@@ -324,6 +324,9 @@ class GC
         if (!gcx)
             onOutOfMemoryError();
         gcx.initialize();
+
+        version(COW)
+            pfnQueryWorkingSetEx = detectQueryWorkingSetEx();
 
         if (config.initReserve)
             gcx.reserve(config.initReserve << 20);
@@ -1557,7 +1560,7 @@ struct Gcx
             printf("\tGrand total GC time:  %lld milliseconds + %lld milliseonds in bg\n",
                    gctime, bgmarkTime.to!("msecs", long));
 
-            version(SCAN_NOSCAN)
+            version(POOL_NOSCAN)
             {
                 size_t scanmem = 0;
                 size_t noscanmem = 0;
@@ -2310,7 +2313,7 @@ struct Gcx
             {
                 pool = pooltable[n];
                 if(!pool.isLargeObject || pool.freepages < npages) continue;
-                version(SCAN_NOSCAN) if (pool.noscan != noscan) continue;
+                version(POOL_NOSCAN) if (pool.noscan != noscan) continue;
                 pn = pool.allocPages(npages);
                 if (pn != OPFAIL)
                     goto L1;
@@ -2487,7 +2490,7 @@ struct Gcx
         {
             pool = pooltable[n];
             if (pool.isLargeObject) continue;
-            version(SCAN_NOSCAN) if (pool.noscan != noscan) continue;
+            version(POOL_NOSCAN) if (pool.noscan != noscan) continue;
             pn = pool.allocPages(1);
             if (pn != OPFAIL)
                 goto L1;
@@ -2615,7 +2618,7 @@ struct Gcx
                     if (!pool.mark.testSet(biti))
                     {
                         //if (log) debug(PRINTF) printf("\t\tmarking %p\n", p);
-                        version(SCAN_NOSCAN)
+                        version(POOL_NOSCAN)
                             bool noscan = pool.noscan;
                         else
                             bool noscan = pool.noscan.test(biti) != 0;
@@ -2912,7 +2915,7 @@ struct Gcx
                 byte* addr = pool.baseAddr;
                 size_t nbytes = pool.topAddr - pool.baseAddr;
                 size_t copied = 0;
-                version(all)
+                if (!pfnQueryWorkingSetEx)
                 {
                     MEMORY_BASIC_INFORMATION mem = void;
                     for(size_t off = 0; off < nbytes; off += mem.RegionSize)
@@ -2931,18 +2934,20 @@ struct Gcx
                 {
                     enum PAGES = 512;
                     PSAPI_WORKING_SET_EX_INFORMATION[PAGES] info = void;
-                    for(uint p = 0; p < pool.npages; p += PAGES)
+                    auto pid = GetCurrentProcess();
+                    for(size_t pn = 0; pn < pool.npages; pn += PAGES)
                     {
-                        foreach(i, ref inf; info)
-                            inf.VirtualAddress = pool.baseAddr + (p + i) * PAGESIZE;
-                        if (!QueryWorkingSetEx(GetCurrentProcess(), info.ptr, info.sizeof))
-                            throw new Exception(format("Could not query info (%d).\n", GetLastError()));
+                        size_t cnt = pn + PAGES < pool.npages ? PAGES : pool.npages - pn;
+                        for(size_t p = 0; p < cnt; p++)
+                            info[p].VirtualAddress = pool.baseAddr + (p + pn) * PAGESIZE;
+                        auto res = pfnQueryWorkingSetEx(pid, info.ptr, info.sizeof);
+                        assert(res);
 
-                        foreach(i, ref inf; info)
-                            if((inf.VirtualAttributes & 0xf) == 1) // valid and share-count = 0
+                        for(size_t p = 0; p < cnt; p++)
+                            if((info[p].VirtualAttributes & 0xf) == 1) // valid and share-count = 0
                             {
-                                size_t off = inf.VirtualAddress - heap;
-                                memcpy(pool.bgBaseAddr + off, addr + off, PAGESIZE);
+                                memcpy(info[p].VirtualAddress + pool.bgBaseOff, info[p].VirtualAddress, PAGESIZE);
+                                copied += PAGESIZE;
                             }
                     }
                 }
@@ -2971,7 +2976,7 @@ struct Gcx
         for (size_t n = 0; n < npools; n++)
         {
             Pool* pool = pooltable[n];
-            version(SCAN_NOSCAN) if (pool.noscan)
+            version(POOL_NOSCAN) if (pool.noscan)
                 continue;
 
             void* addr = pool.baseAddr;
@@ -3024,7 +3029,7 @@ struct Gcx
                 auto biti = pn * bitsPerPage;
                 for (auto b = 0; b < bitsPerPage; b += bitstride)
                 {
-                    version(SCAN_NOSCAN)
+                    version(POOL_NOSCAN)
                         bool noscan = false; // checked before calling markPoolPages
                     else
                         bool noscan = pool.noscan.test(biti + b) != 0;
@@ -3576,7 +3581,7 @@ struct Gcx
         if (pool.finals.nbits &&
             pool.finals.test(biti))
             bits |= BlkAttr.FINALIZE;
-        version(SCAN_NOSCAN)
+        version(POOL_NOSCAN)
             bool noscan = pool.noscan;
         else
             bool noscan = pool.noscan.test(biti) != 0;
@@ -3617,7 +3622,7 @@ struct Gcx
         }
         if (mask & BlkAttr.NO_SCAN)
         {
-            version(SCAN_NOSCAN)
+            version(POOL_NOSCAN)
                 assert(pool.noscan);
             else
                 pool.noscan.data[dataIndex] |= orWith;
@@ -3658,7 +3663,7 @@ struct Gcx
 
         if (mask & BlkAttr.FINALIZE && pool.finals.nbits)
             pool.finals.data[dataIndex] &= keep;
-        version(SCAN_NOSCAN) {} else
+        version(POOL_NOSCAN) {} else
         if (mask & BlkAttr.NO_SCAN)
             pool.noscan.data[dataIndex] &= keep;
 //        if (mask & BlkAttr.NO_MOVE && pool.nomove.nbits)
@@ -3680,7 +3685,7 @@ struct Gcx
         if (pool.finals.nbits)
             pool.finals.data[dataIndex] &= toKeep;
 
-        version(SCAN_NOSCAN) {} else
+        version(POOL_NOSCAN) {} else
             pool.noscan.data[dataIndex] &= toKeep;
 
 //        if (pool.nomove.nbits)
@@ -3831,7 +3836,7 @@ struct Pool
     GCBits scan;        // entries that need to be scanned
     GCBits freebits;    // entries that are on the free list
     GCBits finals;      // entries that need finalizer run on them
-    version(SCAN_NOSCAN)
+    version(POOL_NOSCAN)
         bool noscan;    // shared for all entries in the pool
     else
         GCBits noscan;  // entries that should not be scanned
@@ -3863,7 +3868,7 @@ struct Pool
         this.isLargeObject = isLargeObject;
         size_t poolsize;
 
-        version(SCAN_NOSCAN) {} else _noscan = false;
+        version(POOL_NOSCAN) {} else _noscan = false;
 
         //debug(PRINTF) printf("Pool::Pool(%u)\n", npages);
         poolsize = npages * PAGESIZE;
@@ -3909,7 +3914,7 @@ struct Pool
             freebits.fill();
         }
 
-        version(SCAN_NOSCAN)
+        version(POOL_NOSCAN)
             noscan = _noscan;
         else
             noscan.alloc(nbits);
@@ -3980,7 +3985,7 @@ struct Pool
             freebits.Dtor();
         }
         finals.Dtor();
-        version(SCAN_NOSCAN) {} else
+        version(POOL_NOSCAN) {} else
             noscan.Dtor();
         appendable.Dtor();
     }
@@ -4239,6 +4244,8 @@ version (Windows)
 
     extern(Windows) BOOL TerminateThread(HANDLE hThread, DWORD dwExitCode);
 
+    extern(Windows) BOOL QueryWorkingSetEx(HANDLE hProcess, PVOID pv, DWORD cb) nothrow;
+
     extern(C):
     uint _beginthread(void function(void *),uint,void *);
 
@@ -4250,5 +4257,27 @@ version (Windows)
     void _endthread();
     void _endthreadex(uint);
 }
+
+alias typeof(&QueryWorkingSetEx) fnQueryWorkingSetEx;
+
+fnQueryWorkingSetEx detectQueryWorkingSetEx()
+{
+    if (HANDLE hnd = GetModuleHandleA("kernel32.dll"))
+    {
+        auto proc = GetProcAddress(hnd, "K32QueryWorkingSetEx");
+        if (proc)
+            return cast(fnQueryWorkingSetEx) proc;
+    }
+    if (HANDLE hnd = LoadLibraryA("psapi.dll"))
+    {
+        auto proc = GetProcAddress(hnd, "QueryWorkingSetEx");
+        if (proc)
+            return cast(fnQueryWorkingSetEx) proc;
+        FreeLibrary(hnd);
+    }
+    return null;
+}
+
+__gshared fnQueryWorkingSetEx pfnQueryWorkingSetEx;
 
 } // BACK_GC

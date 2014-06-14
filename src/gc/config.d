@@ -33,6 +33,7 @@ struct Config
     bool profile;            // enable profiling with summary when terminating program
     bool precise;            // enable precise scanning
     bool concurrent;         // enable concurrent collection
+    bool finalCollect = true; // run a collection before program termination
 
     size_t initReserve;      // initial reserve (MB)
     size_t minPoolSize = 1;  // initial and minimum pool size (MB)
@@ -67,15 +68,16 @@ struct Config
     string help() @nogc
     {
         return "GC options are specified as white space separated assignments:
-    disable=0|1     - start disabled
-    profile=0|1     - enable profiling with summary when terminating program
-    precise=0|1     - enable precise scanning (not implemented yet)
-    concurrent=0|1  - enable concurrent collection (not implemented yet)
+    disable=0|1      - start disabled
+    profile=0|1      - enable profiling with summary when terminating program
+    precise=0|1      - enable precise scanning (not implemented yet)
+    concurrent=0|1   - enable concurrent collection (not implemented yet)
+    finalCollect=0|1 - run a collection before the program terminates
 
-    initReserve=N   - initial memory to reserve (MB), default 0
-    minPoolSize=N   - initial and minimum pool size (MB), default 1
-    maxPoolSize=32  - maximum pool size (MB), default 32
-    incPoolSize=2   - pool size increment (MB), defaut 2
+    initReserve=N    - initial memory to reserve (MB), default 0
+    minPoolSize=N    - initial and minimum pool size (MB), default 1
+    maxPoolSize=32   - maximum pool size (MB), default 32
+    incPoolSize=2    - pool size increment (MB), defaut 2
 ";
     }
 
@@ -113,6 +115,8 @@ struct Config
                     precise = v != 0;
                 else if(s == "concurrent")
                     concurrent = v != 0;
+                else if(s == "finalCollect")
+                    finalCollect = v != 0;
                 else if(s == "initReserve")
                     initReserve = v;
                 else if(s == "minPoolSize")

@@ -141,8 +141,9 @@ extern (C)
         //
         // NOTE: Due to popular demand, this has been re-enabled.  It still has
         //       the problems mentioned above though, so I guess we'll see.
-        _gc.fullCollectNoStack(); // not really a 'collect all' -- still scans
-                                  // static data area, roots, and ranges.
+        if (_gc.config.finalCollect)
+            _gc.fullCollectNoStack(); // not really a 'collect all' -- still scans
+                                      // static data area, roots, and ranges.
         thread_term();
 
         _gc.Dtor();
