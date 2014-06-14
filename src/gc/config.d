@@ -71,7 +71,7 @@ struct Config
     disable=0|1      - start disabled
     profile=0|1      - enable profiling with summary when terminating program
     precise=0|1      - enable precise scanning (not implemented yet)
-    concurrent=0|1   - enable concurrent collection (not implemented yet)
+    concurrent=0|1   - enable concurrent collection
     finalCollect=0|1 - run a collection before the program terminates
 
     initReserve=N    - initial memory to reserve (MB), default 0

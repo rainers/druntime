@@ -13,6 +13,7 @@ import std.random;
 import std.regex;
 import std.stdio;
 import std.string;
+import std.ascii;
 import core.sys.posix.sys.wait;
 
 void usage()
@@ -65,6 +66,13 @@ struct EnvData
     string ccompiler;
     string model;
     string required_args;
+}
+
+struct TestResult
+{
+    int code;
+    TickDuration ticks;
+    string output;
 }
 
 bool findTestParameter(string file, string token, ref string result)
@@ -344,16 +352,63 @@ int main(string[] args)
         }
     }
 
+    TestResult[] results;
     int rc = 0;
     string test_args = args.length > 2 ? join(args[2..$], " ") : "";
     foreach(tst; sources)
-        if (auto res = runTest(envData, tst, test_args))
-            rc = res;
+    {
+        TestResult result;
+        result.code = runTest(envData, tst, test_args, result);
+        if (result.code != 0)
+            rc = result.code;
+        else if (result.ticks != TickDuration.zero)
+            results ~= result;
+    }
 
+    if (results.length > 1)
+    {
+        TickDuration allticks;
+        double[] values;
+        size_t[] columns;
+        foreach (res; results)
+        {
+            allticks += res.ticks;
+            string output = res.output;
+            int index = 0;
+            while (output.length > 0)
+            {
+                if (isDigit(output[0]) || ((output[0] == '-' || output[0] == '+') && output.length > 1 && isDigit(output[1])))
+                {
+                    double v = parse!double(output);
+                    if (values.length <= index)
+                    {
+                        values ~= 0;
+                        columns ~= res.output.length - output.length;
+                    }
+                    values[index] += v;
+                    index++;
+                }
+                else
+                    output = output[1 ..$];
+            }
+        }
+        writef("\n = %-16s ", "Average");
+        std.stdio.writef("%6.3f s  ", allticks.to!("seconds",double) / results.length);
+
+        foreach (i, v; values)
+        {
+            int width = i == 0 ? columns[i] : columns[i] - columns[i-1];
+            if (v == cast(long)v)
+                std.stdio.writef("%*d", width, cast(long)(v / results.length));
+            else
+                std.stdio.writef("%*.3f", width, v / results.length);
+        }
+        writeln();
+    }
     return rc;
 }
 
-int runTest(const ref EnvData envData, string tst, string test_args)
+int runTest(const ref EnvData envData, string tst, string test_args, ref TestResult result)
 {
     tst = tst.replace("/", envData.sep);
     string test_name      = tst.stripExtension;
@@ -556,6 +611,9 @@ int runTest(const ref EnvData envData, string tst, string test_args)
                 if (!memtxt.empty)
                     std.stdio.write(", ", memtxt);
                 std.stdio.writeln;
+
+                result.ticks = sw.peek();
+                result.output = memtxt;
             }
 
             fThisRun.close();

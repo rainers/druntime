@@ -18,10 +18,10 @@ module gc.gc;
 /************** Debugging ***************************/
 
 //debug = PRINTF;               // turn on printf's
-debug = COLLECT_PRINTF;       // turn on printf's for collection summary
+//debug = COLLECT_PRINTF;       // turn on printf's for collection summary
 //debug = COLLECTELEM_PRINTF;   // turn on printf's for each collected object
 //debug = MARK_PRINTF;          // turn on printf's for marking
-debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
+//debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 //debug = PRINTF_MALLOC;        // print calls to malloc/realloc/free
 //debug = LOGGING;              // log allocations / frees
 //debug = MEMSTOMP;             // stomp on memory
@@ -37,9 +37,11 @@ debug = PRINTF_TO_FILE;       // redirect printf's ouptut to file "gcx.log"
 version = STACKGROWSDOWN;       // growing the stack means subtracting from the stack pointer
                                 // (use for Intel X86 CPUs)
                                 // else growing the stack means adding to the stack pointer
-version = BACK_GC;              // background GC running in a different thread
+version = BACK_GC;              // optional background GC running in a different thread
 // version = GETPROCESSMEMORYINFO; // report peak memory usage as reported by the OS
+version(noPOOL_NOSCAN) {} else
 version = POOL_NOSCAN;          // segregate scan/no-scan pools
+version(noCOW) {} else
 version = COW;                  // protect memory with CoW during collection
 
 /***************************************************/
@@ -2951,16 +2953,20 @@ struct Gcx
                             }
                     }
                 }
+                debug(COLLECT_PRINTF) printf("\tcopied %llx pages from %p + %llx\n", cast(long) copied / PAGESIZE, addr, cast(long) nbytes);
+
                 bool rc = os_mem_unmapview(addr, nbytes);
                 assert(rc);
+                debug(COLLECT_PRINTF) printf("\tunmapped CoW view %p\n", addr);
                 void* ptr = os_mem_mapview(pool.bgMapHandle, nbytes, addr);
                 assert(ptr is addr);
+                debug(COLLECT_PRINTF) printf("\tremapped view %p\n", addr);
                 rc = os_mem_unmapview(pool.bgBaseAddr, nbytes);
                 assert(rc);
                 pool.bgBaseAddr = null;
                 pool.bgBaseOff = 0;
 
-                debug(COLLECT_PRINTF) printf("\tunmapped %p + %llx, %llx pages copied\n", addr, cast(long) nbytes, cast(long) copied / PAGESIZE);
+                debug(COLLECT_PRINTF) printf("\tunmapped bg-view\n");
             }
         }
     }
