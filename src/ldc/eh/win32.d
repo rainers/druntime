@@ -8,6 +8,7 @@ version(CRuntime_Microsoft):
 version(Win32):
 
 import ldc.eh.common;
+import ldc.attributes;
 import core.sys.windows.windows;
 import core.exception : onOutOfMemoryError, OutOfMemoryError;
 import core.stdc.stdlib : malloc, free;
@@ -68,6 +69,27 @@ struct _ThrowInfo
     ImgPtr!(CatchableTypeArray*) pCatchableTypeArray; // pointer to CatchableTypeArray
 }
 
+struct ExceptionRecord
+{
+    uint ExceptionCode;
+    uint ExceptionFlags;
+    uint ExceptionRecord;
+    uint ExceptionAddress;
+    uint NumberParameters;
+    union
+    {
+        ULONG_PTR[15] ExceptionInformation;
+        CxxExceptionInfo CxxInfo;
+    }
+}
+
+struct CxxExceptionInfo
+{
+    size_t Magic;
+    Throwable* pThrowable; // null for rethrow
+    _ThrowInfo* ThrowInfo;
+}
+
 enum TI_IsConst     = 0x00000001;   // thrown object has const qualifier
 enum TI_IsVolatile  = 0x00000002;   // thrown object has volatile qualifier
 enum TI_IsUnaligned = 0x00000004;   // thrown object has unaligned qualifier
@@ -94,13 +116,6 @@ extern(C) void _d_throw_exception(Object e)
     if (ti is null)
         fatalerror("Cannot throw corrupt exception object with null classinfo");
 
-    if (exceptionStack.length > 0)
-    {
-        // we expect that the terminate handler will be called, so hook
-        // it to avoid it actually terminating
-        if (!old_terminate_handler)
-            old_terminate_handler = set_terminate(&msvc_eh_terminate);
-    }
     exceptionStack.push(cast(Throwable) e);
 
     ULONG_PTR[3] ExceptionInformation;
@@ -173,42 +188,51 @@ CatchableType* getCatchableType(TypeInfo_Class ti)
 }
 
 ///////////////////////////////////////////////////////////////
-extern(C) Object _d_eh_enter_catch(void* ptr)
+extern(C) Object _d_eh_enter_catch(void* ptr, ClassInfo catchType)
 {
-    if (!ptr)
-        return null; // null for "catch all" in scope(failure), will rethrow
-    Throwable e = *(cast(Throwable*) ptr);
+    assert(ptr);
 
-    while(exceptionStack.length > 0)
+    // is this a thrown D exception?
+    auto e = *(cast(Throwable*) ptr);
+    size_t pos = exceptionStack.find(e);
+    if (pos >= exceptionStack.length())
+        return null;
+
+    auto caught = e;
+    // append inner unhandled thrown exceptions
+    for (size_t p = pos + 1; p < exceptionStack.length(); p++)
+        e = chainExceptions(e, exceptionStack[p]);
+    exceptionStack.shrink(pos);
+
+    // given the bad semantics of Errors, we are fine with passing
+    //  the test suite with slightly inaccurate behaviour by just
+    //  rethrowing a collateral Error here, though it might need to
+    //  be caught by a catch handler in an inner scope
+    if (e !is caught)
     {
-        Throwable t = exceptionStack.pop();
-        if (t is e)
-            break;
-
-        auto err = cast(Error) t;
-        if (err && !cast(Error)e)
-        {
-            // there is an Error in flight, but we caught an Exception
-            // so we convert it and rethrow the Error
-            err.bypassedException = e;
-            throw err;
-        }
-        t.next = e.next;
-        e.next = t;
+        if (_d_isbaseof(typeid(e), catchType))
+            *cast(Throwable*) ptr = e; // the current catch can also catch this Error
+        else
+            _d_throw_exception(e);
     }
-
     return e;
 }
 
-alias terminate_handler = void function();
+Throwable chainExceptions(Throwable e, Throwable t)
+{
+    if (!cast(Error) e)
+        if (auto err = cast(Error) t)
+        {
+            err.bypassedException = e;
+            return err;
+        }
 
-extern(C) void** __current_exception();
-extern(C) void** __current_exception_context();
-extern(C) int* __processing_throw();
-
-extern(C) terminate_handler set_terminate(terminate_handler new_handler);
-
-terminate_handler old_terminate_handler; // explicitely per thread
+    auto pChain = &e.next;
+    while (*pChain)
+        pChain = &(pChain.next);
+    *pChain = t;
+    return e;
+}
 
 ExceptionStack exceptionStack;
 
@@ -233,9 +257,23 @@ nothrow:
         return _p[--_length];
     }
 
+    void shrink(size_t sz)
+    {
+        while (_length > sz)
+            _p[--_length] = null;
+    }
+
     ref inout(Throwable) opIndex(size_t idx) inout
     {
         return _p[idx];
+    }
+
+    size_t find(Throwable e)
+    {
+        for (size_t i = _length; i > 0; )
+            if (exceptionStack[--i] is e)
+                return i;
+        return ~0;
     }
 
     @property size_t length() const { return _length; }
@@ -260,71 +298,165 @@ private:
     size_t _cap;
 }
 
-// helper to access TLS from naked asm
-int tlsUncaughtExceptions() nothrow
+///////////////////////////////////////////////////////////////
+struct FrameInfo
 {
-    return exceptionStack.length;
-}
+    FrameInfo* next;
+    void* handler; // typeof(&_d_unwindExceptionHandler) causes compilation error
+    void* continuationAddress;
+    void* returnAddress;
 
-auto tlsOldTerminateHandler() nothrow
-{
-    return old_terminate_handler;
-}
+    size_t ebx;
+    size_t ecx;
+    size_t edi;
+    size_t esi;
 
-void msvc_eh_terminate() nothrow
-{
-    asm nothrow {
-        naked;
-        call tlsUncaughtExceptions;
-        cmp EAX, 0;
-        je L_term;
+    size_t ebp;
+    size_t esp;
+};
 
-        // hacking into the call chain to return EXCEPTION_EXECUTE_HANDLER
-        //  as the return value of __FrameUnwindFilter so that
-        // __FrameUnwindToState continues with the next unwind block
-
-        // restore ptd->__ProcessingThrow
-        push EAX;
-        call __processing_throw;
-        pop [EAX];
-
-        // undo one level of exception frames from terminate()
-        mov EAX,FS:[0];
-        mov EAX,[EAX];
-        mov FS:[0], EAX;
-
-        // assume standard stack frames for callers
-        mov EAX,EBP;   // frame pointer of terminate()
-        mov EAX,[EAX]; // frame pointer of __FrameUnwindFilter
-        mov ESP,EAX;   // restore stack
-        pop EBP;       // and frame pointer
-        mov EAX, 1;    // return EXCEPTION_EXECUTE_HANDLER
-        ret;
-
-    L_term:
-        call tlsOldTerminateHandler;
-        cmp EAX, 0;
-        je L_ret;
-        jmp EAX;
-    L_ret:
-        ret;
-    }
-}
+// "offsetof func" does not work in inline asm
+__gshared handler = &_d_unwindExceptionHandler;
 
 ///////////////////////////////////////////////////////////////
 extern(C) bool _d_enter_cleanup(void* ptr)
 {
-    // currently just used to avoid that a cleanup handler that can
-    // be inferred to not return, is removed by the LLVM optimizer
-    //
-    // TODO: setup an exception handler here (ptr passes the address
-    // of a 16 byte stack area in a parent fuction scope) to deal with
+    // setup an exception handler here (ptr passes the address
+    // of a 40 byte stack area in a parent function scope) to deal with
     // unhandled exceptions during unwinding.
-    return true;
+
+    asm
+    {
+        naked;
+        // fill the frame with information for continuation similar
+        //  to setjmp/longjmp when an exception is thrown during cleanup
+        mov EAX,[ESP+4]; // ptr
+        mov EDX,[ESP];   // return address
+        mov [EAX+12], EDX;
+        call cont;       // push continuation address
+        jmp catch_handler;
+    cont:
+        pop dword ptr [EAX+8];
+
+        mov [EAX+16], EBX;
+        mov [EAX+20], ECX;
+        mov [EAX+24], EDI;
+        mov [EAX+28], ESI;
+        mov [EAX+32], EBP;
+        mov [EAX+36], ESP;
+
+        mov EDX, handler;
+        mov [EAX+4], EDX;
+        // add link to exception chain on parent stack
+        mov EDX, FS:[0];
+        mov [EAX], EDX;
+        mov FS:[0], EAX;
+        mov AL, 1;
+        ret;
+
+    catch_handler:
+        // EAX set to frame, FS:[0] restored to previous frame
+        mov EBX, [EAX+16];
+        mov ECX, [EAX+20];
+        mov EDI, [EAX+24];
+        mov ESI, [EAX+28];
+        mov EBP, [EAX+32];
+        mov ESP, [EAX+36];
+
+        mov EDX, [EAX+12];
+        mov [ESP], EDX;
+        mov AL, 0;
+        ret;
+    }
 }
 
 extern(C) void _d_leave_cleanup(void* ptr)
 {
+    asm
+    {
+        naked;
+        // unlink from exception chain
+        // for a regular call, ptr should be the same as FS:[0]
+        // if an exception has been caught in _d_enter_cleanup,
+        //  FS:[0] is already the next frame, but setting it again
+        //  should do no harm
+        mov EAX, [ESP+4]; // ptr
+        mov EAX, [EAX];
+        mov FS:[0], EAX;
+        ret;
+    }
+}
+
+enum EXCEPTION_DISPOSITION
+{
+    ExceptionContinueExecution,
+    ExceptionContinueSearch,
+    ExceptionNestedException,
+    ExceptionCollidedUnwind
+}
+
+// @safeseh to be marked as "safe" for the OS security check
+extern(C) @safeseh()
+EXCEPTION_DISPOSITION _d_unwindExceptionHandler(ExceptionRecord* exceptionRecord,
+                                                FrameInfo* frame,
+                                                CONTEXT* context,
+                                                FrameInfo** dispatcherContext)
+{
+    // catch any D exception
+    Throwable excObj = null;
+    if (exceptionRecord.CxxInfo.Magic == EH_MAGIC_NUMBER1)
+        excObj = *exceptionRecord.CxxInfo.pThrowable;
+
+    // pass through non-D exceptions (should be wrapped?)
+    if (!excObj || exceptionStack.find(excObj) >= exceptionStack.length())
+        return EXCEPTION_DISPOSITION.ExceptionContinueSearch;
+
+    // unwind inner frames
+    doRtlUnwind(frame, exceptionRecord, &RtlUnwind);
+
+    // continue in
+    exceptionRecord.ExceptionFlags &= ~EXCEPTION_NONCONTINUABLE;
+    *dispatcherContext = frame;
+    context.Eip = cast(size_t) frame.continuationAddress;
+    context.Eax = cast(size_t) frame;
+    return EXCEPTION_DISPOSITION.ExceptionContinueExecution;
+}
+
+extern(Windows)
+void RtlUnwind(void* targetFrame, void* targetIp, ExceptionRecord* pExceptRec, void* valueForEAX);
+
+extern(C)
+int doRtlUnwind(void* pFrame, ExceptionRecord* eRecord, typeof(RtlUnwind)* handler)
+{
+    asm {
+        naked;
+        push EBP;
+        mov EBP,ESP;
+        push ECX;
+        push EBX;
+        push ESI;
+        push EDI;
+        push EBP;
+
+        push 0;
+        push dword ptr 12[EBP]; // eRecord
+        call __system_unwind;   // push targetIp
+        jmp __unwind_exit;
+    __system_unwind:
+        push dword ptr 8[EBP];  // pFrame
+        mov EAX, 16[EBP];
+        call EAX;               // RtlUnwind;
+    __unwind_exit:
+
+        pop EBP;
+        pop EDI;
+        pop ESI;
+        pop EBX;
+        pop ECX;
+        mov ESP,EBP;
+        pop EBP;
+        ret;
+    }
 }
 
 ///////////////////////////////////////////////////////////////
