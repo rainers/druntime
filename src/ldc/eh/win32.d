@@ -395,7 +395,7 @@ enum EXCEPTION_DISPOSITION
     ExceptionCollidedUnwind
 }
 
-// @safeseh to be marked as "safe" for the OS securtity check
+// @safeseh to be marked as "safe" for the OS security check
 extern(C) @safeseh()
 EXCEPTION_DISPOSITION _d_unwindExceptionHandler(ExceptionRecord* exceptionRecord,
                                                 FrameInfo* frame,
@@ -423,10 +423,10 @@ EXCEPTION_DISPOSITION _d_unwindExceptionHandler(ExceptionRecord* exceptionRecord
 }
 
 extern(Windows)
-void RtlUnwind(void *targetFrame, void *targetIp, ExceptionRecord *pExceptRec, void *valueForEAX);
+void RtlUnwind(void* targetFrame, void* targetIp, ExceptionRecord* pExceptRec, void* valueForEAX);
 
 extern(C)
-int doRtlUnwind(void *pFrame, ExceptionRecord *eRecord, typeof(RtlUnwind)* handler)
+int doRtlUnwind(void* pFrame, ExceptionRecord* eRecord, typeof(RtlUnwind)* handler)
 {
     asm {
         naked;
