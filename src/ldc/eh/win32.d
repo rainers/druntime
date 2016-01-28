@@ -279,6 +279,13 @@ nothrow:
     @property size_t length() const { return _length; }
     @property bool empty() const { return !length; }
 
+    void swap(ref ExceptionStack other)
+    {
+        auto olength = other._length; other._length = _length; _length = olength;
+        auto op      = other._p;      other._p      = _p;      _p = op;
+        auto ocap    = other._cap;    other._cap    = _cap;    _cap = ocap;
+    }
+
 private:
     void grow()
     {
@@ -456,6 +463,65 @@ int doRtlUnwind(void* pFrame, ExceptionRecord* eRecord, typeof(RtlUnwind)* handl
         mov ESP,EBP;
         pop EBP;
         ret;
+    }
+}
+
+///////////////////////////////////////////////////////////////
+struct FiberContext
+{
+    ExceptionStack exceptionStack;
+    void* currentException;
+    void* currentExceptionContext;
+    int processingContext;
+}
+
+FiberContext* fiberContext;
+
+extern(C) void** __current_exception() nothrow;
+extern(C) void** __current_exception_context() nothrow;
+extern(C) int* __processing_throw() nothrow;
+
+extern(C) void* _d_eh_swapContext(FiberContext* newContext) nothrow
+{
+    import rt.util.container.common : xmalloc;
+    import core.stdc.string : memset;
+    if (!fiberContext)
+    {
+        fiberContext = cast(FiberContext*) xmalloc(FiberContext.sizeof);
+        memset(fiberContext, 0, FiberContext.sizeof);
+    }
+    fiberContext.exceptionStack.swap(exceptionStack);
+    fiberContext.currentException = *__current_exception();
+    fiberContext.currentExceptionContext = *__current_exception_context();
+    fiberContext.processingContext = *__processing_throw();
+
+    if (newContext)
+    {
+        exceptionStack.swap(newContext.exceptionStack);
+        *__current_exception() = newContext.currentException;
+        *__current_exception_context() = newContext.currentExceptionContext;
+        *__processing_throw() = newContext.processingContext;
+    }
+    else
+    {
+        exceptionStack = ExceptionStack();
+        *__current_exception() = null;
+        *__current_exception_context() = null;
+        *__processing_throw() = 0;
+    }
+
+    FiberContext* old = fiberContext;
+    fiberContext = newContext;
+    return old;
+}
+
+static ~this()
+{
+    import core.stdc.stdlib : free;
+    if (fiberContext)
+    {
+        destroy(*fiberContext);
+        free(fiberContext);
     }
 }
 
