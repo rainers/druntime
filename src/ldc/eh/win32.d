@@ -5,14 +5,14 @@
 module ldc.eh.win32;
 
 version(CRuntime_Microsoft):
-version(Win32):
+//version(Win32):
 
 import ldc.eh.common;
 import ldc.attributes;
 import core.sys.windows.windows;
 import core.exception : onOutOfMemoryError, OutOfMemoryError;
 import core.stdc.stdlib : malloc, free;
-import core.stdc.string : memcpy;
+import core.stdc.string : memcpy, memset;
 
 // pointers are image relative for Win64 versions
 version(Win64)
@@ -22,15 +22,17 @@ else
 
 alias PMFN = ImgPtr!(void function(void*));
 
-struct TypeDescriptor(int N)
+struct TypeDescriptor
 {
     version(_RTTI)
         const void * pVFTable;  // Field overloaded by RTTI
+    else version(Win64)
+        const void * pVFTable;
     else
         uint hash;  // Hash value computed from type's decorated name
 
     void * spare;   // reserved, possible for RTTI
-    char[N+1] name; // variable size, zero terminated
+    char[2] name; // variable size, zero terminated
 }
 
 struct PMD
@@ -43,7 +45,7 @@ struct PMD
 struct CatchableType
 {
     uint  properties;       // Catchable Type properties (Bit field)
-    ImgPtr!(TypeDescriptor!1*) pType;   // Pointer to TypeDescriptor
+    ImgPtr!(TypeDescriptor*) pType;   // Pointer to TypeDescriptor
     PMD   thisDisplacement; // Pointer to instance of catch type within thrown object.
     int   sizeOrOffset;     // Size of simple-type object or offset into buffer of 'this' pointer for catch object
     PMFN  copyFunction;     // Copy constructor or CC-closure
@@ -57,8 +59,8 @@ enum CT_IsStdBadAlloc   = 0x00000010;  // type is a a std::bad_alloc
 
 struct CatchableTypeArray
 {
-    int	nCatchableTypes;
-    ImgPtr!(CatchableType*)[2] arrayOfCatchableTypes;
+    int nCatchableTypes;
+    ImgPtr!(CatchableType*)[2] arrayOfCatchableTypes; // variable size
 }
 
 struct _ThrowInfo
@@ -118,12 +120,19 @@ extern(C) void _d_throw_exception(Object e)
 
     exceptionStack.push(cast(Throwable) e);
 
-    ULONG_PTR[3] ExceptionInformation;
-    ExceptionInformation[0] = EH_MAGIC_NUMBER1;
-    ExceptionInformation[1] = cast(ULONG_PTR) cast(void*) &e;
-    ExceptionInformation[2] = cast(ULONG_PTR) getThrowInfo(ti);
+    version(Win64)
+        enum numArgs = 4;
+    else
+        enum numArgs = 3;
 
-    RaiseException(STATUS_MSC_EXCEPTION, EXCEPTION_NONCONTINUABLE, 3, ExceptionInformation.ptr);
+    ULONG_PTR[numArgs] args;
+    args[0] = EH_MAGIC_NUMBER1;
+    args[1] = cast(ULONG_PTR) cast(void*) &e;
+    args[2] = cast(ULONG_PTR) getThrowInfo(ti);
+    version(Win64)
+        args[3] = cast(ULONG_PTR) ehHeap.base;
+
+    RaiseException(STATUS_MSC_EXCEPTION, EXCEPTION_NONCONTINUABLE, args.length, args.ptr);
 }
 
 ///////////////////////////////////////////////////////////////
@@ -132,8 +141,88 @@ import rt.util.container.hashtab;
 import core.sync.mutex;
 
 __gshared HashTab!(TypeInfo_Class, _ThrowInfo) throwInfoHashtab;
-__gshared HashTab!(TypeInfo_Class, CatchableType) catchableHashtab;
+__gshared HashTab!(TypeInfo_Class, ImgPtr!(CatchableType*)) catchableHashtab;
 __gshared Mutex throwInfoMutex;
+
+void* safeMalloc(size_t size)
+{
+    if (auto ptr = malloc(size))
+        return ptr;
+    onOutOfMemoryError();
+    return null;
+}
+
+version(Win32)
+{
+    ImgPtr!(T*) eh_malloc(T)(size_t size = T.sizeof)
+    {
+        return cast(T*) safeMalloc(size);
+    }
+
+    T* toPointer(T)(ImgPtr!(T*) imgPtr)
+    {
+        return imgPtr;
+    }
+}
+else
+{
+    /**
+     * Heap dedicated for CatchableTypeArray/CatchableType/TypeDescriptor
+     * structs of cached _ThrowInfos.
+     * The heap is used to keep these structs tightly together, as they are
+     * referenced via 32-bit offsets from a common base. We simply use the
+     * heap's start as base (instead of the actual image base), and malloc()
+     * returns an offset.
+     * The allocated structs are all cached and never released, so this heap
+     * can only grow. The offsets remain constant after a grow, so it's only
+     * the base which may change.
+     */
+    struct EHHeap
+    {
+        void* base;
+        size_t capacity;
+        size_t length;
+
+        this(size_t initialCapacity)
+        {
+            base = safeMalloc(initialCapacity);
+            capacity = initialCapacity;
+        }
+
+        size_t malloc(size_t size)
+        {
+            auto offset = length;
+            enum alignmentMask = size_t.sizeof - 1;
+            auto newLength = (length + size + alignmentMask) & ~alignmentMask;
+            auto newCapacity = capacity;
+            while (newLength > newCapacity)
+                newCapacity *= 2;
+            if (newCapacity != capacity)
+            {
+                auto newBase = safeMalloc(newCapacity);
+                newBase[0 .. length] = base[0 .. length];
+                free(base);
+                base = newBase;
+                capacity = newCapacity;
+            }
+            length = newLength;
+            return offset;
+        }
+    }
+
+    __gshared EHHeap ehHeap;
+
+    ImgPtr!(T*) eh_malloc(T)(size_t size = T.sizeof)
+    {
+        return cast(uint) ehHeap.malloc(size);
+    }
+
+    // NB: The returned pointer may be invalidated by a consequent grow of ehHeap!
+    T* toPointer(T)(ImgPtr!(T*) imgPtr)
+    {
+        return cast(T*) (ehHeap.base + imgPtr);
+    }
+}
 
 // create and cache throwinfo for ti
 _ThrowInfo* getThrowInfo(TypeInfo_Class ti)
@@ -145,46 +234,44 @@ _ThrowInfo* getThrowInfo(TypeInfo_Class ti)
         return p;
     }
 
-    size_t classes = 0;
+    int classes = 0;
     for (TypeInfo_Class tic = ti; tic; tic = tic.base)
         classes++;
 
     size_t sz = int.sizeof + classes * ImgPtr!(CatchableType*).sizeof;
-    auto cta = cast(CatchableTypeArray*) malloc(sz);
-    if (!cta)
-        onOutOfMemoryError();
-    cta.nCatchableTypes = classes;
-
+    auto cta = eh_malloc!CatchableTypeArray(sz);
+    toPointer!CatchableTypeArray(cta).nCatchableTypes = classes;
     size_t c = 0;
     for (TypeInfo_Class tic = ti; tic; tic = tic.base)
-        cta.arrayOfCatchableTypes.ptr[c++] = getCatchableType(tic);
+    {
+        auto ct = getCatchableType(tic);
+        toPointer!CatchableTypeArray(cta).arrayOfCatchableTypes.ptr[c++] = ct;
+    }
 
-    _ThrowInfo tinf = { 0, null, null, cta };
-    throwInfoHashtab[ti] = tinf;
+    throwInfoHashtab[ti] = _ThrowInfo(0, PMFN(), PMFN(), cta);
     auto pti = ti in throwInfoHashtab;
     throwInfoMutex.unlock();
     return pti;
 }
 
-CatchableType* getCatchableType(TypeInfo_Class ti)
+ImgPtr!(CatchableType*) getCatchableType(TypeInfo_Class ti)
 {
     if (auto p = ti in catchableHashtab)
-        return p;
+        return *p;
 
-    size_t sz = TypeDescriptor!1.sizeof + ti.name.length;
-    auto td = cast(TypeDescriptor!1*) malloc(sz);
-    if (!td)
-        onOutOfMemoryError();
+    size_t sz = TypeDescriptor.sizeof + ti.name.length;
+    auto td = eh_malloc!TypeDescriptor(sz);
+    auto ptd = toPointer!TypeDescriptor(td);
+    memset(ptd, 0, sz);
+    ptd.name.ptr[0] = 'D';
+    memcpy(ptd.name.ptr + 1, ti.name.ptr, ti.name.length);
 
-    td.hash = 0;
-    td.spare = null;
-    td.name.ptr[0] = 'D';
-    memcpy(td.name.ptr + 1, ti.name.ptr, ti.name.length);
-    td.name.ptr[ti.name.length + 1] = 0;
+    auto ct = eh_malloc!CatchableType();
+    auto pct = toPointer!CatchableType(ct);
+    *pct = CatchableType(CT_IsSimpleType, td, PMD(0, -1, 0), ULONG_PTR.sizeof, PMFN());
 
-    CatchableType ct = { CT_IsSimpleType, td, { 0, -1, 0 }, 4, null };
     catchableHashtab[ti] = ct;
-    return ti in catchableHashtab;
+    return ct;
 }
 
 ///////////////////////////////////////////////////////////////
@@ -529,6 +616,9 @@ static ~this()
 void msvc_eh_init()
 {
     throwInfoMutex = new Mutex;
+
+    version(Win64)
+        ehHeap = EHHeap(65536);
 
     // preallocate type descriptors likely to be needed
     getThrowInfo(typeid(Exception));

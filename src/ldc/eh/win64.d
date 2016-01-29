@@ -5,7 +5,7 @@
 module ldc.eh.win64;
 
 version (CRuntime_Microsoft):
-version (Win64):
+version (none /*Win64*/):
 
 // debug = EH_personality;
 // debug = EH_personality_verbose;
