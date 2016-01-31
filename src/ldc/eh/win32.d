@@ -13,16 +13,17 @@ import core.sys.windows.windows;
 import core.exception : onOutOfMemoryError, OutOfMemoryError;
 import core.stdc.stdlib : malloc, free;
 import core.stdc.string : memcpy;
+import rt.util.container.common : xmalloc;
 
 // pointers are image relative for Win64 versions
 version(Win64)
     alias ImgPtr(T) = uint; // offset into image
 else
-    alias ImgPtr(T) = T;
+    alias ImgPtr(T) = T*;
 
 alias PMFN = ImgPtr!(void function(void*));
 
-struct TypeDescriptor(int N)
+struct TypeDescriptor
 {
     version(_RTTI)
         const void * pVFTable;  // Field overloaded by RTTI
@@ -30,7 +31,7 @@ struct TypeDescriptor(int N)
         uint hash;  // Hash value computed from type's decorated name
 
     void * spare;   // reserved, possible for RTTI
-    char[N+1] name; // variable size, zero terminated
+    char[1] name;   // variable size, zero terminated
 }
 
 struct PMD
@@ -43,7 +44,7 @@ struct PMD
 struct CatchableType
 {
     uint  properties;       // Catchable Type properties (Bit field)
-    ImgPtr!(TypeDescriptor!1*) pType;   // Pointer to TypeDescriptor
+    ImgPtr!TypeDescriptor pType;   // Pointer to TypeDescriptor
     PMD   thisDisplacement; // Pointer to instance of catch type within thrown object.
     int   sizeOrOffset;     // Size of simple-type object or offset into buffer of 'this' pointer for catch object
     PMFN  copyFunction;     // Copy constructor or CC-closure
@@ -58,7 +59,7 @@ enum CT_IsStdBadAlloc   = 0x00000010;  // type is a a std::bad_alloc
 struct CatchableTypeArray
 {
     int	nCatchableTypes;
-    ImgPtr!(CatchableType*)[2] arrayOfCatchableTypes;
+    ImgPtr!CatchableType[1] arrayOfCatchableTypes; // variable size
 }
 
 struct _ThrowInfo
@@ -66,7 +67,7 @@ struct _ThrowInfo
     uint    attributes;     // Throw Info attributes (Bit field)
     PMFN    pmfnUnwind;     // Destructor to call when exception has been handled or aborted.
     PMFN    pForwardCompat; // pointer to Forward compatibility frame handler
-    ImgPtr!(CatchableTypeArray*) pCatchableTypeArray; // pointer to CatchableTypeArray
+    ImgPtr!CatchableTypeArray pCatchableTypeArray; // pointer to CatchableTypeArray
 }
 
 struct ExceptionRecord
@@ -131,60 +132,64 @@ extern(C) void _d_throw_exception(Object e)
 import rt.util.container.hashtab;
 import core.sync.mutex;
 
-__gshared HashTab!(TypeInfo_Class, _ThrowInfo) throwInfoHashtab;
-__gshared HashTab!(TypeInfo_Class, CatchableType) catchableHashtab;
+__gshared HashTab!(TypeInfo_Class, ImgPtr!_ThrowInfo) throwInfoHashtab;
+__gshared HashTab!(TypeInfo_Class, ImgPtr!CatchableType) catchableHashtab;
 __gshared Mutex throwInfoMutex;
 
 // create and cache throwinfo for ti
-_ThrowInfo* getThrowInfo(TypeInfo_Class ti)
+ImgPtr!_ThrowInfo getThrowInfo(TypeInfo_Class ti)
 {
     throwInfoMutex.lock();
     if (auto p = ti in throwInfoHashtab)
     {
         throwInfoMutex.unlock();
-        return p;
+        return *p;
     }
 
     size_t classes = 0;
     for (TypeInfo_Class tic = ti; tic; tic = tic.base)
         classes++;
 
-    size_t sz = int.sizeof + classes * ImgPtr!(CatchableType*).sizeof;
-    auto cta = cast(CatchableTypeArray*) malloc(sz);
-    if (!cta)
-        onOutOfMemoryError();
+    size_t sz = int.sizeof + classes * ImgPtr!(CatchableType).sizeof;
+    auto cta = cast(CatchableTypeArray*) xmalloc(sz);
     cta.nCatchableTypes = classes;
 
     size_t c = 0;
-    for (TypeInfo_Class tic = ti; tic; tic = tic.base)
-        cta.arrayOfCatchableTypes.ptr[c++] = getCatchableType(tic);
+    for (TypeInfo_Class tic = ti; tic; tic = tic.base, c++)
+        cta.arrayOfCatchableTypes.ptr[c] = getCatchableType(tic);
 
-    _ThrowInfo tinf = { 0, null, null, cta };
+    auto tinf = cast(_ThrowInfo*) xmalloc(_ThrowInfo.sizeof);
+    *tinf = _ThrowInfo(0, null, null, cta);
     throwInfoHashtab[ti] = tinf;
-    auto pti = ti in throwInfoHashtab;
     throwInfoMutex.unlock();
-    return pti;
+    return tinf;
 }
 
 CatchableType* getCatchableType(TypeInfo_Class ti)
 {
     if (auto p = ti in catchableHashtab)
-        return p;
+        return *p;
 
-    size_t sz = TypeDescriptor!1.sizeof + ti.name.length;
-    auto td = cast(TypeDescriptor!1*) malloc(sz);
-    if (!td)
-        onOutOfMemoryError();
+    // generate catch types for both D (fully.qualified.name)
+    //  and C++ (D::name mangled to .PAVname@D@@)
+    size_t p = ti.name.length;
+    for ( ; p > 0 && ti.name[p-1] != '.'; p--) {}
+    string name = ti.name[p .. $];
 
-    td.hash = 0;
-    td.spare = null;
-    td.name.ptr[0] = 'D';
-    memcpy(td.name.ptr + 1, ti.name.ptr, ti.name.length);
-    td.name.ptr[ti.name.length + 1] = 0;
+    size_t szd = TypeDescriptor.sizeof + ti.name.length;
+    auto tdd = cast(TypeDescriptor*) xmalloc(szd);
 
-    CatchableType ct = { CT_IsSimpleType, td, { 0, -1, 0 }, 4, null };
+    tdd.hash = 0;
+    tdd.spare = null;
+    tdd.name.ptr[0] = 'D';
+    memcpy(tdd.name.ptr + 1, ti.name.ptr, ti.name.length);
+    tdd.name.ptr[ti.name.length + 1] = 0;
+
+    auto ct = cast(CatchableType*) xmalloc(2 * CatchableType.sizeof);
+    *ct = CatchableType(CT_IsSimpleType, tdd, PMD(0, -1, 0), 4, null);
+
     catchableHashtab[ti] = ct;
-    return ti in catchableHashtab;
+    return ct;
 }
 
 ///////////////////////////////////////////////////////////////
@@ -281,9 +286,10 @@ nothrow:
 
     void swap(ref ExceptionStack other)
     {
-        auto olength = other._length; other._length = _length; _length = olength;
-        auto op      = other._p;      other._p      = _p;      _p = op;
-        auto ocap    = other._cap;    other._cap    = _cap;    _cap = ocap;
+        static void swapField(T)(ref T a, ref T b) { T o = b; b = a; a = o; }
+        swapField(_length, other._length);
+        swapField(_p,      other._p);
+        swapField(_cap,    other._cap);
     }
 
 private:
@@ -291,9 +297,7 @@ private:
     {
         // alloc from GC? add array as a GC range?
         immutable ncap = _cap ? 2 * _cap : 64;
-        auto p = cast(Throwable*)malloc(ncap * Throwable.sizeof);
-        if (p is null)
-            onOutOfMemoryError();
+        auto p = cast(Throwable*)xmalloc(ncap * Throwable.sizeof);
         p[0 .. _length] = _p[0 .. _length];
         free(_p);
         _p = p;
@@ -483,7 +487,6 @@ extern(C) int* __processing_throw() nothrow;
 
 extern(C) void* _d_eh_swapContext(FiberContext* newContext) nothrow
 {
-    import rt.util.container.common : xmalloc;
     import core.stdc.string : memset;
     if (!fiberContext)
     {
