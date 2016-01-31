@@ -129,6 +129,13 @@ extern(C) void _d_throw_exception(Object e)
 
 ///////////////////////////////////////////////////////////////
 
+extern(C) string _d_toString(Object o)
+{
+    return o.toString();
+}
+
+///////////////////////////////////////////////////////////////
+
 import rt.util.container.hashtab;
 import core.sync.mutex;
 
@@ -148,15 +155,18 @@ ImgPtr!_ThrowInfo getThrowInfo(TypeInfo_Class ti)
 
     size_t classes = 0;
     for (TypeInfo_Class tic = ti; tic; tic = tic.base)
-        classes++;
+        classes += 2; // D and C++
 
     size_t sz = int.sizeof + classes * ImgPtr!(CatchableType).sizeof;
     auto cta = cast(CatchableTypeArray*) xmalloc(sz);
     cta.nCatchableTypes = classes;
 
     size_t c = 0;
-    for (TypeInfo_Class tic = ti; tic; tic = tic.base, c++)
+    for (TypeInfo_Class tic = ti; tic; tic = tic.base, c += 2)
+    {
         cta.arrayOfCatchableTypes.ptr[c] = getCatchableType(tic);
+        cta.arrayOfCatchableTypes.ptr[c + 1] = cta.arrayOfCatchableTypes.ptr[c] + 1;
+    }
 
     auto tinf = cast(_ThrowInfo*) xmalloc(_ThrowInfo.sizeof);
     *tinf = _ThrowInfo(0, null, null, cta);
@@ -165,6 +175,7 @@ ImgPtr!_ThrowInfo getThrowInfo(TypeInfo_Class ti)
     return tinf;
 }
 
+// returns pointer to array of 2 elements, one for D and one for C++
 CatchableType* getCatchableType(TypeInfo_Class ti)
 {
     if (auto p = ti in catchableHashtab)
@@ -176,8 +187,9 @@ CatchableType* getCatchableType(TypeInfo_Class ti)
     for ( ; p > 0 && ti.name[p-1] != '.'; p--) {}
     string name = ti.name[p .. $];
 
-    size_t szd = TypeDescriptor.sizeof + ti.name.length;
-    auto tdd = cast(TypeDescriptor*) xmalloc(szd);
+    size_t szd = (TypeDescriptor.sizeof + ti.name.length + 3) & ~3;
+    size_t szcpp = TypeDescriptor.sizeof + name.length + 8;
+    auto tdd = cast(TypeDescriptor*) xmalloc(szd + szcpp);
 
     tdd.hash = 0;
     tdd.spare = null;
@@ -185,8 +197,16 @@ CatchableType* getCatchableType(TypeInfo_Class ti)
     memcpy(tdd.name.ptr + 1, ti.name.ptr, ti.name.length);
     tdd.name.ptr[ti.name.length + 1] = 0;
 
+    auto tdcpp = cast(TypeDescriptor*) (cast(char*)tdd + szd);
+    tdcpp.hash = 0;
+    tdcpp.spare = null;
+    memcpy(tdcpp.name.ptr, ".PAV".ptr, 4);
+    memcpy(tdcpp.name.ptr + 4, name.ptr, name.length);
+    memcpy(tdcpp.name.ptr + 4 + name.length, "@D@@".ptr, 5);
+
     auto ct = cast(CatchableType*) xmalloc(2 * CatchableType.sizeof);
-    *ct = CatchableType(CT_IsSimpleType, tdd, PMD(0, -1, 0), 4, null);
+    ct[0] = CatchableType(CT_IsSimpleType, tdd,   PMD(0, -1, 0), 4, null);
+    ct[1] = CatchableType(CT_IsSimpleType, tdcpp, PMD(0, -1, 0), 4, null);
 
     catchableHashtab[ti] = ct;
     return ct;
