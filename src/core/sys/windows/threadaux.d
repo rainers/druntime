@@ -275,6 +275,8 @@ private:
                 return;
             }
 
+            import core.stdc.string;
+
             // temporarily set current TLS array pointer to the array pointer of the referenced thread
             void** curteb = getTEB();
             void** teb    = getTEB( id );
@@ -286,8 +288,38 @@ private:
                 return;
 
             curteb[11] = tlsarray;
+
+            // swap out the TLS slots aswell
+            version(Win64)
+            {
+                enum TEB_offset_TlsSlots = 0x1480;
+                enum TEB_offset_TlsExpansionSlots = 0x1780;
+            }
+            else
+            {
+                enum TEB_offset_TlsSlots = 0xE10;
+                enum TEB_offset_TlsExpansionSlots = 0xF94;
+            }
+            void* tlsSlotsAdr(void** teb) { return cast(void*) curteb + TEB_offset_TlsSlots; }
+            ref void* tlsExpansionSlots(void** teb) { return *cast(void**)(cast(void*) curteb + TEB_offset_TlsExpansionSlots); }
+
+            void*[64] slots = void;
+            memcpy(slots.ptr, tlsSlotsAdr(curteb), slots.sizeof);
+            void* extraSlots = tlsExpansionSlots(curteb);
+
+            memcpy(tlsSlotsAdr(curteb), tlsSlotsAdr(teb), slots.sizeof);
+            tlsExpansionSlots(curteb) = tlsExpansionSlots(teb);
+
             dg();
+
             curteb[11] = curtlsarray;
+
+            // copy the TLS slots back in case they have been changed in dg
+            memcpy(tlsSlotsAdr(teb), tlsSlotsAdr(curteb), slots.sizeof);
+            tlsExpansionSlots(teb) = tlsExpansionSlots(curteb);
+
+            memcpy(tlsSlotsAdr(curteb), slots.ptr, slots.sizeof);
+            tlsExpansionSlots(curteb) = extraSlots;
         }
     }
 
