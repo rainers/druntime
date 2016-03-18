@@ -132,19 +132,19 @@ BOOL WINAPI fix_tlsAlignment(HINSTANCE hModule, DWORD  fdwReason, LPVOID lpvRese
 
             if (alignShift)
             {
-                int alignment = 1 << (alignShift - 1);
+                int alignmentMask = (1 << (alignShift - 1)) - 1;
                 void** tlsAdr = GetTlsEntryAdr();
-                if ((SIZE_T)*tlsAdr & (alignment - 1))
+                if ((SIZE_T)*tlsAdr & alignmentMask)
                 {
                     // this implementation does about the same as Windows 8.1.
                     HANDLE heap = GetProcessHeap();
                     SIZE_T tlsSize = tlsDir->EndAddressOfRawData - tlsDir->StartAddressOfRawData + tlsDir->SizeOfZeroFill;
-                    SIZE_T allocSize = tlsSize + alignment + sizeof(void*);
+                    SIZE_T allocSize = tlsSize + alignmentMask + sizeof(void*);
                     void* p = HeapAlloc(heap, 0, allocSize);
                     if (!p)
                         return 0;
 
-                    void* aligned = (void*) (((SIZE_T) p + alignment + sizeof(PVOID)) & ~(alignment - 1));
+                    void* aligned = (void*) (((SIZE_T) p + alignmentMask + sizeof(PVOID)) & ~alignmentMask);
                     void* old = *tlsAdr;
                     ((void**) aligned)[-1] = p;    // save base pointer for freeing
                     memcpy(aligned, old, tlsSize);
