@@ -1,5 +1,6 @@
 SRCS=\
 	src\object.d \
+	src\gc\gctemplates.d \
 	\
 	src\core\atomic.d \
 	src\core\attribute.d \

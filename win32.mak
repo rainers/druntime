@@ -211,6 +211,7 @@ copydir: $(IMPDIR)
 	mkdir $(IMPDIR)\core\sys\solaris\sys
 	mkdir $(IMPDIR)\core\sys\windows
 	mkdir $(IMPDIR)\etc\linux
+	mkdir $(IMPDIR)\gc
 
 copy: $(COPY)
 
@@ -219,6 +220,9 @@ $(IMPDIR)\object.d : src\object.d
 	if exist $(IMPDIR)\object.di del $(IMPDIR)\object.di
 
 $(IMPDIR)\core\atomic.d : src\core\atomic.d
+	copy $** $@
+
+$(IMPDIR)\gc\gctemplates.d : src\gc\gctemplates.d
 	copy $** $@
 
 $(IMPDIR)\core\attribute.d : src\core\attribute.d
