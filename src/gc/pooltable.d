@@ -9,6 +9,8 @@ module gc.pooltable;
 
 static import cstdlib=core.stdc.stdlib;
 
+private extern (C) void onOutOfMemoryErrorNoGC() @nogc nothrow;
+
 struct PoolTable(Pool)
 {
     import core.stdc.string : memmove;
@@ -157,6 +159,21 @@ nothrow:
 
     @property const(void)* minAddr() pure const { return _minAddr; }
     @property const(void)* maxAddr() pure const { return _maxAddr; }
+
+    void snapShot(ref PoolTable!Pool other)
+    {
+        _minAddr = other._minAddr;
+        _maxAddr = other._maxAddr;
+        if (npools < other.npools)
+        {
+            auto pt = cstdlib.realloc(pools, other.npools * (Pool*).sizeof);
+            if (!pt)
+                onOutOfMemoryErrorNoGC();
+            pools = cast(Pool**) pt;
+        }
+        pools[0..other.npools] = other.pools[0..other.npools];
+        npools = other.npools;
+    }
 
 package:
     Pool** pools;

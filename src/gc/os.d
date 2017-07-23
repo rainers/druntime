@@ -68,15 +68,47 @@ else static assert(false, "No supported allocation methods available.");
 
 static if (is(typeof(VirtualAlloc))) // version (GC_Use_Alloc_Win32)
 {
+    enum hasMemWriteWatch = true;
+
+    enum MEM_WRITE_WATCH = 0x00200000;
+
     /**
      * Map memory.
      */
-    void *os_mem_map(size_t nbytes) nothrow
+    void *os_mem_map(size_t nbytes, bool watch = false) nothrow
     {
-        return VirtualAlloc(null, nbytes, MEM_RESERVE | MEM_COMMIT,
-                PAGE_READWRITE);
+        return VirtualAlloc(null, nbytes, MEM_RESERVE | MEM_COMMIT | (watch ? MEM_WRITE_WATCH : 0),
+                            PAGE_READWRITE);
     }
 
+    void* os_mem_filemap(size_t nbytes) nothrow
+    {
+        HANDLE hMapFile;
+        uint hwBytes = cast(uint)((nbytes >> 16) >> 16);
+        hMapFile = CreateFileMappingW(INVALID_HANDLE_VALUE,    // use paging file
+                                      null,                    // default security
+                                      PAGE_READWRITE| SEC_COMMIT, // read/write access
+                                      hwBytes,                 // maximum object size (high-order DWORD)
+                                      cast(uint)nbytes,        // maximum object size (low-order DWORD)
+                                      null);                   // name of mapping object
+        return cast(void*)hMapFile;
+    }
+
+    void* os_mem_mapview(void* mapfile, size_t nbytes, void* addr) nothrow
+    {
+        void* p = MapViewOfFileEx(cast(HANDLE)mapfile, FILE_MAP_ALL_ACCESS, 0, 0, nbytes, addr);
+        return p;
+    }
+
+    bool os_mem_unmapview(void* p, size_t nbytes) nothrow
+    {
+        return UnmapViewOfFile(p) != 0;
+    }
+
+    bool os_mem_filemap(void* mapfile, size_t nbytes) nothrow
+    {
+        return CloseHandle(cast(HANDLE)mapfile) != 0;
+    }
 
     /**
      * Unmap memory allocated with os_mem_map().
@@ -88,10 +120,29 @@ static if (is(typeof(VirtualAlloc))) // version (GC_Use_Alloc_Win32)
     {
         return cast(int)(VirtualFree(base, 0, MEM_RELEASE) == 0);
     }
+
+    extern(Windows) UINT GetWriteWatch(DWORD dwFlags, PVOID lpBaseAddress, SIZE_T dwRegionSize,
+                                       PVOID *lpAddresses, PULONG_PTR lpdwCount, PULONG lpdwGranularity) nothrow;
+    extern(Windows) UINT ResetWriteWatch(LPVOID lpBaseAddress, SIZE_T dwRegionSize) nothrow;
+
+    enum WRITE_WATCH_FLAG_RESET = 1;
+
+    void os_mem_resetWriteWatch(void *base, size_t nbytes) nothrow
+    {
+        ResetWriteWatch(base, nbytes);
+    }
+
+    bool os_mem_getWriteWatch(bool reset, void *base, size_t nbytes, void** wraddr, size_t* count, uint* granularity) nothrow
+    {
+        UINT res = GetWriteWatch(reset ? WRITE_WATCH_FLAG_RESET : false, base, nbytes, wraddr, count, granularity);
+        return (res == 0);
+    }
 }
 else static if (is(typeof(mmap)))  // else version (GC_Use_Alloc_MMap)
 {
-    void *os_mem_map(size_t nbytes) nothrow
+    enum hasMemWriteWatch = false;
+
+    void *os_mem_map(size_t nbytes, bool watch = false) nothrow
     {   void *p;
 
         p = mmap(null, nbytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -106,7 +157,9 @@ else static if (is(typeof(mmap)))  // else version (GC_Use_Alloc_MMap)
 }
 else static if (is(typeof(valloc))) // else version (GC_Use_Alloc_Valloc)
 {
-    void *os_mem_map(size_t nbytes) nothrow
+    enum hasMemWriteWatch = false;
+
+    void *os_mem_map(size_t nbytes, bool watch = false) nothrow
     {
         return valloc(nbytes);
     }
@@ -120,6 +173,8 @@ else static if (is(typeof(valloc))) // else version (GC_Use_Alloc_Valloc)
 }
 else static if (is(typeof(malloc))) // else version (GC_Use_Alloc_Malloc)
 {
+    enum hasMemWriteWatch = false;
+
     // NOTE: This assumes malloc granularity is at least (void*).sizeof.  If
     //       (req_size + PAGESIZE) is allocated, and the pointer is rounded up
     //       to PAGESIZE alignment, there will be space for a void* at the end
@@ -132,7 +187,7 @@ else static if (is(typeof(malloc))) // else version (GC_Use_Alloc_Malloc)
     const size_t PAGE_MASK = PAGESIZE - 1;
 
 
-    void *os_mem_map(size_t nbytes) nothrow
+    void *os_mem_map(size_t nbytes, bool watch = false) nothrow
     {   byte *p, q;
         p = cast(byte *) malloc(nbytes + PAGESIZE);
         q = p + ((PAGESIZE - ((cast(size_t) p & PAGE_MASK))) & PAGE_MASK);
