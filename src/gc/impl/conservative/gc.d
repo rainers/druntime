@@ -315,8 +315,8 @@ class ConservativeGC : GC
     {
         import core.stdc.string: memcpy;
 
-        if(config.gc != "conservative")
-              return;
+        if(config.gc != "conservative" && !(hasBackGC && config.gc == "concurrent"))
+            return;
 
         auto p = cstdlib.malloc(__traits(classInstanceSize,ConservativeGC));
 
@@ -334,7 +334,7 @@ class ConservativeGC : GC
 
     static void finalize(ref GC gc)
     {
-        if(config.gc != "conservative")
+        if(config.gc != "conservative" && !(hasBackGC && config.gc == "concurrent"))
               return;
 
         auto instance = cast(ConservativeGC) gc;
@@ -1414,7 +1414,7 @@ struct Gcx
         //printf("gcx = %p, self = %x\n", &this, self);
         version(BACK_GC)
         {
-            //if (config.concurrent)
+            if (config.gc == "concurrent")
             {
                 bgEnable = true;
                 startGCProcess();
@@ -3259,8 +3259,10 @@ struct Gcx
         version(BACK_GC)
             if(bgEnable)
                 return fullcollectTrigger();
-
-        return fullcollectNow(nostack);
+            else
+                return fullcollectNow(nostack);
+        else
+            return fullcollectNow(nostack);
     }
 
     size_t fullcollectNow(bool nostack = false) nothrow
