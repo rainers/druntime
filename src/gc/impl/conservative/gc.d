@@ -248,6 +248,63 @@ debug (LOGGING)
 
 
 /* ============================ GC =============================== */
+version = AsmLock;
+version(AsmLock)
+{
+    enum pauseThresh = 4;
+    static void yield(size_t k)
+    {
+        if (k < pauseThresh)
+            return pause();
+        else if (k < 32)
+            return Thread.yield();
+        if (ConservativeGC._inFinalizer)
+            onInvalidMemoryOperationError();
+        Thread.sleep(1.msecs);
+    }
+    static void pause()
+    {
+    }
+    enum string gcLock_lock = q{
+        asm @nogc nothrow {
+            push RDI;
+            mov RDI, 1;
+        retry:
+            mov EAX, 0;
+            lea RCX, gcLock;
+            lock; // lock always needed to make this op atomic
+            cmpxchg [RCX], EDI;
+            jz locked;
+            mov RDX,RDX; // inform compiler that scratch registers might get destroyed in yield
+            mov R8, R8;
+            mov R9, R9;
+            mov R10, R10;
+            mov R11, R11;
+            mov RCX, RDI;
+            call yield;
+            inc EDI;
+            jmp retry;
+        locked:;
+            pop RDI;
+        }
+    };
+
+    enum string gcLock_unlock = q{
+        asm @nogc nothrow {
+            mov EAX, 0;
+            mov gcLock, EAX;
+        }
+    };
+}
+else
+{
+    enum string gcLock_lock = q{
+        if (ConservativeGC._inFinalizer)
+            onInvalidMemoryOperationError();
+        gcLock.lock();
+    };
+    enum string gcLock_unlock = "gcLock.unlock();";
+}
 
 class ConservativeGC : GC
 {
@@ -258,7 +315,10 @@ class ConservativeGC : GC
     Gcx *gcx;                   // implementation
 
     import core.internal.spinlock;
-    static gcLock = shared(AlignedSpinLock)(SpinLock.Contention.lengthy);
+    version(AsmLock)
+        static align(64) shared(int) gcLock;
+    else
+        static auto gcLock = shared(AlignedSpinLock)(SpinLock.Contention.lengthy);
     static bool _inFinalizer;
 
     // lock GC, throw InvalidMemoryOperationError on recursive locking during finalization
@@ -266,7 +326,7 @@ class ConservativeGC : GC
     {
         if (_inFinalizer)
             onInvalidMemoryOperationError();
-        gcLock.lock();
+        mixin(gcLock_lock); //gcLock.lock();
     }
 
 
@@ -342,7 +402,7 @@ class ConservativeGC : GC
             assert(gcx.disabled > 0);
             gcx.disabled--;
         }
-        runLocked!(go, otherTime, numOthers)(gcx);
+        mixin(runLocked("go(gcx);", "otherTime", "numOthers"));
     }
 
 
@@ -352,54 +412,30 @@ class ConservativeGC : GC
         {
             gcx.disabled++;
         }
-        runLocked!(go, otherTime, numOthers)(gcx);
+        mixin(runLocked("go(gcx);", "otherTime", "numOthers"));
     }
 
 
-    auto runLocked(alias func, Args...)(auto ref Args args)
+    static string runLocked(string call, string time = null, string count = null)
     {
-        debug(PROFILE_API) immutable tm = (config.profile > 1 ? currTime.ticks : 0);
-        lockNR();
-        scope (failure) gcLock.unlock();
-        debug(PROFILE_API) immutable tm2 = (config.profile > 1 ? currTime.ticks : 0);
-
-        static if (is(typeof(func(args)) == void))
-            func(args);
-        else
-            auto res = func(args);
-
-        debug(PROFILE_API) if (config.profile > 1)
-            lockTime += tm2 - tm;
-        gcLock.unlock();
-
-        static if (!is(typeof(func(args)) == void))
-            return res;
-    }
-
-
-    auto runLocked(alias func, alias time, alias count, Args...)(auto ref Args args)
-    {
-        debug(PROFILE_API) immutable tm = (config.profile > 1 ? currTime.ticks : 0);
-        lockNR();
-        scope (failure) gcLock.unlock();
-        debug(PROFILE_API) immutable tm2 = (config.profile > 1 ? currTime.ticks : 0);
-
-        static if (is(typeof(func(args)) == void))
-            func(args);
-        else
-            auto res = func(args);
-
-        debug(PROFILE_API) if (config.profile > 1)
+        string s;
+        debug(PROFILE_API) s ~= "immutable tm = (config.profile > 1 ? currTime.ticks : 0);\n";
+        s ~= "mixin(gcLock_lock);\n";
+        s ~= "scope (failure) mixin(gcLock_unlock);\n";
+        debug(PROFILE_API) s ~= "immutable tm2 = (config.profile > 1 ? currTime.ticks : 0);\n";
+        s ~= call;
+        debug(PROFILE_API)
         {
-            count++;
-            immutable now = currTime.ticks;
-            lockTime += tm2 - tm;
-            time += now - tm2;
+            s ~= "if (config.profile > 1) {";
+            if (time)
+                s ~= "\n " ~ time ~ " += currTime.ticks - tm2;";
+            s ~= "\n lockTime += tm2 - tm;";
+            if (count)
+                s ~= "\n " ~ count ~ "++";
+            s ~= "\n}";
         }
-        gcLock.unlock();
-
-        static if (!is(typeof(func(args)) == void))
-            return res;
+        s ~= gcLock_unlock;
+        return s;
     }
 
 
@@ -425,7 +461,8 @@ class ConservativeGC : GC
             return oldb;
         }
 
-        return runLocked!(go, otherTime, numOthers)(gcx, p);
+        mixin(runLocked("auto attr = go(gcx, p);", "otherTime", "numOthers"));
+        return attr;
     }
 
 
@@ -452,7 +489,8 @@ class ConservativeGC : GC
             return oldb;
         }
 
-        return runLocked!(go, otherTime, numOthers)(gcx, p, mask);
+        mixin(runLocked("auto attr = go(gcx, p, mask);", "otherTime", "numOthers"));
+        return attr;
     }
 
 
@@ -479,7 +517,8 @@ class ConservativeGC : GC
             return oldb;
         }
 
-        return runLocked!(go, otherTime, numOthers)(gcx, p, mask);
+        mixin(runLocked("auto attr = go(gcx, p, mask);", "otherTime", "numOthers"));
+        return attr;
     }
 
 
@@ -492,7 +531,7 @@ class ConservativeGC : GC
 
         size_t localAllocSize = void;
 
-        auto p = runLocked!(mallocNoSync, mallocTime, numMallocs)(size, bits, localAllocSize, ti);
+        mixin(runLocked("auto p = mallocNoSync(size, bits, localAllocSize, ti);", "mallocTime", "numMallocs"));
 
         if (!(bits & BlkAttr.NO_SCAN))
         {
@@ -515,8 +554,6 @@ class ConservativeGC : GC
         //debug(PRINTF) printf("gcx.self = %x, pthread_self() = %x\n", gcx.self, pthread_self());
 
         auto p = gcx.alloc(size + SENTINEL_EXTRA, alloc_size, bits);
-        if (!p)
-            onOutOfMemoryErrorNoGC();
 
         debug (SENTINEL)
         {
@@ -540,7 +577,7 @@ class ConservativeGC : GC
 
         BlkInfo retval;
 
-        retval.base = runLocked!(mallocNoSync, mallocTime, numMallocs)(size, bits, retval.size, ti);
+        mixin(runLocked("retval.base = mallocNoSync(size, bits, retval.size, ti);", "mallocTime", "numMallocs"));
 
         if (!(bits & BlkAttr.NO_SCAN))
         {
@@ -561,7 +598,7 @@ class ConservativeGC : GC
 
         size_t localAllocSize = void;
 
-        auto p = runLocked!(mallocNoSync, mallocTime, numMallocs)(size, bits, localAllocSize, ti);
+        mixin(runLocked("auto p = mallocNoSync(size, bits, localAllocSize, ti);", "mallocTime", "numMallocs"));
 
         memset(p, 0, size);
         if (!(bits & BlkAttr.NO_SCAN))
@@ -578,7 +615,7 @@ class ConservativeGC : GC
         size_t localAllocSize = void;
         auto oldp = p;
 
-        p = runLocked!(reallocNoSync, mallocTime, numMallocs)(p, size, bits, localAllocSize, ti);
+        mixin(runLocked("p = reallocNoSync(p, size, bits, localAllocSize, ti);", "mallocTime", "numMallocs"));
 
         if (p !is oldp && !(bits & BlkAttr.NO_SCAN))
         {
@@ -732,7 +769,8 @@ class ConservativeGC : GC
 
     size_t extend(void* p, size_t minsize, size_t maxsize, const TypeInfo ti) nothrow
     {
-        return runLocked!(extendNoSync, extendTime, numExtends)(p, minsize, maxsize, ti);
+        mixin(runLocked("auto sz = extendNoSync(p, minsize, maxsize, ti);", "extendTime", "numExtends"));
+        return sz;
     }
 
 
@@ -799,7 +837,8 @@ class ConservativeGC : GC
             return 0;
         }
 
-        return runLocked!(reserveNoSync, otherTime, numOthers)(size);
+        mixin(runLocked("auto sz = reserveNoSync(size);", "otherTime", "numOthers"));
+        return sz;
     }
 
 
@@ -822,7 +861,7 @@ class ConservativeGC : GC
             return;
         }
 
-        return runLocked!(freeNoSync, freeTime, numFrees)(p);
+        mixin(runLocked("freeNoSync(p);", "freeTime", "numFrees"));
     }
 
 
@@ -896,7 +935,8 @@ class ConservativeGC : GC
             return null;
         }
 
-        return runLocked!(addrOfNoSync, otherTime, numOthers)(p);
+        mixin(runLocked("auto base = addrOfNoSync(p);", "otherTime", "numOthers"));
+        return base;
     }
 
 
@@ -924,7 +964,8 @@ class ConservativeGC : GC
             return 0;
         }
 
-        return runLocked!(sizeOfNoSync, otherTime, numOthers)(p);
+        mixin(runLocked("auto size = sizeOfNoSync(p);", "otherTime", "numOthers"));
+        return size;
     }
 
 
@@ -971,7 +1012,8 @@ class ConservativeGC : GC
             return  i;
         }
 
-        return runLocked!(queryNoSync, otherTime, numOthers)(p);
+        mixin(runLocked("auto blkInfo = queryNoSync(p);", "otherTime", "numOthers"));
+        return blkInfo;
     }
 
     //
@@ -1007,7 +1049,7 @@ class ConservativeGC : GC
             return;
         }
 
-        return runLocked!(checkNoSync, otherTime, numOthers)(p);
+        mixin(runLocked("checkNoSync(p);", "otherTime", "numOthers"));
     }
 
 
@@ -1110,11 +1152,7 @@ class ConservativeGC : GC
 
     void runFinalizers(in void[] segment) nothrow
     {
-        static void go(Gcx* gcx, in void[] segment) nothrow
-        {
-            gcx.runFinalizers(segment);
-        }
-        return runLocked!(go, otherTime, numOthers)(gcx, segment);
+        mixin(runLocked("gcx.runFinalizers(segment);", "otherTime", "numOthers"));
     }
 
 
@@ -1146,11 +1184,7 @@ class ConservativeGC : GC
 
         // Since a finalizer could launch a new thread, we always need to lock
         // when collecting.
-        static size_t go(Gcx* gcx) nothrow
-        {
-            return gcx.fullcollect();
-        }
-        immutable result = runLocked!go(gcx);
+        mixin(runLocked("immutable result = gcx.fullcollect();"));
 
         version (none)
         {
@@ -1173,29 +1207,20 @@ class ConservativeGC : GC
     {
         // Since a finalizer could launch a new thread, we always need to lock
         // when collecting.
-        static size_t go(Gcx* gcx) nothrow
-        {
-            return gcx.fullcollect(true);
-        }
-        runLocked!go(gcx);
+        mixin(runLocked("gcx.fullcollect(true);"));
     }
 
 
     void minimize() nothrow
     {
-        static void go(Gcx* gcx) nothrow
-        {
-            gcx.minimize();
-        }
-        runLocked!(go, otherTime, numOthers)(gcx);
+        mixin(runLocked("gcx.minimize();", "otherTime", "numOthers"));
     }
 
 
     core.memory.GC.Stats stats() nothrow
     {
         typeof(return) ret;
-
-        runLocked!(getStatsNoSync, otherTime, numOthers)(ret);
+        mixin(runLocked("getStatsNoSync(ret);", "otherTime", "numOthers"));
 
         return ret;
     }
@@ -1673,15 +1698,33 @@ struct Gcx
 
     void* alloc(size_t size, ref size_t alloc_size, uint bits) nothrow
     {
-        return size <= 2048 ? smallAlloc(binTable[size], alloc_size, bits)
-                            : bigAlloc(size, alloc_size, bits);
+        if (size <= 2048)
+            return smallAlloc(size, alloc_size, bits);
+        else
+            return bigAlloc(size, alloc_size, bits);
     }
 
-    void* smallAlloc(Bins bin, ref size_t alloc_size, uint bits) nothrow
+    void* smallAlloc(size_t size, ref size_t alloc_size, uint bits) nothrow
     {
+        auto bin = binTable[size];
         alloc_size = binsize[bin];
 
-        void* p;
+        void* p = bucket[bin]; // shortcut hot path
+        if (!p)
+            p = _smallAlloc(bin, bits);
+
+        // Return next item from free list
+        bucket[bin] = (cast(List*)p).next;
+        auto pool = (cast(List*)p).pool;
+        if (bits)
+            pool.setBits((p - pool.baseAddr) >> pool.shiftBy, bits);
+        //debug(PRINTF) printf("\tmalloc => %p\n", p);
+        debug (MEMSTOMP) memset(p, 0xF0, alloc_size);
+        return p;
+    }
+    void* _smallAlloc(Bins bin, uint bits) nothrow
+    {
+        void* p = void;
         bool tryAlloc() nothrow
         {
             if (!bucket[bin])
@@ -1717,14 +1760,6 @@ struct Gcx
                 onOutOfMemoryErrorNoGC();
         }
         assert(p !is null);
-
-        // Return next item from free list
-        bucket[bin] = (cast(List*)p).next;
-        auto pool = (cast(List*)p).pool;
-        if (bits)
-            pool.setBits((p - pool.baseAddr) >> pool.shiftBy, bits);
-        //debug(PRINTF) printf("\tmalloc => %p\n", p);
-        debug (MEMSTOMP) memset(p, 0xF0, alloc_size);
         return p;
     }
 
@@ -1786,7 +1821,7 @@ struct Gcx
             // If alloc didn't yet succeed retry now that we collected/minimized
             if (!pool && !tryAlloc() && !tryAllocNewPool())
                 // out of luck or memory
-                return null;
+                onOutOfMemoryErrorNoGC();
         }
         assert(pool);
 
