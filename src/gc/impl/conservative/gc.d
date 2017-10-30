@@ -248,23 +248,24 @@ debug (LOGGING)
 
 
 /* ============================ GC =============================== */
-version = AsmLock;
-version(AsmLock)
+// explicit implementation of the spinlock to help the inliner and
+//  move the _inFinalizer check into the slow path
+static void yield(size_t k) nothrow @nogc
 {
     enum pauseThresh = 4;
-    static void yield(size_t k)
-    {
-        if (k < pauseThresh)
-            return pause();
-        else if (k < 32)
-            return Thread.yield();
-        if (ConservativeGC._inFinalizer)
-            onInvalidMemoryOperationError();
-        Thread.sleep(1.msecs);
-    }
-    static void pause()
-    {
-    }
+    if (k < pauseThresh)
+        return pause();
+    else if (k < 32)
+        return Thread.yield();
+    if (ConservativeGC._inFinalizer)
+        onInvalidMemoryOperationError();
+    Thread.sleep(1.msecs);
+}
+static void pause() nothrow @nogc
+{
+}
+version( D_InlineAsm_X86_64 )
+{
     enum string gcLock_lock = q{
         asm @nogc nothrow {
             push RDI;
@@ -284,8 +285,37 @@ version(AsmLock)
             call yield;
             inc EDI;
             jmp retry;
-        locked:;
+        locked:
             pop RDI;
+        }
+    };
+
+    enum string gcLock_unlock = q{
+        asm @nogc nothrow {
+            mov EAX, 0;
+            mov gcLock, EAX;
+        }
+    };
+}
+else version( D_InlineAsm_X86 )
+{
+    enum string gcLock_lock = q{
+        asm @nogc nothrow {
+            push EDI;
+            mov EDI, 1;
+        retry:
+            mov EAX, 0;
+            lea ECX, gcLock;
+            lock; // lock always needed to make this op atomic
+            cmpxchg [ECX], EDI;
+            jz locked;
+            mov EDX,EDX; // inform compiler that scratch registers might get destroyed in yield
+            mov EAX, EDI;
+            call yield;
+            inc EDI;
+            jmp retry;
+        locked:
+            pop EDI;
         }
     };
 
@@ -298,12 +328,21 @@ version(AsmLock)
 }
 else
 {
+    import core.atomic;
     enum string gcLock_lock = q{
-        if (ConservativeGC._inFinalizer)
-            onInvalidMemoryOperationError();
-        gcLock.lock();
+        if (!cas(&gcLock, 0, 1))
+        {
+            for (int i = 1; ; i++)
+            {
+                yield(i);
+                if (cas(&gcLock, 0, 1))
+                    break;
+            }
+        }
     };
-    enum string gcLock_unlock = "gcLock.unlock();";
+    enum string gcLock_unlock = q{
+        atomicStore!(MemoryOrder.rel)(gcLock, size_t(0));
+    };
 }
 
 class ConservativeGC : GC
@@ -315,20 +354,8 @@ class ConservativeGC : GC
     Gcx *gcx;                   // implementation
 
     import core.internal.spinlock;
-    version(AsmLock)
-        static align(64) shared(int) gcLock;
-    else
-        static auto gcLock = shared(AlignedSpinLock)(SpinLock.Contention.lengthy);
+    static shared(int) gcLock;
     static bool _inFinalizer;
-
-    // lock GC, throw InvalidMemoryOperationError on recursive locking during finalization
-    static void lockNR() @nogc nothrow
-    {
-        if (_inFinalizer)
-            onInvalidMemoryOperationError();
-        mixin(gcLock_lock); //gcLock.lock();
-    }
-
 
     static void initialize(ref GC gc)
     {
