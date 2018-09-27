@@ -96,6 +96,11 @@ unittest32mscoff:
 test_uuid:
 	$(MAKE) -f test\uuid\win64.mak "DMD=$(DMD)" MODEL=$(MODEL) "VCDIR=$(VCDIR)" DRUNTIMELIB=$(DRUNTIME) test
 
+test_stdcpp:
+	$(MAKE) -f test\stdcpp\win64.mak "DMD=$(DMD)" MODEL=$(MODEL) "VCDIR=$(VCDIR)" DRUNTIMELIB=$(DRUNTIME) "CC=$(CC)" test
+
+test_all:  test_uuid test_stdcpp
+
 ################### zip/install/clean ##########################
 
 zip: druntime.zip
@@ -115,4 +120,4 @@ clean:
 
 auto-tester-build: target
 
-auto-tester-test: unittest test_uuid
+auto-tester-test: unittest test_all

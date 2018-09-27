@@ -2,7 +2,7 @@ module test.stdcpp.string;
 
 import core.stdcpp.string;
 
-extern (C++) int test_string()
+unittest
 {
     std_string str = std_string("Hello");
 
@@ -18,8 +18,6 @@ extern (C++) int test_string()
     assert(str2.length == 0);
     assert(str2.empty == true);
     assert(str2[] == []);
-
-    return 0;
 }
 
 
