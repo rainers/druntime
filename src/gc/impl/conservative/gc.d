@@ -649,13 +649,15 @@ class ConservativeGC : GC
                 if (pool.isLargeObject)
                 {
                     auto lpool = cast(LargeObjectPool*) pool;
-                    psize = lpool.getSize(p);     // get allocated size
+                    auto psz = lpool.getPages(p);     // get allocated size
 
                     if (size <= PAGESIZE / 2)
+                    {
+                        psize = psz * PAGESIZE;
                         goto Lmalloc; // switching from large object pool to small object pool
+                    }
 
-                    auto psz = psize / PAGESIZE;
-                    auto newsz = (size + PAGESIZE - 1) / PAGESIZE;
+                    auto newsz = lpool.numPages(size);
                     if (newsz == psz)
                     {
                         alloc_size = psize;
@@ -668,6 +670,7 @@ class ConservativeGC : GC
                     {   // Shrink in place
                         debug (MEMSTOMP) memset(p + size, 0xF2, psize - size);
                         lpool.freePages(pagenum + newsz, psz - newsz);
+                        lpool.bPageOffsets[pagenum] = cast(uint) newsz;
                     }
                     else if (pagenum + newsz <= pool.npages)
                     {   // Attempt to expand in place
@@ -678,6 +681,9 @@ class ConservativeGC : GC
                         debug (MEMSTOMP) memset(p + psize, 0xF0, size - psize);
                         debug(PRINTF) printFreeInfo(pool);
                         memset(&lpool.pagetable[pagenum + psz], B_PAGEPLUS, newsz - psz);
+                        lpool.bPageOffsets[pagenum] = cast(uint) newsz;
+                        for (auto offset = psz + 1; offset < newsz; offset++)
+                            lpool.bPageOffsets[pagenum + offset] = cast(uint) offset;
                         gcx.usedLargePages += newsz - psz;
                         lpool.freepages -= (newsz - psz);
                         debug(PRINTF) printFreeInfo(pool);
@@ -685,7 +691,6 @@ class ConservativeGC : GC
                     else
                         goto Lmalloc; // does not fit into current pool
 
-                    lpool.updateOffsets(pagenum);
                     if (bits)
                     {
                         immutable biti = cast(size_t)(p - pool.baseAddr) >> pool.shiftBy;
@@ -758,13 +763,13 @@ class ConservativeGC : GC
                 return 0;
 
             auto lpool = cast(LargeObjectPool*) pool;
-            auto psize = lpool.getSize(p);   // get allocated size
+            auto psize = lpool.getPages(p);   // get allocated size
             if (psize < PAGESIZE)
                 return 0;                   // cannot extend buckets
 
-            auto psz = psize / PAGESIZE;
-            auto minsz = (minsize + PAGESIZE - 1) / PAGESIZE;
-            auto maxsz = (maxsize + PAGESIZE - 1) / PAGESIZE;
+            auto psz = lpool.numPages(psize);
+            auto minsz = lpool.numPages(minsize);
+            auto maxsz = lpool.numPages(maxsize);
 
             auto pagenum = lpool.pagenumOf(p);
 
@@ -784,7 +789,9 @@ class ConservativeGC : GC
                 return 0;
             debug (MEMSTOMP) memset(pool.baseAddr + (pagenum + psz) * PAGESIZE, 0xF0, sz * PAGESIZE);
             memset(lpool.pagetable + pagenum + psz, B_PAGEPLUS, sz);
-            lpool.updateOffsets(pagenum);
+            lpool.bPageOffsets[pagenum] = cast(uint) (psz + sz);
+            for (auto offset = psz + 1; offset < psz + sz; offset++)
+                lpool.bPageOffsets[pagenum + offset] = cast(uint) offset;
             lpool.freepages -= sz;
             gcx.usedLargePages += sz;
             return (psz + sz) * PAGESIZE;
@@ -1548,7 +1555,7 @@ struct Gcx
             }
             else if (bin == B_PAGEPLUS)
             {
-                auto pageOffset = pool.bPageOffsets[pn];
+                size_t pageOffset = pool.bPageOffsets[pn];
                 offset -= pageOffset * PAGESIZE;
                 pn -= pageOffset;
 
@@ -1738,7 +1745,7 @@ struct Gcx
 
         LargeObjectPool* pool;
         size_t pn;
-        immutable npages = (size + PAGESIZE - 1) / PAGESIZE;
+        immutable npages = LargeObjectPool.numPages(size);
         if (npages == 0)
             onOutOfMemoryErrorNoGC(); // size just below size_t.max requested
 
@@ -1792,9 +1799,13 @@ struct Gcx
 
         debug(PRINTF) printFreeInfo(&pool.base);
         pool.pagetable[pn] = B_PAGE;
+        pool.bPageOffsets[pn] = cast(uint) npages;
         if (npages > 1)
+        {
             memset(&pool.pagetable[pn + 1], B_PAGEPLUS, npages - 1);
-        pool.updateOffsets(pn);
+            for (auto offset = 1; offset < npages; offset++)
+                pool.bPageOffsets[pn + offset] = cast(uint) offset;
+        }
         usedLargePages += npages;
         pool.freepages -= npages;
 
@@ -2048,7 +2059,7 @@ struct Gcx
 
                     if (!pool.mark.set(biti) && !pool.noscan.test(biti))
                     {
-                        top = base + pool.bPageOffsets[pn] * PAGESIZE;
+                        top = base + (cast(LargeObjectPool*)pool).getAllocSize(pn);
                         goto LaddRange;
                     }
                 }
@@ -2064,7 +2075,7 @@ struct Gcx
                     if (!pool.mark.set(biti) && !pool.noscan.test(biti))
                     {
                         base = pool.baseAddr + (pn * PAGESIZE);
-                        top = base + pool.bPageOffsets[pn] * PAGESIZE;
+                        top = base + (cast(LargeObjectPool*)pool).getAllocSize(pn);
                         goto LaddRange;
                     }
                 }
@@ -2213,7 +2224,7 @@ struct Gcx
                         continue;
                     }
                     assert(bin == B_PAGE);
-                    const npages = pool.bPageOffsets[pn];
+                    size_t npages = pool.bPageOffsets[pn];
                     size_t biti = pn;
 
                     if (!pool.mark.test(biti))
@@ -2642,6 +2653,7 @@ struct Pool
     // a smaller address than a B_PAGEPLUS.  To save space, we use a uint.
     // This limits individual allocations to 16 terabytes, assuming a 4k
     // pagesize.
+    // For B_PAGE, this specifies the number of pages in this block
     uint* bPageOffsets;
 
     // This variable tracks a conservative estimate of where the first free
@@ -2892,10 +2904,20 @@ struct Pool
         return npages == freepages;
     }
 
+    static size_t numPages(size_t size) nothrow @nogc
+    in
+    {
+        assert(size < uint.max * cast(ulong)PAGESIZE);
+    }
+    do
+    {
+        return (size + PAGESIZE - 1) / PAGESIZE;
+    }
+
     size_t slGetSize(void* p) nothrow @nogc
     {
         if (isLargeObject)
-            return (cast(LargeObjectPool*)&this).getSize(p);
+            return (cast(LargeObjectPool*)&this).getPages(p) * PAGESIZE;
         else
             return (cast(SmallObjectPool*)&this).getSize(p);
     }
@@ -2945,20 +2967,6 @@ struct LargeObjectPool
 {
     Pool base;
     alias base this;
-
-    void updateOffsets(size_t fromWhere) nothrow
-    {
-        assert(pagetable[fromWhere] == B_PAGE);
-        size_t pn = fromWhere + 1;
-        for (uint offset = 1; pn < npages; pn++, offset++)
-        {
-            if (pagetable[pn] != B_PAGEPLUS) break;
-            bPageOffsets[pn] = offset;
-        }
-
-        // Store the size of the block in bPageOffsets[fromWhere].
-        bPageOffsets[fromWhere] = cast(uint) (pn - fromWhere);
-    }
 
     /**
      * Allocate n pages from Pool.
@@ -3029,7 +3037,7 @@ struct LargeObjectPool
     /**
      * Get size of pointer p in pool.
      */
-    size_t getSize(void *p) const nothrow @nogc
+    size_t getPages(void *p) const nothrow @nogc
     in
     {
         assert(p >= baseAddr);
@@ -3040,7 +3048,16 @@ struct LargeObjectPool
         size_t pagenum = pagenumOf(p);
         Bins bin = cast(Bins)pagetable[pagenum];
         assert(bin == B_PAGE);
-        return bPageOffsets[pagenum] * PAGESIZE;
+        return bPageOffsets[pagenum];
+    }
+
+    /**
+    * Get size of allocation at page pn in pool.
+    */
+    size_t getAllocSize(size_t pn) const nothrow @nogc
+    {
+        assert(pagetable[pn] == B_PAGE);
+        return cast(size_t) bPageOffsets[pn] * PAGESIZE;
     }
 
     /**
@@ -3060,8 +3077,7 @@ struct LargeObjectPool
             return info;           // no info for free pages
 
         info.base = baseAddr + pn * PAGESIZE;
-        info.size = bPageOffsets[pn] * PAGESIZE;
-
+        info.size = getAllocSize(pn);
         info.attr = getBits(pn);
         return info;
     }
@@ -3079,7 +3095,7 @@ struct LargeObjectPool
                 continue;
 
             auto p = sentinel_add(baseAddr + pn * PAGESIZE);
-            size_t size = bPageOffsets[pn] * PAGESIZE - SENTINEL_EXTRA;
+            size_t size = getAllocSize(pn) - SENTINEL_EXTRA;
             uint attr = getBits(biti);
 
             if (!rt_hasFinalizerInSegment(p, size, attr, segment))
