@@ -2204,10 +2204,16 @@ struct Gcx
 
             if (pool.isLargeObject)
             {
-                for (pn = 0; pn < pool.npages; pn++)
+                for (pn = 0; pn < pool.npages; )
                 {
                     Bins bin = cast(Bins)pool.pagetable[pn];
-                    if (bin > B_PAGE) continue;
+                    if (bin > B_PAGE)
+                    {
+                        pn++;
+                        continue;
+                    }
+                    assert(bin == B_PAGE);
+                    const npages = pool.bPageOffsets[pn];
                     size_t biti = pn;
 
                     if (!pool.mark.test(biti))
@@ -2218,7 +2224,7 @@ struct Gcx
 
                         if (pool.finals.nbits && pool.finals.clear(biti))
                         {
-                            size_t size = pool.bPageOffsets[pn] * PAGESIZE - SENTINEL_EXTRA;
+                            size_t size = npages * PAGESIZE - SENTINEL_EXTRA;
                             uint attr = pool.getBits(biti);
                             rt_finalizeFromGC(q, size, attr);
                         }
@@ -2227,31 +2233,19 @@ struct Gcx
 
                         debug(COLLECT_PRINTF) printf("\tcollecting big %p\n", p);
                         log_free(q);
-                        pool.pagetable[pn] = B_FREE;
+                        pool.pagetable[pn..pn+npages] = B_FREE;
                         if (pn < pool.searchStart) pool.searchStart = pn;
-                        freedLargePages++;
-                        pool.freepages++;
+                        freedLargePages += npages;
+                        pool.freepages += npages;
 
-                        debug (MEMSTOMP) memset(p, 0xF3, PAGESIZE);
-                        while (pn + 1 < pool.npages && pool.pagetable[pn + 1] == B_PAGEPLUS)
-                        {
-                            pn++;
-                            pool.pagetable[pn] = B_FREE;
+                        debug (MEMSTOMP) memset(p, 0xF3, npages * PAGESIZE);
+                        // Don't need to update searchStart here because
+                        // pn is guaranteed to be greater than last time
+                        // we updated it.
 
-                            // Don't need to update searchStart here because
-                            // pn is guaranteed to be greater than last time
-                            // we updated it.
-
-                            pool.freepages++;
-                            freedLargePages++;
-
-                            debug (MEMSTOMP)
-                            {   p += PAGESIZE;
-                                memset(p, 0xF3, PAGESIZE);
-                            }
-                        }
                         pool.largestFree = pool.freepages; // invalidate
                     }
+                    pn += npages;
                 }
             }
             else
