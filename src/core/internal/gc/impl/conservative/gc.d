@@ -2724,8 +2724,8 @@ Lmark:
                         else
                             markAll!markConservative(nostack);
                         _Exit(0);
-						break; // bogus
-					default: // the parent
+                        break; // bogus
+                    default: // the parent
                         thread_resumeAll();
                         if (!block)
                         {
@@ -2747,7 +2747,7 @@ Lmark:
                             thread_suspendAll();
                             // there was an error
                             // do the marking in this thread
-							disableFork();
+                            disableFork();
                             if (ConservativeGC.isPrecise)
                                 markAll!markPrecise(nostack);
                             else
