@@ -1770,7 +1770,6 @@ struct Gcx
         assert(pool);
 
         debug(PRINTF) printFreeInfo(&pool.base);
-        pool.pagetable[pn] = B_PAGE;
         if (npages > 1)
             memset(&pool.pagetable[pn + 1], B_PAGEPLUS, npages - 1);
         pool.mark.set(pn);
@@ -4054,8 +4053,6 @@ struct SmallObjectPool
         // Convert page to free list
         size_t size = binsize[bin];
         void* p = baseAddr + pn * PAGESIZE;
-        size_t biti = pn * (PAGESIZE / 16);
-        base.freebits.set(biti);
 
         auto first = cast(List*) p;
 
