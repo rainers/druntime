@@ -1772,8 +1772,6 @@ struct Gcx
         assert(pool);
 
         debug(PRINTF) printFreeInfo(&pool.base);
-        if (npages > 1)
-            memset(&pool.pagetable[pn + 1], B_PAGEPLUS, npages - 1);
         pool.mark.set(pn);
         usedLargePages += npages;
         pool.freepages -= npages;
