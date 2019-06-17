@@ -28,6 +28,9 @@ module core.internal.gc.impl.conservative.gc;
 
 /***************************************************/
 version = COLLECT_PARALLEL;  // parallel scanning
+version (Posix)
+    version = COLLECT_FORK;
+version = COLLECT_FORK;
 
 import core.internal.gc.bits;
 import core.internal.gc.os;
@@ -1226,8 +1229,12 @@ struct Gcx
     auto rangesLock = shared(AlignedSpinLock)(SpinLock.Contention.brief);
     Treap!Root roots;
     Treap!Range ranges;
-    private pid_t markProcPid = 0;
     private bool doMinimize = false;
+    version (COLLECT_FORK)
+    {
+        private pid_t markProcPid = 0;
+        bool shouldFork;
+    }
 
     debug(INVARIANT) bool initialized;
     debug(INVARIANT) bool inCollection;
@@ -1278,6 +1285,9 @@ struct Gcx
             }
         }
         debug(INVARIANT) initialized = true;
+        version (COLLECT_FORK)
+            shouldFork = config.fork;
+
     }
 
     void Dtor()
@@ -1390,7 +1400,10 @@ struct Gcx
 
     @property bool collectInProgress() const nothrow
     {
-        return markProcPid != 0;
+        version (COLLECT_FORK)
+            return markProcPid != 0;
+        else
+            return false;
     }
 
 
@@ -2590,10 +2603,14 @@ struct Gcx
 
     void disableFork() nothrow
     {
-        config.fork = false;
-        markProcPid = 0;
+        version (COLLECT_FORK)
+        {
+            markProcPid = 0;
+            shouldFork = false;
+        }
     }
 
+    version (COLLECT_FORK)
     ChildStatus collectFork(bool block) nothrow
     {
         typeof(return) rc = wait_pid(markProcPid, block);
@@ -2624,7 +2641,9 @@ struct Gcx
         return rc;
     }
 
-    ChildStatus markFork(bool nostack, bool block, const MonoTime begin, ref MonoTime start, ref MonoTime stop, ref Duration markTime) nothrow
+    version (COLLECT_FORK)
+    ChildStatus markFork(bool nostack, bool block, const MonoTime begin, ref MonoTime start, ref MonoTime stop) nothrow
+
     {
         // Forking is enabled, so we fork() and start a new concurrent mark phase
         // in the child. If the collection should not block, the parent process
@@ -2638,11 +2657,12 @@ struct Gcx
         // the global GC lock will stop them).
         // fork now and sweep later
         import core.stdc.stdio;
-        import core.stdc.stdlib : _Exit; // TODO VERSION COLLECT_FORK
+        version (COLLECT_FORK)
+            import core.stdc.stdlib : _Exit;
         
         fflush(null); // avoid duplicated FILE* output
         auto pid = fork();
-        assert(pid != -1); // TODO handle case
+        assert(pid != -1);
         switch (pid)
         {
             case -1: // fork() failed, retry without forking
@@ -2697,6 +2717,17 @@ struct Gcx
         // part of `thread_attachThis` implementation). In that case it is
         // better not to try actually collecting anything
 
+        version (COLLECT_FORK)
+            bool doFork = shouldFork;
+        else
+            enum doFork = false;
+
+        version (COLLECT_PARALLEL)
+            bool doParallel = config.parallel > 0;
+        else
+            enum doParallel = false;
+
+
         if (Thread.getThis() is null)
             return 0;
 
@@ -2727,18 +2758,20 @@ struct Gcx
         // If it's still running, either we block until the mark phase is
         // done (and then sweep to finish the collection), or in case of error
         // we redo the mark phase without forking.
-        if (collectInProgress && doFork)
+        if (doFork && collectInProgress)
         {
-            ChildStatus rc = collectFork(block);
-            final switch (rc)
-            {
-                case ChildStatus.done:
-                    break;
-                case ChildStatus.running:
-                    return 0;
-                case ChildStatus.error:
-                    disableFork();
-                    goto Lmark;
+            version (COLLECT_FORK){
+                ChildStatus rc = collectFork(block);
+                final switch (rc)
+                {
+                    case ChildStatus.done:
+                        break;
+                    case ChildStatus.running:
+                        return 0;
+                    case ChildStatus.error:
+                        disableFork();
+                        goto Lmark;
+                }
             }
         }
         else
@@ -2764,16 +2797,19 @@ Lmark:
 
             if (doFork)
             {
-                auto forkResult = markFork(nostack, block, begin, start, stop, markTime);
-                final switch (forkResult)
+                version (COLLECT_FORK)
                 {
-                    case ChildStatus.error:
-                        disableFork();
-                        goto Lmark;
-                    case ChildStatus.running:
-                        return 0;
-                    case ChildStatus.done:
-                        break;
+                    auto forkResult = markFork(nostack, block, begin, start, stop);
+                    final switch (forkResult)
+                    {
+                        case ChildStatus.error:
+                            disableFork();
+                            goto Lmark;
+                        case ChildStatus.running:
+                            return 0;
+                        case ChildStatus.done:
+                            break;
+                    }
                 }
             }
             else if (doParallel)
@@ -3246,7 +3282,10 @@ struct Pool
         topAddr = baseAddr + poolsize;
         auto nbits = cast(size_t)poolsize >> shiftBy;
 
-        mark.alloc(nbits, true);
+        version (COLLECT_FORK)
+            mark.alloc(nbits, true);
+        else
+            mark.alloc(nbits);
         if (ConservativeGC.isPrecise)
         {
             if (isLargeObject)
@@ -3346,11 +3385,11 @@ struct Pool
         }
         if (isLargeObject)
         {
-            nointerior.Dtor(true);
+            nointerior.Dtor();
         }
         else
         {
-            freebits.Dtor(true);
+            freebits.Dtor();
         }
         finals.Dtor(false);
         structFinals.Dtor(false);
