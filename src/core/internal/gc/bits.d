@@ -33,7 +33,7 @@ struct GCBits
     wordtype* data;
     size_t nbits;
 
-    void Dtor(bool mmap) nothrow @nogc
+    void Dtor(bool share = false) nothrow @nogc
     {
         if (data)
         {
@@ -45,7 +45,7 @@ struct GCBits
         }
     }
 
-    void alloc(size_t nbits, bool mmap = false) nothrow
+    void alloc(size_t nbits, bool share = false) nothrow
     {
         this.nbits = nbits;
         if (mmap)
