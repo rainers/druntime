@@ -1785,9 +1785,9 @@ struct Gcx
         assert(pool);
 
         debug(PRINTF) printFreeInfo(&pool.base);
-        pool.mark.set(pn);
+        if (collectInProgress)
+            pool.mark.set(pn);
         usedLargePages += npages;
-        pool.freepages -= npages;
 
         debug(PRINTF) printFreeInfo(&pool.base);
 
