@@ -156,10 +156,7 @@ class ConservativeGC : GC
 
     this()
     {
-        import core.exception : onConfigurationError;
         //config is assumed to have already been initialized
-        if (config.fork && config.parallel > 0)
-            onConfigurationError("Can't mix threads and fork strategies for GC marking");
 
         gcx = cast(Gcx*)cstdlib.calloc(1, Gcx.sizeof);
         if (!gcx)
@@ -2641,7 +2638,7 @@ struct Gcx
     }
 
     version (COLLECT_FORK)
-    ChildStatus markFork(bool nostack, bool block) nothrow
+    ChildStatus markFork(bool nostack, bool block, bool doParallel) nothrow
     {
         // Forking is enabled, so we fork() and start a new concurrent mark phase
         // in the child. If the collection should not block, the parent process
@@ -2665,7 +2662,9 @@ struct Gcx
             case -1: // fork() failed, retry without forking
                 return ChildStatus.error;
             case 0: // child process
-                if (ConservativeGC.isPrecise)
+                if (doParallel)
+                    markParallel(nostack);
+                else if (ConservativeGC.isPrecise)
                     markAll!markPrecise(nostack);
                 else
                     markAll!markConservative(nostack);
@@ -2687,7 +2686,9 @@ struct Gcx
                     // there was an error
                     // do the marking in this thread
                     disableFork();
-                    if (ConservativeGC.isPrecise)
+                    if (doParallel)
+                        markParallel(nostack);
+                    else if (ConservativeGC.isPrecise)
                         markAll!markPrecise(nostack);
                     else
                         markAll!markConservative(nostack);
@@ -2788,7 +2789,7 @@ Lmark:
             {
                 version (COLLECT_FORK)
                 {
-                    auto forkResult = markFork(nostack, block);
+                    auto forkResult = markFork(nostack, block, doParallel);
                     final switch (forkResult)
                     {
                         case ChildStatus.error:
