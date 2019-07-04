@@ -2598,13 +2598,11 @@ struct Gcx
         return recoverPool[bin] = poolIndex < npools ? cast(SmallObjectPool*)pool : null;
     }
 
+    version (COLLECT_FORK)
     void disableFork() nothrow
     {
-        version (COLLECT_FORK)
-        {
-            markProcPid = 0;
-            shouldFork = false;
-        }
+        markProcPid = 0;
+        shouldFork = false;
     }
 
     version (COLLECT_FORK)
@@ -3378,7 +3376,7 @@ struct Pool
             if (isLargeObject)
                 cstdlib.free(rtinfo);
             else
-                is_pointer.Dtor(false);
+                is_pointer.Dtor();
         }
         if (isLargeObject)
         {
