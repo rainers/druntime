@@ -1028,7 +1028,7 @@ class ConservativeGC : GC
         // when collecting.
         static size_t go(Gcx* gcx) nothrow
         {
-            return gcx.fullcollect(true, true); // standard stop the world
+            return gcx.fullcollect(true, true, true); // standard stop the world
         }
         runLocked!go(gcx);
     }
@@ -2698,7 +2698,7 @@ struct Gcx
     /**
      * Return number of full pages free'd.
      */
-    size_t fullcollect(bool nostack = false, bool block = false) nothrow
+    size_t fullcollect(bool nostack = false, bool block = false, bool isFinal = false) nothrow
     {
         // It is possible that `fullcollect` will be called from a thread which
         // is not yet registered in runtime (because allocating `new Thread` is
@@ -2873,6 +2873,8 @@ Lmark:
         ++numCollections;
 
         updateCollectThresholds();
+        if (isFinal)
+            return fullcollect(true, true, false);
         return freedPages;
     }
 
