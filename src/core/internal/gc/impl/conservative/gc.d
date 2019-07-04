@@ -1702,7 +1702,8 @@ struct Gcx
 
         auto biti = (p - pool.baseAddr) >> pool.shiftBy;
         assert(pool.freebits.test(biti));
-        pool.mark.set(biti); // be sure that the child is aware of the page being used
+        if (collectInProgress)
+            pool.mark.set(biti); // be sure that the child is aware of the page being used
         pool.freebits.clear(biti);
         if (bits)
             pool.setBits(biti, bits);
