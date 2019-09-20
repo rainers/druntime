@@ -1,0 +1,23 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+jobs:
+  - job: Windows
+    timeoutInMinutes: 120
+    pool:
+      vmImage: 'vs2017-win2016'
+    variables:
+      VSINSTALLDIR: C:\Program Files (x86)\Microsoft Visual Studio\2017\Enterprise\
+      HOST_DMD_VERSION: 2.084.1
+    strategy:
+      matrix:
+        x64:
+          OS: Win_64
+          MODEL: 64
+          ARCH: x64
+          D_COMPILER: dmd
+    steps:
+      - script: git clone --branch %BUILD_SOURCEBRANCHNAME% https://github.com/dlang/dmd.git ../dmd --quiet
+      - template: ../dmd/.azure-pipelines/windows.yml
