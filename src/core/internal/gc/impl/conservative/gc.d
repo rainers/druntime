@@ -2712,12 +2712,6 @@ struct Gcx
         else
             enum doFork = false;
 
-        version (COLLECT_PARALLEL)
-            bool doParallel = config.parallel > 0;
-        else
-            enum doParallel = false;
-
-
         if (Thread.getThis() is null)
             return 0;
 
@@ -2725,7 +2719,6 @@ struct Gcx
         begin = start = currTime;
 
         debug(COLLECT_PRINTF) printf("Gcx.fullcollect()\n");
-        bool doFork = config.fork;
         version (COLLECT_PARALLEL)
         {
             bool doParallel = config.parallel > 0;

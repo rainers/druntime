@@ -7,7 +7,7 @@
  */
 module core.internal.gc.bits;
 
-import gc.os : os_mem_map, os_mem_unmap, HaveFork;
+import core.internal.gc.os : os_mem_map, os_mem_unmap, HaveFork;
 
 import core.bitop;
 import core.stdc.string;
