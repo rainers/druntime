@@ -33,7 +33,7 @@ struct GCBits
     wordtype* data;
     size_t nbits;
 
-    void Dtor(bool share = false) nothrow @nogc
+    void Dtor(bool share = false) nothrow
     {
         if (data)
         {
@@ -60,7 +60,7 @@ struct GCBits
             onOutOfMemoryError();
     }
 
-    wordtype test(size_t i) const nothrow @nogc
+    wordtype test(size_t i) const nothrow
     in
     {
         assert(i < nbits);
@@ -70,7 +70,7 @@ struct GCBits
         return core.bitop.bt(data, i);
     }
 
-    int set(size_t i) nothrow @nogc
+    int set(size_t i) nothrow
     in
     {
         assert(i < nbits);
@@ -80,7 +80,7 @@ struct GCBits
         return core.bitop.bts(data, i);
     }
 
-    int clear(size_t i) nothrow @nogc
+    int clear(size_t i) nothrow
     in
     {
         assert(i <= nbits);
@@ -437,17 +437,17 @@ struct GCBits
         testCopyRange(2, 3, 166); // failed with assert
     }
 
-    void zero() nothrow @nogc
+    void zero() nothrow
     {
         memset(data, 0, nwords * wordtype.sizeof);
     }
 
-    void setAll() nothrow @nogc
+    void setAll() nothrow
     {
         memset(data, 0xFF, nwords * wordtype.sizeof);
     }
 
-    void copy(GCBits *f) nothrow @nogc
+    void copy(GCBits *f) nothrow
     in
     {
         assert(nwords == f.nwords);
@@ -457,7 +457,7 @@ struct GCBits
         memcpy(data, f.data, nwords * wordtype.sizeof);
     }
 
-    @property size_t nwords() const pure nothrow @nogc
+    @property size_t nwords() const pure nothrow
     {
         return (nbits + (BITS_PER_WORD - 1)) >> BITS_SHIFT;
     }

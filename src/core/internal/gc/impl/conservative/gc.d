@@ -2650,11 +2650,14 @@ struct Gcx
         // the global GC lock will stop them).
         // fork now and sweep later
         import core.stdc.stdlib : _Exit;
-        debug (PRINTF_TO_FILE){
+        debug (PRINTF_TO_FILE)
+        {
             import core.stdc.stdio : fflush;
             fflush(null); // avoid duplicated FILE* output
         }
+        fork_needs_lock = false;
         auto pid = fork();
+        fork_needs_lock = true;
         assert(pid != -1);
         switch (pid)
         {
@@ -2668,7 +2671,7 @@ struct Gcx
                 else
                     markAll!markConservative(nostack);
                 _Exit(0);
-                return ChildStatus.done; // bogus
+                //return ChildStatus.done; // bogus
             default: // the parent
                 thread_resumeAll();
                 if (!block)
@@ -2733,7 +2736,6 @@ struct Gcx
         else
             enum doParallel = false;
 
-        assert(!(doFork && doParallel), "No reason in mixing threads and fork");
         //printf("\tpool address range = %p .. %p\n", minAddr, maxAddr);
 
         // If there is a mark process running, check if it already finished.
@@ -2743,7 +2745,8 @@ struct Gcx
         // we redo the mark phase without forking.
         if (doFork && collectInProgress)
         {
-            version (COLLECT_FORK){
+            version (COLLECT_FORK)
+            {
                 ChildStatus rc = collectFork(block);
                 final switch (rc)
                 {
@@ -2778,7 +2781,7 @@ Lmark:
             prepTime += (stop - start);
             start = stop;
 
-            if (doFork)
+            if (doFork && !isFinal) // don't start a new fork during termination
             {
                 version (COLLECT_FORK)
                 {
@@ -2801,6 +2804,9 @@ Lmark:
                         case ChildStatus.done:
                             break;
                     }
+                    // if we get here, forking failed and a standard STW collection got issued
+                    // threads were suspended again, restart them
+                    thread_suspendAll();
                 }
             }
             else if (doParallel)
@@ -2816,13 +2822,9 @@ Lmark:
                     markAll!markConservative(nostack);
             }
 
-            // if we get here, forking failed and a standard STW collection got issued
-            // threads were suspended again, restart them
-            if (doFork)
-                thread_suspendAll();
-
             thread_processGCMarks(&isMarked);
             thread_resumeAll();
+            isFinal = false;
         }
 
         // If we reach here, the child process has finished the marking phase
@@ -2868,7 +2870,7 @@ Lmark:
         ++numCollections;
 
         updateCollectThresholds();
-        if (isFinal)
+        if (doFork && isFinal)
             return fullcollect(true, true, false);
         return freedPages;
     }
@@ -3154,22 +3156,25 @@ Lmark:
         // Because that would leave the GC in an inconsistent state,
         // make sure no GC code is running by acquiring the lock here,
         // before a fork.
+        // This must not happen if fork is called from the GC with the lock already held
+
+        __gshared bool fork_needs_lock = true; // racing condition with cocurrent calls of fork?
 
         extern(C) static void _d_gcx_atfork_prepare()
         {
-            if (instance)
+            if (instance && fork_needs_lock)
                 ConservativeGC.lockNR();
         }
 
         extern(C) static void _d_gcx_atfork_parent()
         {
-            if (instance)
+            if (instance && fork_needs_lock)
                 ConservativeGC.gcLock.unlock();
         }
 
         extern(C) static void _d_gcx_atfork_child()
         {
-            if (instance)
+            if (instance && fork_needs_lock)
             {
                 ConservativeGC.gcLock.unlock();
 
